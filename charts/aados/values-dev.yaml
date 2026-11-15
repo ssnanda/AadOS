@@ -1,0 +1,5 @@
+# Development only; the app has no user authentication in v0.1.0.
+api:
+  replicas: 1
+web:
+  replicas: 1

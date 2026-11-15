@@ -1,0 +1,42 @@
+# Local credentials and settings
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.p12
+*.mobileprovision
+*.key
+*.p8
+*.xcuserstate
+
+# Elixir
+_build/
+deps/
+.elixir_ls/
+*.ez
+*.beam
+erl_crash.dump
+
+# JS / Svelte
+node_modules/
+.svelte-kit/
+apps/web/build/
+apps/web/.env
+
+# Swift / Xcode
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Local runtime
+.DS_Store
+*.log
+coverage/
+.envrc
+
+# Local build and deployment logs
+build/

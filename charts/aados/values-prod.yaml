@@ -1,0 +1,6 @@
+# Production defaults; deployment is gated by script confirmation.
+# Do not expose or ingest personal data until authentication is implemented.
+api:
+  replicas: 2
+web:
+  replicas: 2
