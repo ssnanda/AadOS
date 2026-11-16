@@ -11,7 +11,7 @@
     <h1>Welcome back</h1>
     <p>Sign in to your personal workspace.</p>
     {#if form?.error}<div class="error" role="alert">{form.error}</div>{/if}
-    <label>Username<input name="username" autocomplete="username" value={form?.username || ''} required autofocus /></label>
+    <label>Username<input name="username" autocomplete="username" value={form?.username || ''} required /></label>
     <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
     <button type="submit">Sign in</button>
   </form>

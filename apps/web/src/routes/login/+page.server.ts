@@ -12,7 +12,7 @@ export const actions: Actions = {
     const address = getClientAddress();
     const now = Date.now();
     const recent = (failures.get(address) || []).filter((time) => now - time < WINDOW_MS);
-    if (recent.length >= MAX_FAILURES) return fail(429, { error: 'Too many attempts. Try again later.' });
+    if (recent.length >= MAX_FAILURES) return fail(429, { error: 'Too many attempts. Try again later.', username: '' });
 
     const data = await request.formData();
     const username = String(data.get('username') || '');

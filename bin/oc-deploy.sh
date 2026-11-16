@@ -87,6 +87,8 @@ b64() { printf %s "$1" | base64 | tr -d '\n'; }
 unb64() { printf %s "$1" | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => process.stdout.write(Buffer.from(s, 'base64').toString()))"; }
 
 # The password is shown once. Only its scrypt hash is stored in OpenShift.
+AADOS_LOGIN_PASSWORD=""
+LOGIN_CHANGED=false
 USER_B64="$(secret_field aados-user)"
 PASSWORD_HASH_B64="$(secret_field aados-password-hash)"
 if [[ "$RESET_USER" == true || -z "$USER_B64" || "$USER_B64" == '<no value>' || -z "$PASSWORD_HASH_B64" || "$PASSWORD_HASH_B64" == '<no value>' ]]; then
@@ -96,24 +98,29 @@ if [[ "$RESET_USER" == true || -z "$USER_B64" || "$USER_B64" == '<no value>' || 
   AADOS_LOGIN_HASH="$(AADOS_PASSWORD="$AADOS_LOGIN_PASSWORD" node --input-type=module -e "import { hashPassword } from './apps/web/src/lib/server/password.js'; process.stdout.write(await hashPassword(process.env.AADOS_PASSWORD))")"
   oc patch secret aados-api-secrets -n "$NAMESPACE" --type=merge \
     -p "{\"data\":{\"aados-user\":\"$(b64 "$AADOS_LOGIN_USER")\",\"aados-password-hash\":\"$(b64 "$AADOS_LOGIN_HASH")\"}}" >/dev/null
-  echo ''
-  echo "  AadOS login: https://$HOSTNAME/login"
-  echo "  User:        $AADOS_LOGIN_USER"
-  echo "  Password:    $AADOS_LOGIN_PASSWORD   (shown once - save it now)"
-  echo ''
+  LOGIN_CHANGED=true
 else
   AADOS_LOGIN_USER="$(unb64 "$USER_B64")"
-  echo 'Keeping the existing AadOS login. Use --reset-user to replace it.'
 fi
 
 LOGDIR="${AADOS_DEPLOY_LOG_DIR:-$ROOT/build/deploy}"
 mkdir -p "$LOGDIR"
 LOG="$LOGDIR/$AADOS_ENV-$(date -u +%Y%m%dT%H%M%SZ).log"
+# Keep credential output out of the deployment log while still showing it in the terminal.
+exec 3>&1
 exec > >(tee -a "$LOG") 2>&1
 on_error() {
   local status=$?
   trap - ERR
   echo "Deployment failed (exit $status). Version $VERSION NOT verified as deployed. Log: $LOG" >&2
+  if [[ "$LOGIN_CHANGED" == true ]]; then
+    echo '' >&3
+    echo 'AadOS login was created/reset before the failure. Save it for the next attempt:' >&3
+    echo "  URL:      https://$HOSTNAME" >&3
+    echo "  Username: $AADOS_LOGIN_USER" >&3
+    echo "  Password: $AADOS_LOGIN_PASSWORD   (shown once)" >&3
+    echo '' >&3
+  fi
   oc get pods -n "$NAMESPACE" -l app.kubernetes.io/part-of=aados -o wide >&2 || true
   oc get events -n "$NAMESPACE" --sort-by=.lastTimestamp 2>/dev/null | tail -n 15 >&2 || true
   exit "$status"
@@ -123,6 +130,22 @@ trap on_error ERR
 echo "AadOS v$VERSION | cluster=$CLUSTER | oc user=$USER | namespace=$NAMESPACE | environment=$AADOS_ENV"
 echo "HTTPS URL: https://$HOSTNAME | certificate issuer=$ISSUER"
 echo 'No Helm dependency. Using OpenShift ImageStreams and binary Docker BuildConfigs.'
+
+cleanup_finished_build_pods() {
+  local phase pod
+  for phase in Succeeded Failed; do
+    while IFS= read -r pod; do
+      [[ -n "$pod" ]] || continue
+      oc delete "$pod" -n "$NAMESPACE" --ignore-not-found=true >/dev/null
+    done < <(oc get pods -n "$NAMESPACE" -l openshift.io/build.name \
+      --field-selector="status.phase=$phase" -o name 2>/dev/null || true)
+  done
+}
+
+# BuildConfig history limits prune old Build objects; terminal build pods need an explicit sweep.
+# Never remove New, Pending or Running build pods.
+echo 'Cleaning up completed and failed build pods...'
+cleanup_finished_build_pods
 
 # Build images from local source; OpenShift's internal registry stores them.
 oc process -f openshift/build.yaml -p "APP_NAME=$APP_NAME" -p "NAMESPACE=$NAMESPACE" | oc apply -n "$NAMESPACE" -f -
@@ -134,6 +157,8 @@ for component in api web; do
     --follow --wait
   oc get istag "$APP_NAME-$component:latest" -n "$NAMESPACE" >/dev/null || fail "ImageStreamTag for $component missing after build."
 done
+echo 'Cleaning up build pods from this successful build...'
+cleanup_finished_build_pods
 
 # Apply private ClusterIP services/deployments only after both images are built.
 # Existing deployments need a restart to pull the updated :latest ImageStreamTag.
@@ -164,13 +189,19 @@ for component in api web; do
 done
 
 oc get deployment "$APP_NAME-api" "$APP_NAME-web" -n "$NAMESPACE"
-echo "Deployed AadOS v$VERSION successfully."
-echo "Public URL: https://$HOSTNAME"
-echo "User: $AADOS_LOGIN_USER"
-echo "Reset login: ./bin/oc-deploy.sh --reset-user"
 echo "Route: oc get routes -n '$NAMESPACE'"
 echo "TLS: oc get certificate '$APP_NAME-tls' -n '$NAMESPACE'"
 echo "Local access: oc port-forward -n $NAMESPACE svc/$APP_NAME-web 3000:3000"
 echo 'Then open http://localhost:3000'
 echo "Ensure DNS points $HOSTNAME to the OpenShift router; cert-manager manages renewal."
 echo "Log: $LOG"
+{
+  echo ''
+  echo "Deployment complete — AadOS v$VERSION is live."
+  echo "  URL:      https://$HOSTNAME"
+  echo "  Username: $AADOS_LOGIN_USER"
+  if [[ "$LOGIN_CHANGED" == true ]]; then
+    echo "  Password: $AADOS_LOGIN_PASSWORD   (shown once - save it now)"
+  fi
+  echo "  Reset:    ./bin/oc-deploy.sh --reset-user"
+} >&3
