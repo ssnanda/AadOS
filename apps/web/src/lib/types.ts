@@ -1,6 +1,6 @@
 export type EmailAccount = {
   id: string;
-  provider: 'gmail' | 'microsoft' | 'zoho';
+  provider: 'gmail' | 'zoho';
   address: string;
   status: 'connected' | 'error' | 'disconnected';
 };
@@ -17,7 +17,7 @@ export type Overview = {
   read_only: boolean;
   accounts: EmailAccount[];
   counts: EmailCounts;
-  features: { gmail: boolean; microsoft: boolean; ai_triage: boolean };
+  features: { gmail: boolean; ai_triage: boolean };
 };
 
 export type MailMessage = {

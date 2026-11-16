@@ -12,9 +12,9 @@ export const GET: RequestHandler = async ({ params }) => {
       const pipeline = state.pipelines.find((item) => item.id === params.id);
       const item = state.items.find((entry) => entry.pipelineId === params.id && entry.messageId === params.mid);
       if (!pipeline || !item) throw new Error('Email not found');
-      const account = state.accounts.find((entry) => entry.id === pipeline.accountId && entry.provider === pipeline.source);
+      const account = state.accounts.find((entry) => entry.id === (item.accountId || pipeline.accountId));
       if (!account) throw new Error('The account for this view is no longer connected.');
-      body = pipeline.source === 'gmail' ? await fetchGmailBody(state, account, item) : await fetchZohoBody(state, account, pipeline, item);
+      body = account.provider === 'gmail' ? await fetchGmailBody(state, account, item) : await fetchZohoBody(state, account, pipeline, item);
       item.seen = true;
     });
   } catch (cause) {

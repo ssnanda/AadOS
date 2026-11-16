@@ -8,7 +8,7 @@
 </script>
 <svelte:head><title>Dashboard · AadOS</title></svelte:head>
 <AppShell title="Dashboard">
-  <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
+  <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a href="/emails?view=needs-reply"><b>{data.inbox.needsReply}</b> need reply</a><a href="/emails?view=important"><b>{data.inbox.important}</b> important</a><a href="/emails?category=Bills"><b>{data.inbox.bills}</b> bills</a><a href="/emails?category=Renewals"><b>{data.inbox.renewals}</b> renewals</a><a href="/emails?category=Receipts"><b>{data.inbox.receipts}</b> receipts</a><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
   <div class="tiles">
     {#each data.tiles as t (t.id)}
       <a class="tile {tone(t.parser)}" href={`/pipelines/${t.id}`}>
@@ -25,7 +25,7 @@
   .icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:var(--bg)}
   .count{color:var(--c)!important}.kinds span{background:var(--bg)!important;color:var(--c)!important}
   .summary span:nth-child(1) b{color:#7c4dde}.summary span:nth-child(2) b{color:#139488}.summary span:nth-child(3) b{color:#d6477f}
-  .summary{display:flex;gap:22px;color:#8a95a8;font-size:13px;margin-bottom:20px}.summary b{color:#29344c;font-size:20px;margin-right:4px}
+  .summary a:not(.addview){color:inherit;text-decoration:none}.summary a:not(.addview):hover{color:#3157de}.summary{flex-wrap:wrap;display:flex;gap:22px;color:#8a95a8;font-size:13px;margin-bottom:20px}.summary b{color:#29344c;font-size:20px;margin-right:4px}
   .addview{margin-left:auto;align-self:center;background:#eef1ff;color:#3157de;border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;text-decoration:none}.addview:hover{background:#3157de;color:#fff}
   .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
   .tile{display:flex;flex-direction:column;gap:12px;background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:18px;color:#29344c;text-decoration:none;box-shadow:0 3px 20px #33447d06}

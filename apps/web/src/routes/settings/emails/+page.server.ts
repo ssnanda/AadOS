@@ -1,8 +1,9 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
-import { beginOAuth as beginZoho, discoverAccountAndFolders, syncPipeline } from '$lib/server/zoho';
-import { beginGmailOAuth, discoverGmailFolders, syncGmailPipeline } from '$lib/server/gmail';
+import { hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
+import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
+import { syncView } from '$lib/server/pipeline-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
@@ -10,28 +11,30 @@ export const load: PageServerLoad = async ({ url }) => ({ ...publicState(await r
 export const actions: Actions = {
   create: async ({ request }) => {
     const form = await request.formData();
-    const accountId = String(form.get('accountId') || '');
-    const folderIds = form.getAll('folderId').map(String).filter(Boolean);
+    // Each choice is `accountId|folderId`, so one view can mix folders from several accounts.
+    const picks = form.getAll('folder').map(String).filter(Boolean).map((value) => { const at = value.indexOf('|'); return { accountId: value.slice(0, at), folderId: value.slice(at + 1) }; });
     const parser = String(form.get('parser') || '') as PipelineParser;
     const name = String(form.get('name') || '').trim();
     if (!['shop', 'health', 'generic'].includes(parser)) return fail(400, { error: 'Choose a view type.' });
     try { await updateState((state) => {
-      const account = state.accounts.find((item) => item.id === accountId);
-      if (!account) throw new Error('Choose a connected account.');
-      const source = account.provider;
-      const folders = folderIds.map((id) => account.folders.find((item) => item.id === id)).filter((item) => item !== undefined);
-      if (!folders.length || folders.length !== folderIds.length) throw new Error('Choose at least one regular folder or label.');
-      const id = slug(`${account.id}-${name || parser}`);
+      const selected = picks.map((pick) => {
+        const account = state.accounts.find((item) => item.id === pick.accountId);
+        const folder = account?.folders.find((item) => item.id === pick.folderId);
+        return account && folder ? { id: folder.id, name: folder.path || folder.name, accountId: account.id, source: account.provider } : undefined;
+      }).filter((item) => item !== undefined);
+      if (!selected.length || selected.length !== picks.length) throw new Error('Choose at least one regular folder or label.');
+      const first = selected[0];
+      const accountIds = new Set(selected.map((folder) => folder.accountId));
+      const id = slug(`${accountIds.size > 1 ? 'multi' : first.accountId}-${name || parser}`);
       if (state.pipelines.some((item) => item.id === id)) throw new Error('That view name is already configured.');
-      const selected = folders.map((folder) => ({ id: folder.id, name: folder.path || folder.name }));
-      const defaultName = parser === 'shop' ? 'Shopping' : parser === 'health' ? 'Health' : folders[0].name;
-      state.pipelines.push({ id, name: name || defaultName, source, accountId: account.id, folderId: selected[0].id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
+      const defaultName = parser === 'shop' ? 'Shopping' : parser === 'health' ? 'Health' : first.name;
+      state.pipelines.push({ id, name: name || defaultName, source: first.source, accountId: first.accountId, folderId: first.id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
     }); return { created: true }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not create workflow.' }); }
   },
   sync: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
-    try { let result = { scanned: 0, added: 0 }; await updateState(async (state) => { const pipeline = state.pipelines.find((item) => item.id === id); if (!pipeline) throw new Error('Email workflow not found.'); result = pipeline.source === 'gmail' ? await syncGmailPipeline(state, pipeline) : await syncPipeline(state, pipeline); }); return { synced: id, ...result }; }
+    try { let result = { scanned: 0, added: 0 }; await updateState(async (state) => { const pipeline = state.pipelines.find((item) => item.id === id); if (!pipeline) throw new Error('Email workflow not found.'); result = await syncView(state, pipeline); }); return { synced: id, ...result }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
   },
   toggle: async ({ request }) => {
@@ -73,7 +76,7 @@ export const actions: Actions = {
   // Views on the account stay (paused, error shown) so synced items are never lost.
   disconnectAccount: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
-    await updateState((s)=>{ s.accounts=s.accounts.filter((item)=>item.id!==id); for(const p of s.pipelines.filter((item)=>item.accountId===id)){p.enabled=false;p.lastError='Account disconnected';} });
+    await updateState((s)=>{ s.accounts=s.accounts.filter((item)=>item.id!==id); for(const p of s.pipelines.filter((item)=>pipelineFolders(item).some((f)=>f.accountId===id))){p.lastError='Account disconnected';if(!hasAccount(s,p))p.enabled=false;} });
     return {disconnected:id};
   }
 };

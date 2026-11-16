@@ -1,11 +1,22 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, applyUnread, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
+import { accountId, applyUnread, validOAuthState, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 async function json(response: Response) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error_description || body.error?.message || body.error || `Google HTTP ${response.status}`);
   return body;
+}
+
+/** Gmail API fetch with bounded retry/backoff for rate limits (429/403 rateLimit) and 5xx. */
+export async function gmailFetch(url: string, init: RequestInit & { signal?: AbortSignal }, attempts = 4): Promise<Response> {
+  for (let n = 0; ; n++) {
+    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
+    const transient = response.status === 429 || response.status >= 500;
+    if (!transient || n >= attempts - 1) return response;
+    const wait = Number(response.headers.get('retry-after')) * 1000 || 1000 * 2 ** n;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 15000)));
+  }
 }
 
 export function beginGmailOAuth(state: AadOSState, redirectUri: string) {
@@ -15,7 +26,7 @@ export function beginGmailOAuth(state: AadOSState, redirectUri: string) {
 }
 
 export async function finishGmailOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
-  if (!state.gmail.oauthState || returnedState !== state.gmail.oauthState || state.gmail.oauthStateExpiresAt < Date.now()) throw new Error('Gmail OAuth state is invalid or expired');
+  if (!validOAuthState(state.gmail.oauthState, state.gmail.oauthStateExpiresAt, returnedState)) throw new Error('Gmail OAuth state is invalid or expired');
   const tokens = await json(await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: state.gmail.clientId, client_secret: state.gmail.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }), signal: AbortSignal.timeout(15000) }));
   state.gmail.oauthState = ''; state.gmail.oauthStateExpiresAt = 0;
   // Identify the mailbox first, then add it or refresh the tokens of an existing one.
@@ -44,11 +55,11 @@ export async function discoverGmailFolders(state: AadOSState, account: MailAccou
 }
 
 export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline) {
-  const account = state.accounts.find((item) => item.id === pipeline.accountId && item.provider === 'gmail');
-  if (!account) throw new Error('The Gmail account for this view is no longer connected.');
   let scanned = 0;
   let added = 0;
-  for (const folder of pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }]) {
+  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'gmail')) {
+    const account = state.accounts.find((item) => item.id === folder.accountId && item.provider === 'gmail');
+    if (!account) continue;
     const result = await syncGmailLabel(state, account, pipeline, folder.id);
     scanned += result.scanned;
     added += result.added;
@@ -65,7 +76,7 @@ const MAX_PAGES = 200;
 const CONCURRENCY = 4;
 
 async function gmailItem(headers: Record<string, string>, pipeline: Pipeline, messageId: string): Promise<PipelineItem> {
-  const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers, signal: AbortSignal.timeout(20000) }));
+  const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers }));
   const messageHeaders = Array.isArray(message.payload?.headers) ? message.payload.headers : [];
   const header = (name: string) => String(messageHeaders.find((item: Record<string, unknown>) => String(item.name).toLowerCase() === name.toLowerCase())?.value || '');
   const subject = clean(header('Subject'));
@@ -82,12 +93,14 @@ export async function syncGmailPage(state: AadOSState, account: MailAccount, pip
   const known = knownMessageIds(state, pipeline.id);
   const query = new URLSearchParams({ labelIds: folderId, maxResults: '100' });
   if (cursor && cursor !== '0') query.set('pageToken', cursor);
-  const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
+  const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers }));
   const rows: Record<string, unknown>[] = Array.isArray(list.messages) ? list.messages : [];
   const unknownIds = rows.map((row) => String(row.id || '')).filter((id) => id && !known.has(id));
   const fresh = unknownIds.slice(0, maxAdd);
   for (let i = 0; i < fresh.length; i += CONCURRENCY) {
     const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
+    const threads = new Map(rows.map((row) => [String(row.id || ''), String(row.threadId || '')]));
+    for (const item of items) { item.accountId = account.id; item.threadId = threads.get(item.messageId) || undefined; }
     state.items.push(...items);
   }
   return { scanned: rows.length, added: fresh.length, unknown: unknownIds.length, next: String(list.nextPageToken || '') };
@@ -103,10 +116,10 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
     query.append('labelIds', folderId);
     if (folderId !== 'UNREAD') query.append('labelIds', 'UNREAD');
     if (pageToken) query.set('pageToken', pageToken);
-    const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
+    const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers }));
     for (const row of Array.isArray(list.messages) ? list.messages : []) unread.add(String(row.id || ''));
     pageToken = String(list.nextPageToken || '');
-    if (!pageToken) { applyUnread(state, pipeline, folderId, unread); return; }
+    if (!pageToken) { applyUnread(state, pipeline, folderId, unread, account.id); return; }
   }
 }
 
@@ -126,7 +139,7 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
 /** Fetch one message body on demand (prefers HTML, falls back to plain text). */
 export async function fetchGmailBody(state: AadOSState, account: MailAccount, item: PipelineItem): Promise<{ html: string; text: string }> {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
-  const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}?format=full`, { headers, signal: AbortSignal.timeout(20000) }));
+  const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}?format=full`, { headers }));
   const found: Record<string, string> = {};
   const walk = (part: Record<string, any> | undefined) => {
     if (!part) return;

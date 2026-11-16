@@ -13,7 +13,10 @@ export type Pipeline = {
   accountId: string;
   folderId: string;
   folderName: string;
-  folders: { id: string; name: string }[];
+  /** Each folder may live in a different account (a view can span accounts); missing = the view's own account/source. */
+  folders: { id: string; name: string; accountId?: string; source?: 'zoho' | 'gmail' }[];
+  /** Hidden per-account inbox feed that powers the unified inbox; not shown as a view. */
+  system?: boolean;
   parser: PipelineParser;
   enabled: boolean;
   cursor: number;
@@ -34,6 +37,16 @@ export type PipelineItem = {
   unread?: boolean;
   /** Opened in AadOS — local only (mailbox access is read-only), so a later sync can't flip it back. */
   seen?: boolean;
+  /** Provider conversation id (Gmail threadId) when known. */
+  threadId?: string;
+  /** Local-only overrides; the mailbox is never modified. */
+  categories?: string[];
+  importance?: 'high' | 'normal';
+  actionState?: 'actionable' | 'dismissed' | 'reviewed';
+  /** ISO time a local follow-up was created for this message. */
+  followUp?: string;
+  /** Mailbox the message came from (views can span accounts); missing = the view's account. */
+  accountId?: string;
   /** Zoho folder holding the message (needed to fetch its body). */
   folderId?: string;
   facts: Record<string, string | number | boolean>;
@@ -51,6 +64,9 @@ export type MailAccount = {
   refreshToken: string;
   expiresAt: number;
   folders: ZohoFolder[];
+  /** Connection health, updated by syncs. */
+  lastSync?: string;
+  lastError?: string;
 };
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
@@ -65,6 +81,14 @@ const emptyState = (): AadOSState => ({
   items: [],
   dismissed: []
 });
+
+/** A view's folders, each resolved to its own account and provider. */
+export const pipelineFolders = (pipeline: Pipeline) => (pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }])
+  .map((folder) => ({ ...folder, accountId: folder.accountId || pipeline.accountId, source: (folder.source || pipeline.source) as 'zoho' | 'gmail' }));
+/** True if at least one of the view's accounts is still connected. */
+export const hasAccount = (state: AadOSState, pipeline: Pipeline) => pipelineFolders(pipeline).some((folder) => state.accounts.some((account) => account.id === folder.accountId));
+
+export { validOAuthState } from './oauth-state.ts';
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
 
@@ -146,14 +170,39 @@ export function knownMessageIds(state: AadOSState, pipelineId: string): Set<stri
  * Make read state match the mailbox: items of the folder in `unreadIds` become unread, the rest read.
  * Items with no recorded folder are only reset when the view has a single folder (else only flagged unread).
  */
-export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: string, unreadIds: Set<string>) {
-  const single = (pipeline.folders?.length || 1) <= 1;
+export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: string, unreadIds: Set<string>, account: string) {
+  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1;
   for (const item of state.items) {
-    if (item.pipelineId !== pipeline.id) continue;
+    if (item.pipelineId !== pipeline.id || (item.accountId || pipeline.accountId) !== account) continue;
     if (unreadIds.has(item.messageId)) { item.unread = true; item.folderId ||= folderId; }
     else if (item.folderId === folderId || (!item.folderId && single)) item.unread = false;
   }
 }
+
+/** Inbox folder of an account (Gmail INBOX label, Zoho Inbox folder), if discovered. */
+const inboxFolder = (account: MailAccount) => account.provider === 'gmail'
+  ? { id: 'INBOX', name: 'Inbox' }
+  : account.folders.find((folder) => /^inbox$/i.test(folder.type) || /^\/?inbox$/i.test(folder.path || folder.name));
+
+export const missingInboxPipelines = (state: AadOSState) => state.accounts.some((account) => inboxFolder(account) && !state.pipelines.some((item) => item.id === `inbox-${account.id}`));
+
+/**
+ * Give every account a hidden "Inbox" feed so the unified inbox works without creating views.
+ * Idempotent; returns true when something was added.
+ */
+export function ensureInboxPipelines(state: AadOSState): boolean {
+  let changed = false;
+  for (const account of state.accounts) {
+    const id = `inbox-${account.id}`;
+    const folder = inboxFolder(account);
+    if (!folder || state.pipelines.some((item) => item.id === id)) continue;
+    state.pipelines.push({ id, name: 'Inbox', source: account.provider, accountId: account.id, folderId: folder.id, folderName: 'Inbox', folders: [{ id: folder.id, name: 'Inbox', accountId: account.id, source: account.provider }], system: true, parser: 'generic', enabled: true, cursor: 0, lastSync: '', lastError: '' });
+    changed = true;
+  }
+  return changed;
+}
+
+export const visiblePipelines = (state: AadOSState) => state.pipelines.filter((pipeline) => !pipeline.system);
 
 export function publicState(state: AadOSState) {
   return {
@@ -161,8 +210,8 @@ export function publicState(state: AadOSState) {
     dataCenter: state.zoho.dataCenter,
     gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
     // Tokens never leave the server.
-    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders })),
-    pipelines: state.pipelines,
-    itemCounts: Object.fromEntries(state.pipelines.map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
+    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '' })),
+    pipelines: visiblePipelines(state),
+    itemCounts: Object.fromEntries(visiblePipelines(state).map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };
 }

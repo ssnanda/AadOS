@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { readState } from '$lib/server/aados-store';
+import { hasAccount, readState } from '$lib/server/aados-store';
 import { cancelFullSync, startFullSync, syncJob } from '$lib/server/sync-job';
 
 export const GET = () => json(syncJob());
@@ -10,7 +10,7 @@ export const POST = async ({ request }) => {
   if (body?.cancel) { cancelFullSync(); return json(syncJob()); }
   const state = await readState();
   const wanted: string[] = Array.isArray(body?.ids) && body.ids.length ? body.ids.map(String) : state.pipelines.map((item) => item.id);
-  const ids = wanted.filter((id) => state.pipelines.some((item) => item.id === id && state.accounts.some((account) => account.id === item.accountId)));
+  const ids = wanted.filter((id) => state.pipelines.some((item) => item.id === id && hasAccount(state, item)));
   if (!ids.length) return json({ ...syncJob(), error: 'No connected views to sync.' }, { status: 400 });
   startFullSync(ids);
   return json(syncJob());

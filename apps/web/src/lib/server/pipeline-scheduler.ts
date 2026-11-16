@@ -1,7 +1,6 @@
 import os from 'node:os';
-import { updateState } from './aados-store';
-import { syncPipeline } from './zoho';
-import { syncGmailPipeline } from './gmail';
+import { ensureInboxPipelines, hasAccount, updateState } from './aados-store';
+import { syncView } from './pipeline-sync';
 import { syncJob } from './sync-job';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
@@ -33,14 +32,14 @@ async function pass() {
   globalThis.__aadosSyncRunning = true;
   try {
     await updateState(async (state) => {
+      ensureInboxPipelines(state);
       for (const pipeline of state.pipelines.filter((item) => item.enabled)) {
         // Re-check between views so a long sync backs off when the machine gets busy.
         const stop = busyReason();
         if (stop) { console.log(`[aados] scheduled sync paused: ${stop}`); return; }
         try {
-          if (!state.accounts.some((account) => account.id === pipeline.accountId)) continue;
-          if (pipeline.source === 'gmail') await syncGmailPipeline(state, pipeline);
-          else await syncPipeline(state, pipeline);
+          if (!hasAccount(state, pipeline)) continue;
+          await syncView(state, pipeline);
         }
         catch (cause) { pipeline.lastError = cause instanceof Error ? cause.message : 'Sync failed'; }
       }

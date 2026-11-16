@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, applyUnread, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
+import { accountId, applyUnread, validOAuthState, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
@@ -27,7 +27,7 @@ export function beginOAuth(state: AadOSState, redirectUri: string) {
 }
 
 export async function finishOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
-  if (!state.zoho.oauthState || returnedState !== state.zoho.oauthState || state.zoho.oauthStateExpiresAt < Date.now()) throw new Error('Zoho OAuth state is invalid or expired');
+  if (!validOAuthState(state.zoho.oauthState, state.zoho.oauthStateExpiresAt, returnedState)) throw new Error('Zoho OAuth state is invalid or expired');
   const form = new URLSearchParams({ code, grant_type: 'authorization_code', client_id: state.zoho.clientId, client_secret: state.zoho.clientSecret, redirect_uri: redirectUri });
   const tokens = await jsonResponse(await fetch(`${accountsHost(state.zoho.dataCenter)}/oauth/v2/token`, { method: 'POST', body: form, signal: AbortSignal.timeout(15000) }));
   state.zoho.oauthState = '';
@@ -73,11 +73,11 @@ export async function discoverAccountAndFolders(state: AadOSState, account: Mail
 }
 
 export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
-  const account = state.accounts.find((item) => item.id === pipeline.accountId && item.provider === 'zoho');
-  if (!account) throw new Error('The Zoho account for this view is no longer connected.');
   let scanned = 0;
   let added = 0;
-  for (const folder of pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }]) {
+  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'zoho')) {
+    const account = state.accounts.find((item) => item.id === folder.accountId && item.provider === 'zoho');
+    if (!account) continue;
     const result = await syncFolder(state, account, pipeline, folder.id);
     scanned += result.scanned;
     added += result.added;
@@ -121,7 +121,7 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
   const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
   const unknownRows = rows.filter((row) => { const id = String(row.messageId || ''); return id && !known.has(id); });
   // Refresh read state (and folder) of mail we already have, so reading it in the mailbox clears it here too.
-  const mine = new Map(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => [item.messageId, item]));
+  const mine = new Map(state.items.filter((item) => item.pipelineId === pipeline.id && (item.accountId || pipeline.accountId) === account.id).map((item) => [item.messageId, item]));
   for (const row of rows) {
     const item = mine.get(String(row.messageId || ''));
     if (!item) continue;
@@ -131,6 +131,7 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
   const fresh = unknownRows.slice(0, maxAdd);
   for (let i = 0; i < fresh.length; i += CONCURRENCY) {
     const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((row) => zohoItem(state, account, pipeline, folderId, row)));
+    for (const item of items) item.accountId = account.id;
     state.items.push(...items);
   }
   return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1) };
@@ -149,7 +150,7 @@ export async function reconcileZohoUnread(state: AadOSState, account: MailAccoun
     const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
     const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
     for (const row of rows) if (String(row.status) === '0') unread.add(String(row.messageId || ''));
-    if (rows.length < PAGE_SIZE) { applyUnread(state, pipeline, folderId, unread); return; }
+    if (rows.length < PAGE_SIZE) { applyUnread(state, pipeline, folderId, unread, account.id); return; }
   }
 }
 
@@ -168,7 +169,7 @@ async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pip
 
 /** Fetch one message body (HTML or text) on demand. Tries the stored folder, then the view's folders. */
 export async function fetchZohoBody(state: AadOSState, account: MailAccount, pipeline: Pipeline, item: PipelineItem): Promise<{ html: string; text: string }> {
-  const folders = [item.folderId, ...(pipeline.folders?.length ? pipeline.folders.map((f) => f.id) : [pipeline.folderId])].filter((id, i, all): id is string => Boolean(id) && all.indexOf(id) === i);
+  const folders = [item.folderId, ...pipelineFolders(pipeline).filter((f) => f.accountId === account.id).map((f) => f.id)].filter((id, i, all): id is string => Boolean(id) && all.indexOf(id) === i);
   let last: unknown = new Error('Message not found');
   for (const folderId of folders) {
     try {

@@ -8,7 +8,7 @@ defmodule AadOS.Api.Controllers.EmailController do
       read_only: true,
       accounts: [],
       counts: %{all: 0, unread: 0, needs_reply: 0, important: 0},
-      features: %{gmail: false, microsoft: false, ai_triage: false}
+      features: %{gmail: false, ai_triage: false}
     })
   end
 

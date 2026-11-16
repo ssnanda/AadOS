@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit';
-import { readState, updateState } from '$lib/server/aados-store';
+import { hasAccount, readState, updateState } from '$lib/server/aados-store';
 import { startFullSync, syncJob } from '$lib/server/sync-job';
 
 // Wipes every stored email (and the removed-email memory) in all views, then starts a full sync.
@@ -9,7 +9,7 @@ export const POST = async () => {
   const purged = (await readState()).items.length;
   await updateState((state) => { state.items = []; state.dismissed = []; for (const pipeline of state.pipelines) { pipeline.lastSync = ''; pipeline.lastError = ''; } });
   const state = await readState();
-  const ids = state.pipelines.filter((item) => state.accounts.some((account) => account.id === item.accountId)).map((item) => item.id);
+  const ids = state.pipelines.filter((item) => hasAccount(state, item)).map((item) => item.id);
   if (ids.length) startFullSync(ids);
   return json({ purged, started: ids.length > 0 });
 };

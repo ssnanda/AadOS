@@ -15,11 +15,10 @@
 - [x] Folder-driven pipelines with Shop, Health and generic parsers
 - [x] Manual and hourly incremental Zoho folder synchronization
 - [x] Gmail `gmail.readonly`, user-label discovery and folder-driven synchronization
-- [ ] Microsoft Graph `Mail.Read` grant
 - [ ] Encrypted tokens in Postgres, per-account access isolation, revocation
 - [ ] CloudNativePG deployment and Ecto migrations, Row-Level Security
 - [ ] Oban incremental sync, dedupe, cursor/checkpoint and retry safety
-- [ ] Unified inbox, search, sender/account/thread grouping and pagination
+- [x] Unified inbox, search, sender/account/thread grouping and pagination (unverified build, see development-handoff.md)
 - [x] Show unread dashboard counts accurately
 - [ ] Show actionable and account connection errors accurately
 

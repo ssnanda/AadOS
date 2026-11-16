@@ -1,4 +1,4 @@
-import { readState, updateState, type PageResult } from './aados-store';
+import { pipelineFolders, readState, updateState, type PageResult } from './aados-store';
 import { reconcileZohoUnread, syncZohoPage } from './zoho';
 import { reconcileGmailUnread, syncGmailPage } from './gmail';
 
@@ -28,8 +28,7 @@ async function run(job: SyncJob, ids: string[]) {
       const pipeline = (await readState()).pipelines.find((item) => item.id === id);
       if (!pipeline) { job.done++; continue; }
       job.current = pipeline.name;
-      const folders = pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }];
-      for (const folder of folders) {
+      for (const folder of pipelineFolders(pipeline)) {
         let cursor = '0';
         while (cursor && !job.cancel) {
           let result: PageResult | undefined;
@@ -39,9 +38,9 @@ async function run(job: SyncJob, ids: string[]) {
               await updateState(async (state) => {
                 const current = state.pipelines.find((item) => item.id === id);
                 if (!current) throw new Error('This view was removed.');
-                const account = state.accounts.find((item) => item.id === current.accountId && item.provider === current.source);
+                const account = state.accounts.find((item) => item.id === folder.accountId && item.provider === folder.source);
                 if (!account) throw new Error('The account for this view is no longer connected.');
-                result = current.source === 'gmail' ? await syncGmailPage(state, account, current, folder.id, cursor) : await syncZohoPage(state, account, current, folder.id, cursor);
+                result = folder.source === 'gmail' ? await syncGmailPage(state, account, current, folder.id, cursor) : await syncZohoPage(state, account, current, folder.id, cursor);
               });
               break;
             } catch (cause) {
@@ -56,8 +55,8 @@ async function run(job: SyncJob, ids: string[]) {
         // After the folder's last page, align read state with the mailbox's unread list.
         if (!job.cancel) await updateState(async (state) => {
           const current = state.pipelines.find((item) => item.id === id);
-          const account = current && state.accounts.find((item) => item.id === current.accountId && item.provider === current.source);
-          if (current && account) await (current.source === 'gmail' ? reconcileGmailUnread : reconcileZohoUnread)(state, account, current, folder.id);
+          const account = current && state.accounts.find((item) => item.id === folder.accountId && item.provider === folder.source);
+          if (current && account) await (folder.source === 'gmail' ? reconcileGmailUnread : reconcileZohoUnread)(state, account, current, folder.id);
         });
       }
       if (!job.cancel) await updateState((state) => { const current = state.pipelines.find((item) => item.id === id); if (current) { current.lastSync = new Date().toISOString(); current.lastError = ''; } });
