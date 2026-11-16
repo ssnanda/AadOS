@@ -2,10 +2,12 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { SESSION_COOKIE, validSession } from '$lib/server/auth';
 import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
 import { initStorage } from '$lib/server/aados-store';
+import { startReminderScheduler } from '$lib/server/reminder-scheduler';
 
 const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback']);
 initStorage();
 startPipelineScheduler();
+startReminderScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {
   const authenticated = validSession(event.cookies.get(SESSION_COOKIE));

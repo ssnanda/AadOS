@@ -15,6 +15,7 @@ async function syncGoogle(http: Http, tokens: Tokens, state: AadOSState, account
   const token = await tokens.google(state, account);
   const calendars = await listCalendars(http, token, account.id);
   for (const calendar of calendars) {
+    if (state.calendarDisabled.includes(calendar.id)) { dropCalendar(state, calendar.id); continue; }
     const result = await syncCalendar(http, token, calendar, state.calendarSync[calendar.id] || '', new Date(now - 30 * DAY).toISOString());
     state.events = mergeGoogle(state.events, calendar.id, result);
     if (result.nextSyncToken) state.calendarSync[calendar.id] = result.nextSyncToken;
@@ -25,9 +26,17 @@ async function syncGoogle(http: Http, tokens: Tokens, state: AadOSState, account
 async function syncZoho(http: Http, tokens: Tokens, state: AadOSState, account: MailAccount, now: number) {
   const token = await tokens.zoho(state, account);
   const calendars = await listZohoCalendars(http, state.zoho.dataCenter, token, account.id);
-  for (const calendar of calendars) state.events = replaceCalendarEvents(state.events, calendar.id, await fetchZohoEvents(http, state.zoho.dataCenter, token, calendar, new Date(now - 7 * DAY), new Date(now + 90 * DAY)));
+  for (const calendar of calendars) if (state.calendarDisabled.includes(calendar.id)) dropCalendar(state, calendar.id); else state.events = replaceCalendarEvents(state.events, calendar.id, await fetchZohoEvents(http, state.zoho.dataCenter, token, calendar, new Date(now - 7 * DAY), new Date(now + 90 * DAY)));
   return calendars;
 }
+
+/** A disabled calendar keeps its listing (so it can be re-enabled) but no events or sync token. */
+function dropCalendar(state: AadOSState, calendarId: string) {
+  state.events = state.events.filter((e) => e.calendarId !== calendarId);
+  delete state.calendarSync[calendarId];
+}
+
+const PERMISSION = /insufficient|forbidden|unauthori[sz]ed|invalid_grant|invalid[_ ]?(oauth)?token|permission|HTTP 40[13]|expired or was revoked/i;
 
 /** Sync every calendar-enabled account (or one). Per-account errors are recorded, not thrown. */
 export async function syncCalendars(state: AadOSState, only?: string, now = Date.now(), deps: { http?: Http; tokens?: Tokens } = {}): Promise<{ accounts: number; failed: number }> {
@@ -44,7 +53,10 @@ export async function syncCalendars(state: AadOSState, only?: string, now = Date
       state.calendars = pruned.calendars; state.events = pruned.events; state.calendarSync = pruned.tokens;
       account.calendarLastSync = new Date(now).toISOString(); account.calendarError = '';
     } catch (cause) {
-      failed++; account.calendarError = cause instanceof Error ? cause.message : 'Calendar sync failed';
+      failed++;
+      const message = cause instanceof Error ? cause.message : 'Calendar sync failed';
+      // Existing events are kept; the owner re-grants access with "Enable calendar".
+      account.calendarError = PERMISSION.test(message) ? `Calendar permission is missing or expired (${message}). Use “Enable calendar” to grant it again.` : message;
     }
   }
   return { accounts, failed };

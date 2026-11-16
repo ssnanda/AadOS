@@ -1,6 +1,6 @@
 // Google Calendar (read-only, scope calendar.readonly) adapter. Mock-tested; needs owner re-consent to run live.
 // Uses documented endpoints: calendarList.list and events.list with pageToken/syncToken (HTTP 410 => full resync).
-import type { CalEvent, CalendarInfo } from './model.ts';
+import { findMeetingUrl, type CalEvent, type CalendarInfo } from './model.ts';
 
 const BASE = 'https://www.googleapis.com/calendar/v3';
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -42,10 +42,15 @@ export function mapEvent(raw: Raw, calendar: CalendarInfo): CalEvent | null {
   const status = raw.status === 'cancelled' ? 'cancelled' : raw.status === 'tentative' ? 'tentative' : 'confirmed';
   if (!start && status !== 'cancelled') return null;
   const orig = when(raw.originalStartTime, calendar.timeZone);
+  const video = (raw.conferenceData?.entryPoints || []).find((e: Raw) => e.entryPointType === 'video')?.uri;
+  const meetingUrl = String(raw.hangoutLink || video || findMeetingUrl(raw.location, raw.description) || '');
+  const attendees = Array.isArray(raw.attendees) ? raw.attendees.filter((a: Raw) => a?.email && !a.resource).map((a: Raw) => ({ email: String(a.email), ...(a.displayName ? { name: String(a.displayName) } : {}), ...(a.responseStatus ? { status: String(a.responseStatus) } : {}) })) : [];
   return {
     id: `${calendar.accountId}:${raw.id}`, accountId: calendar.accountId, calendarId: calendar.id, provider: 'google', providerEventId: String(raw.id),
     title: String(raw.summary || '(no title)'), description: String(raw.description || ''), location: String(raw.location || ''),
     start: start?.iso || orig?.iso || '', end: end?.iso || start?.iso || '', allDay: start?.allDay ?? orig?.allDay ?? false, timeZone: start?.zone || calendar.timeZone, status,
+    ...(raw.organizer?.email ? { organizer: String(raw.organizer.displayName ? `${raw.organizer.displayName} <${raw.organizer.email}>` : raw.organizer.email) } : {}),
+    ...(attendees.length ? { attendees } : {}), ...(meetingUrl ? { meetingUrl } : {}), ...(raw.htmlLink ? { htmlLink: String(raw.htmlLink) } : {}),
     ...(Array.isArray(raw.recurrence) ? { recurrence: raw.recurrence.map(String) } : {}),
     ...(raw.recurringEventId ? { recurringEventId: String(raw.recurringEventId), originalStart: orig?.iso } : {})
   };

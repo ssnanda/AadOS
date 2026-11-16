@@ -8,7 +8,7 @@ import { clearCalendarData, syncCalendars } from '$lib/server/calendar-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-export const load: PageServerLoad = async ({ url }) => ({ ...publicState(await readState()), zohoRedirect: `${url.origin}/oauth/zoho/callback`, gmailRedirect: `${url.origin}/oauth/gmail/callback`, error: url.searchParams.get('error') || '' });
+export const load: PageServerLoad = async ({ url }) => { const state = await readState(); return { ...publicState(state), calendars: state.calendars.map((c) => ({ id: c.id, name: c.name, accountId: c.accountId, color: c.color, enabled: !state.calendarDisabled.includes(c.id) })), zohoRedirect: `${url.origin}/oauth/zoho/callback`, gmailRedirect: `${url.origin}/oauth/gmail/callback`, error: url.searchParams.get('error') || '' }; };
 export const actions: Actions = {
   create: async ({ request }) => {
     const form = await request.formData();
@@ -104,6 +104,16 @@ export const actions: Actions = {
     const id = String((await request.formData()).get('id') || '');
     try { await updateStateDetached(async (s) => { await syncCalendars(s, id); }); return { calendarSynced: id }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Calendar sync failed.' }); }
+  },
+  // Per-calendar on/off: a disabled calendar stays listed but is not synced or shown.
+  toggleCalendar: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    await updateState((s) => {
+      if (!s.calendars.some((c) => c.id === id)) return;
+      if (s.calendarDisabled.includes(id)) s.calendarDisabled = s.calendarDisabled.filter((x) => x !== id);
+      else { s.calendarDisabled.push(id); s.events = s.events.filter((e) => e.calendarId !== id); delete s.calendarSync[id]; }
+    });
+    return { calendarToggled: id };
   },
   clearCalendar: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');

@@ -30,7 +30,8 @@ export function mergeSync(latest: AadOSState, before: AadOSState, after: AadOSSt
     for (const field of ACCOUNT_FIELDS) if (JSON.stringify(account[field]) !== JSON.stringify(old[field])) (target as Record<string, unknown>)[field] = account[field];
   }
   // Calendar data is written only by calendar syncs, so take their result as a whole.
-  for (const key of ['calendars', 'events', 'calendarSync'] as const) if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) (latest as Record<string, unknown>)[key] = after[key];
+  for (const key of ['calendars', 'events', 'calendarSync'] as const) // calendarDisabled/reminders/prefs are user-edited: never taken from a sync snapshot
+  if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) (latest as Record<string, unknown>)[key] = after[key];
   for (const pipeline of after.pipelines) {
     const target = latest.pipelines.find((p) => p.id === pipeline.id), old = before.pipelines.find((p) => p.id === pipeline.id);
     if (!target || !old) continue;

@@ -8,6 +8,12 @@ export type CalEvent = {
   title: string; description: string; location: string;
   /** Timed events: ISO UTC instants. All-day events: YYYY-MM-DD (end exclusive). */
   start: string; end: string; allDay: boolean; timeZone: string; status: 'confirmed' | 'tentative' | 'cancelled';
+  organizer?: string;
+  attendees?: { email: string; name?: string; status?: string }[];
+  /** Online meeting URL (provider conference data, or a known meeting link found in location/description). */
+  meetingUrl?: string;
+  /** Link to open the event at the provider (read-only reference). */
+  htmlLink?: string;
   /** RFC 5545 lines (RRULE / EXDATE) for a recurring master. */
   recurrence?: string[];
   /** Set on an edited/cancelled single instance of a recurring event. */
@@ -17,6 +23,10 @@ export type Occurrence = CalEvent & { occurrenceStart: string };
 
 const DAY = 86_400_000;
 const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+
+const MEETING = /https?:\/\/[^\s"'<>]*(?:zoom\.us|meet\.google\.com|meeting\.zoho\.[a-z.]+|webex\.com|whereby\.com|meet\.jit\.si|gotomeet\.me|gotomeeting\.com)[^\s"'<>]*/i;
+/** First recognised online-meeting link in free text, or ''. */
+export const findMeetingUrl = (...texts: (string | undefined)[]) => texts.map((t) => t?.match(MEETING)?.[0]).find(Boolean) || '';
 
 // ---------- time zones ----------
 const fmt = new Map<string, Intl.DateTimeFormat>();

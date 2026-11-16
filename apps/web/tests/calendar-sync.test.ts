@@ -7,7 +7,7 @@ import { mergeSync } from '../src/lib/server/sync-merge.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 const tokens = { google: async () => 'GTOKEN', zoho: async () => 'ZTOKEN' };
-const mk = () => ({ calendars: [], events: [], calendarSync: {}, zoho: { dataCenter: 'in' },
+const mk = () => ({ calendars: [], events: [], calendarSync: {}, calendarDisabled: [] as string[], zoho: { dataCenter: 'in' },
   accounts: [{ id: 'g1', provider: 'gmail', email: 'a@x.com', calendar: true }, { id: 'z1', provider: 'zoho', email: 'z@x.com', calendar: true }, { id: 'g2', provider: 'gmail', email: 'no@x.com' }] }) as any;
 const NOW = Date.parse('2026-11-16T12:00:00Z');
 
@@ -55,7 +55,7 @@ test('provider failure is recorded per account and does not stop the others or l
   const failing = async (url: string) => url.includes('googleapis') ? json({ error: { message: 'Forbidden' } }, 403) : fakeProviders().http(url);
   const r = await syncCalendars(s, undefined, NOW, { http: failing as any, tokens });
   assert.deepEqual(r, { accounts: 2, failed: 1 });
-  assert.equal(s.accounts[0].calendarError, 'Forbidden'); assert.equal(s.accounts[1].calendarError, '');
+  assert.match(s.accounts[0].calendarError, /permission is missing or expired \(Forbidden\).*Enable calendar/); assert.equal(s.accounts[1].calendarError, '');
   assert.equal(s.events.length, 2); // earlier data kept
 });
 
@@ -90,4 +90,15 @@ test('merging a calendar sync result keeps concurrent mail edits (detached sync 
   mergeSync(latest, base, working);
   assert.equal(latest.events.length, 1); assert.deepEqual(latest.calendarSync, { c: 'S' }); assert.equal(latest.accounts[0].calendarLastSync, 'T');
   assert.equal(latest.items[0].actionState, 'reviewed'); assert.equal(latest.tasks.length, 1);
+});
+
+test('a disabled calendar stays listed but its events and sync token are dropped; re-enabling syncs it again', async () => {
+  const s = mk(); await syncCalendars(s, 'g1', NOW, { http: fakeProviders().http, tokens });
+  assert.equal(s.events.length, 1);
+  s.calendarDisabled = ['g1:primary'];
+  const off = fakeProviders(); await syncCalendars(s, 'g1', NOW, { http: off.http, tokens });
+  assert.equal(s.events.length, 0); assert.equal(s.calendarSync['g1:primary'], undefined); assert.equal(s.calendars.length, 1);
+  assert.ok(!off.calls.some((c) => c.url.includes('/events')));
+  s.calendarDisabled = []; await syncCalendars(s, 'g1', NOW, { http: fakeProviders().http, tokens });
+  assert.equal(s.events.length, 1);
 });

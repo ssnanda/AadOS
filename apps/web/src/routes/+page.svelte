@@ -4,14 +4,27 @@
   let { data }: { data: PageData } = $props();
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
+  const time = (iso: string) => new Date(iso).toLocaleTimeString([], { timeZone: data.tz, hour: 'numeric', minute: '2-digit' });
+  const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString([], { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
+  const stamp = (iso: string) => new Date(iso).toLocaleString([], { timeZone: data.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' });
   const when = (value: string) => value ? new Date(value).toLocaleString() : 'never';
 </script>
 <svelte:head><title>Dashboard · AadOS</title></svelte:head>
 <AppShell title="Dashboard">
   <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a href="/emails?view=needs-reply"><b>{data.inbox.needsReply}</b> need reply</a><a href="/emails?view=important"><b>{data.inbox.important}</b> important</a><a href="/emails?category=Bills"><b>{data.inbox.bills}</b> bills</a><a href="/emails?category=Renewals"><b>{data.inbox.renewals}</b> renewals</a><a href="/emails?category=Receipts"><b>{data.inbox.receipts}</b> receipts</a><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
+  <div class="quick"><a href="/calendar">▣ Open Calendar</a><a href="/tasks">☑ Add Task</a><a href="/reminders">◔ Create Reminder</a><a href="/emails">✉ Open Inbox</a>{#if data.calendar.enabled}<form method="POST" action="/calendar?/sync"><button>⇩ Sync Calendars</button></form>{/if}</div>
+  {#each data.calendar.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails#acct-{e.id}">Fix in Settings</a></div>{/each}
   {#each data.brief.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails">Fix in Settings</a></div>{/each}
   {#if data.accounts > 0}<div class="brief">
     {#snippet card(title: string, href: string, n: number, items: { key: string; subject: string; sender: string; due: string }[])}<div class="bc"><a class="bh" href={href}>{title}<b>{n}</b></a>{#if items.length}<ul>{#each items as m (m.key)}<li><span>{m.subject || '(no subject)'}</span>{#if m.due}<time>{m.due}</time>{/if}</li>{/each}</ul>{:else}<p class="muted">Nothing here.</p>{/if}</div>{/snippet}
+    <div class="bc"><a class="bh" href="/calendar?view=day">Today<b>{data.calendar.todayEvents.length}</b></a>
+      {#if !data.calendar.enabled}<p class="muted">Calendar not connected. <a href="/settings/emails">Enable</a></p>
+      {:else}{#if data.calendar.next}<p class="next">Next: <strong>{data.calendar.next.title}</strong> · {stamp(data.calendar.next.start)}</p>{/if}
+        {#if data.calendar.todayEvents.length}<ul>{#each data.calendar.todayEvents.slice(0, 5) as e (e.key)}<li><span>{e.title}</span><time>{e.allDay ? 'All day' : time(e.start)}</time></li>{/each}</ul>{:else}<p class="muted">No events today.</p>{/if}{/if}</div>
+    <div class="bc"><a class="bh" href="/calendar?view=week">Next 7 days<b>{data.calendar.weekTotal}</b></a>
+      {#if data.calendar.enabled}<ul class="wk">{#each data.calendar.week as d (d.date)}<li><a href="/calendar?view=day&date={d.date}">{dayName(d.date)}</a><time>{d.count ? `${d.count} event${d.count === 1 ? '' : 's'}` : '—'}</time></li>{/each}</ul>{:else}<p class="muted">Nothing here.</p>{/if}</div>
+    <div class="bc"><a class="bh" href="/reminders">Reminders<b>{data.reminders.waiting}</b></a>
+      {#if data.reminders.items.length}<ul>{#each data.reminders.items as r (r.id)}<li class:late={r.fired}><span>{r.title}</span><time>{stamp(r.at)}</time></li>{/each}</ul>{:else}<p class="muted">No reminders.</p>{/if}</div>
     {@render card('Needs reply', '/emails?view=needs-reply', data.brief.counts.needsReply, data.brief.needsReply)}
     {@render card('Important unread', '/emails?view=important', data.brief.counts.important, data.brief.important)}
     {@render card('Bills & renewals', '/emails?category=Bills', data.brief.counts.billsRenewals, data.brief.billsRenewals)}
@@ -31,6 +44,8 @@
   </div>
 </AppShell>
 <style>
+  .quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.quick a,.quick button{background:#fff;border:1px solid #e4e9f2;border-radius:9px;padding:7px 12px;font:inherit;font-size:12px;font-weight:700;color:#43516c;text-decoration:none;cursor:pointer}.quick a:hover,.quick button:hover{border-color:#8da2f0;color:#3157de}.quick form{margin:0}
+  .next{margin:0 0 6px;font-size:12px;color:#53607a}.bc .muted a,.wk a{color:#3157de;text-decoration:none;font-weight:700}.wk a{font-weight:600;color:#53607a}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:12px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
   .brief{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:20px}.bc{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:12px 14px}
   .bh{display:flex;justify-content:space-between;align-items:center;color:#29344c;text-decoration:none;font-weight:800;font-size:13px;margin-bottom:6px}.bh b{color:#3157de;font-size:18px}

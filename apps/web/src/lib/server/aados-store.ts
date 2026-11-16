@@ -59,7 +59,11 @@ export type PipelineItem = {
 type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number; pending?: PendingFlows };
 type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string; pending?: PendingFlows };
 /** Local to-do / reminder. `emailKey` links it to a source message (accountId:messageId). */
-export type Task = { id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string; priority?: 'high' | 'normal' | 'low'; completedAt?: string };
+export type Task = {
+  id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string; priority?: 'high' | 'normal' | 'low'; completedAt?: string;
+  notes?: string; /** HH:MM, local to prefs.timeZone */ dueTime?: string; tags?: string[]; /** Linked calendar occurrence: `${eventId}|${occurrenceStart}` */ eventKey?: string;
+};
+export type Prefs = { /** IANA zone; '' = not set yet (UTC is used until the browser reports one) */ timeZone: string; /** minutes before an event; null = no automatic event reminders */ eventLeadMinutes: number | null; /** HH:MM reminder time for tasks without a due time; '' = none */ taskReminderTime: string; weekStart: 0 | 1 };
 // One connected mailbox. `remoteId` is the Zoho mail account id (unused for Gmail).
 export type MailAccount = {
   id: string;
@@ -85,7 +89,7 @@ export type MailAccount = {
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string> };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -97,7 +101,10 @@ const emptyState = (): AadOSState => ({
   tasks: [],
   calendars: [],
   events: [],
-  calendarSync: {}
+  calendarSync: {},
+  calendarDisabled: [],
+  reminders: [],
+  prefs: defaultPrefs()
 });
 
 /** A view's folders, each resolved to its own account and provider. */
@@ -110,6 +117,8 @@ export { validOAuthState } from './oauth-state.ts';
 import { mergeSync } from './sync-merge.ts';
 import type { PendingFlows } from './oauth-state.ts';
 import type { CalEvent, CalendarInfo } from '../calendar/model.ts';
+import type { Reminder } from './reminders.ts';
+export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
 
@@ -157,6 +166,9 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     calendars: saved.calendars || [],
     events: saved.events || [],
     calendarSync: saved.calendarSync || {},
+    calendarDisabled: saved.calendarDisabled || [],
+    reminders: saved.reminders || [],
+    prefs: { ...defaultPrefs(), ...(saved.prefs || {}) },
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }

@@ -1,7 +1,7 @@
 // Zoho Calendar (read-only) mapping. Field names follow the Zoho Calendar API v1 documentation
 // (calendars list; events with dateandtime{start,end,timezone}, isallday, rrule) but have NOT been verified
 // against a live account: needs the owner's re-consent (ZohoCalendar.calendar.READ / ZohoCalendar.event.READ).
-import type { CalEvent, CalendarInfo } from './model.ts';
+import { findMeetingUrl, type CalEvent, type CalendarInfo } from './model.ts';
 
 type Raw = Record<string, any>;
 
@@ -31,10 +31,14 @@ export function mapZohoEvent(raw: Raw, calendar: CalendarInfo): CalEvent | null 
   if (!start) return null;
   const allDay = Boolean(raw.isallday) || start.allDay;
   const rrule: string[] = Array.isArray(raw.rrule) ? raw.rrule : raw.rrule ? [raw.rrule] : [];
+  // Documented shape: organizer is an email string; attendees are { email, status }.
+  const attendees = Array.isArray(raw.attendees) ? raw.attendees.filter((a: Raw) => a?.email).map((a: Raw) => ({ email: String(a.email), ...(a.status ? { status: String(a.status).toLowerCase() } : {}) })) : [];
+  const meetingUrl = findMeetingUrl(raw.location, raw.description);
   return {
     id: `${calendar.accountId}:${raw.uid}`, accountId: calendar.accountId, calendarId: calendar.id, provider: 'zoho', providerEventId: String(raw.uid),
     title: String(raw.title || '(no title)'), description: String(raw.description || ''), location: String(raw.location || ''),
     start: start.iso, end: (end || start).iso, allDay, timeZone: String(dt.timezone || calendar.timeZone), status: raw.status === 'cancelled' ? 'cancelled' : 'confirmed',
+    ...(raw.organizer ? { organizer: String(raw.organizer) } : {}), ...(attendees.length ? { attendees } : {}), ...(meetingUrl ? { meetingUrl } : {}),
     ...(rrule.length ? { recurrence: rrule.map((r) => (/^RRULE:/i.test(r) ? r : `RRULE:${r}`)) } : {})
   };
 }
@@ -44,7 +48,7 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 const calendarBase = (dc: string) => `https://calendar.zoho.${dc || 'com'}/api/v1`;
 
 async function getZoho(fetchImpl: Fetch, url: string, token: string): Promise<Raw> {
-  const res = await fetchImpl(url, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' } });
+  const res = await fetchImpl(url, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json+large' } }); // +large: documented way to include event descriptions
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(String(body?.message || body?.error || `Zoho Calendar HTTP ${res.status}`));
   return body;
