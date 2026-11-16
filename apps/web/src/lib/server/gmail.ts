@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { fetchRetry, needsReconnect } from './retry';
 import { accountId, applyUnread, validOAuthState, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
@@ -8,27 +9,22 @@ async function json(response: Response) {
   return body;
 }
 
-/** Gmail API fetch with bounded retry/backoff for rate limits (429/403 rateLimit) and 5xx. */
-export async function gmailFetch(url: string, init: RequestInit & { signal?: AbortSignal }, attempts = 4): Promise<Response> {
-  for (let n = 0; ; n++) {
-    const response = await fetch(url, { ...init, signal: AbortSignal.timeout(20000) });
-    const transient = response.status === 429 || response.status >= 500;
-    if (!transient || n >= attempts - 1) return response;
-    const wait = Number(response.headers.get('retry-after')) * 1000 || 1000 * 2 ** n;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 15000)));
-  }
-}
+/** Gmail API fetch with bounded retry/backoff for rate limits and 5xx. */
+export const gmailFetch = (url: string, init: RequestInit) => fetchRetry(url, init);
 
 export function beginGmailOAuth(state: AadOSState, redirectUri: string) {
   state.gmail.oauthState = randomBytes(24).toString('base64url');
   state.gmail.oauthStateExpiresAt = Date.now() + 10 * 60 * 1000;
-  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/gmail.readonly', access_type: 'offline', prompt: 'consent select_account', state: state.gmail.oauthState })}`;
+  // PKCE (S256): the verifier stays server-side and is sent only with the token exchange.
+  state.gmail.pkceVerifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(state.gmail.pkceVerifier).digest('base64url');
+  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/gmail.readonly', access_type: 'offline', prompt: 'consent select_account', state: state.gmail.oauthState, code_challenge: challenge, code_challenge_method: 'S256' })}`;
 }
 
 export async function finishGmailOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
   if (!validOAuthState(state.gmail.oauthState, state.gmail.oauthStateExpiresAt, returnedState)) throw new Error('Gmail OAuth state is invalid or expired');
-  const tokens = await json(await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: state.gmail.clientId, client_secret: state.gmail.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }), signal: AbortSignal.timeout(15000) }));
-  state.gmail.oauthState = ''; state.gmail.oauthStateExpiresAt = 0;
+  const tokens = await json(await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code, client_id: state.gmail.clientId, client_secret: state.gmail.clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code', ...(state.gmail.pkceVerifier ? { code_verifier: state.gmail.pkceVerifier } : {}) }), signal: AbortSignal.timeout(15000) }));
+  state.gmail.oauthState = ''; state.gmail.oauthStateExpiresAt = 0; state.gmail.pkceVerifier = '';
   // Identify the mailbox first, then add it or refresh the tokens of an existing one.
   const account: MailAccount = { id: '', provider: 'gmail', email: '', remoteId: '', accessToken: String(tokens.access_token || ''), refreshToken: String(tokens.refresh_token || ''), expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000, folders: [] };
   await discoverGmailFolders(state, account);
@@ -42,7 +38,9 @@ export async function finishGmailOAuth(state: AadOSState, code: string, returned
 async function token(state: AadOSState, account: MailAccount) {
   if (account.accessToken && account.expiresAt > Date.now() + 60_000) return account.accessToken;
   if (!account.refreshToken) throw new Error(`Gmail account ${account.email} is not connected`);
-  const tokens = await json(await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ refresh_token: account.refreshToken, client_id: state.gmail.clientId, client_secret: state.gmail.clientSecret, grant_type: 'refresh_token' }), signal: AbortSignal.timeout(15000) }));
+  let tokens: Record<string, any>;
+  try { tokens = await json(await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ refresh_token: account.refreshToken, client_id: state.gmail.clientId, client_secret: state.gmail.clientSecret, grant_type: 'refresh_token' }), signal: AbortSignal.timeout(15000) })) ; }
+  catch (cause) { const message = cause instanceof Error ? cause.message : 'Token refresh failed'; throw new Error(needsReconnect(message) ? `Gmail sign-in for ${account.email} expired or was revoked. Reconnect it in Settings → Emails.` : message); }
   account.accessToken = String(tokens.access_token || ''); account.expiresAt = Date.now() + Number(tokens.expires_in || 3600) * 1000; return account.accessToken;
 }
 
@@ -54,10 +52,10 @@ export async function discoverGmailFolders(state: AadOSState, account: MailAccou
   account.folders = (labels.labels || []).filter((label: Record<string, unknown>) => label.type === 'user').map((label: Record<string, unknown>) => ({ id: String(label.id), name: String(label.name), path: String(label.name), type: 'label' }));
 }
 
-export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline) {
+export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline, only?: (accountId: string) => boolean) {
   let scanned = 0;
   let added = 0;
-  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'gmail')) {
+  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'gmail' && (!only || only(item.accountId)))) {
     const account = state.accounts.find((item) => item.id === folder.accountId && item.provider === 'gmail');
     if (!account) continue;
     const result = await syncGmailLabel(state, account, pipeline, folder.id);

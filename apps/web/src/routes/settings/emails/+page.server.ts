@@ -1,6 +1,6 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { ensureInboxPipelines, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
 import { syncView } from '$lib/server/pipeline-sync';
@@ -72,6 +72,36 @@ export const actions: Actions = {
     const id = String((await request.formData()).get('id') || '');
     try { await updateState(async (s)=>{ const account=s.accounts.find((item)=>item.id===id); if(!account)throw new Error('Account not found.'); if(account.provider==='zoho')await discoverAccountAndFolders(s,account); else await discoverGmailFolders(s,account); }); return {refreshed:id}; }
     catch(c){return fail(400,{error:c instanceof Error?c.message:'Refresh failed.'});}
+  },
+  // Sync every view/inbox feed that reads this account (only this account's folders).
+  syncAccount: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    try {
+      let added = 0;
+      await updateState(async (s) => {
+        if (!s.accounts.some((item) => item.id === id)) throw new Error('Account not found.');
+        ensureInboxPipelines(s);
+        for (const p of s.pipelines.filter((item) => item.enabled && pipelineFolders(item).some((f) => f.accountId === id))) added += (await syncView(s, p, { accountId: id })).added;
+      });
+      return { synced: id, added };
+    } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
+  },
+  toggleAccountSync: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    await updateState((s) => { const a = s.accounts.find((item) => item.id === id); if (a) a.paused = !a.paused; });
+    return { toggled: id };
+  },
+  // Privacy: remove this account's synced copies from AadOS. The mailbox is untouched; a sync brings mail back.
+  purgeAccountData: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    let removed = 0;
+    await updateState((s) => {
+      const owner = (item: { pipelineId: string; accountId?: string }) => item.accountId || s.pipelines.find((p) => p.id === item.pipelineId)?.accountId;
+      const before = s.items.length;
+      s.items = s.items.filter((item) => owner(item) !== id);
+      removed = before - s.items.length;
+    });
+    return { purged: id, removed };
   },
   // Views on the account stay (paused, error shown) so synced items are never lost.
   disconnectAccount: async ({ request }) => {

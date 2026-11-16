@@ -81,3 +81,17 @@ test('Needs Reply view and count exclude reviewed messages', () => {
   const result = queryInbox(rows, { view: 'needs-reply' });
   assert.equal(result.total, 1); assert.equal(result.counts.needsReply, 1);
 });
+
+import { extractDue } from '../src/lib/server/dates.ts';
+test('due-date extraction', () => {
+  const now = new Date('2026-11-16T12:00:00Z'); // Monday
+  assert.equal(extractDue('Amount due by Nov 30', now), '2026-11-30');
+  assert.equal(extractDue('due 12/05/2026', now), '2026-12-05');
+  assert.equal(extractDue('due 2026-12-01', now), '2026-12-01');
+  assert.equal(extractDue('pay by Friday', now), '2026-11-20');
+  assert.equal(extractDue('pay tomorrow', now), '2026-11-17');
+  assert.equal(extractDue('Jan 5', now), '2027-01-05'); // already past 30d? no: Jan 5 this year is >30d past -> next year
+  assert.equal(extractDue('Feb 31', now), '');
+  assert.equal(extractDue('nothing here', now), '');
+  assert.equal(detectAction({ subject: 'Payment due Nov 30', sender: 'billing@bank.com', summary: '' }, { now })?.due, '2026-11-30');
+});

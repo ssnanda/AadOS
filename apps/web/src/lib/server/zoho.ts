@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { accountId, applyUnread, validOAuthState, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
+import { fetchRetry, needsReconnect } from './retry';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
 const mailHost = (dc: string) => `https://mail.zoho.${dc || 'com'}`;
@@ -46,15 +47,21 @@ async function accessToken(state: AadOSState, account: MailAccount) {
   if (account.accessToken && account.expiresAt > Date.now() + 60_000) return account.accessToken;
   if (!account.refreshToken) throw new Error(`Zoho account ${account.email} is not connected`);
   const form = new URLSearchParams({ refresh_token: account.refreshToken, grant_type: 'refresh_token', client_id: state.zoho.clientId, client_secret: state.zoho.clientSecret });
-  const tokens = await jsonResponse(await fetch(`${accountsHost(state.zoho.dataCenter)}/oauth/v2/token`, { method: 'POST', body: form, signal: AbortSignal.timeout(15000) }));
+  let tokens: Record<string, any>;
+  try { tokens = await jsonResponse(await fetchRetry(`${accountsHost(state.zoho.dataCenter)}/oauth/v2/token`, { method: 'POST', body: form }, { attempts: 3, timeoutMs: 15000 })); }
+  catch (cause) { const message = cause instanceof Error ? cause.message : 'Token refresh failed'; throw new Error(needsReconnect(message) ? `Zoho sign-in for ${account.email} expired or was revoked. Reconnect it in Settings → Emails.` : message); }
+  if (tokens.error) throw new Error(needsReconnect(String(tokens.error)) ? `Zoho sign-in for ${account.email} expired or was revoked. Reconnect it in Settings → Emails.` : String(tokens.error));
   account.accessToken = String(tokens.access_token || '');
   account.expiresAt = Date.now() + Number(tokens.expires_in || 3600) * 1000;
   return account.accessToken;
 }
 
 async function api(state: AadOSState, account: MailAccount, path: string) {
-  const token = await accessToken(state, account);
-  return jsonResponse(await fetch(`${mailHost(state.zoho.dataCenter)}/api${path}`, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) }));
+  const call = async () => fetchRetry(`${mailHost(state.zoho.dataCenter)}/api${path}`, { headers: { Authorization: `Zoho-oauthtoken ${await accessToken(state, account)}`, Accept: 'application/json' } });
+  let response = await call();
+  // A revoked/rotated access token: refresh once and retry before giving up.
+  if (response.status === 401 && account.refreshToken) { account.expiresAt = 0; response = await call(); }
+  return jsonResponse(response);
 }
 
 export async function discoverAccountAndFolders(state: AadOSState, account: MailAccount) {
@@ -72,10 +79,10 @@ export async function discoverAccountAndFolders(state: AadOSState, account: Mail
   })).filter((folder: ZohoFolder) => folder.id && folder.name);
 }
 
-export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
+export async function syncPipeline(state: AadOSState, pipeline: Pipeline, only?: (accountId: string) => boolean) {
   let scanned = 0;
   let added = 0;
-  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'zoho')) {
+  for (const folder of pipelineFolders(pipeline).filter((item) => item.source === 'zoho' && (!only || only(item.accountId)))) {
     const account = state.accounts.find((item) => item.id === folder.accountId && item.provider === 'zoho');
     if (!account) continue;
     const result = await syncFolder(state, account, pipeline, folder.id);

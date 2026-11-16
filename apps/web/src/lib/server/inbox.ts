@@ -26,7 +26,7 @@ export const itemUnread = (item: Pick<PipelineItem, 'unread' | 'seen'>) => item.
 export const messageKey = (accountId: string, messageId: string) => `${accountId}:${messageId}`;
 
 /** Collapse copies of the same source message (several views / labels) into one row. */
-export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[]; items: PipelineItem[]; familyNames?: string[] }): InboxRow[] {
+export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[]; items: PipelineItem[]; familyNames?: string[]; now?: Date }): InboxRow[] {
   const byPipeline = new Map(input.pipelines.map((p) => [p.id, p]));
   const byAccount = new Map(input.accounts.map((a) => [a.id, a]));
   const groups = new Map<string, PipelineItem[]>();
@@ -52,7 +52,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       actionState: copies.find((c) => c.actionState)?.actionState,
       followUp: copies.find((c) => c.followUp)?.followUp
     };
-    const ctx = { accountEmail: account?.email, familyNames: input.familyNames };
+    const ctx = { accountEmail: account?.email, familyNames: input.familyNames, now: input.now };
     const categories = classify(merged, ctx);
     const suggestion = detectAction(merged, ctx);
     const threadId = copies.find((c) => c.threadId)?.threadId || '';

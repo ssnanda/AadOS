@@ -1,3 +1,5 @@
+import { extractDue } from './dates.ts';
+
 // Deterministic, rule-based personal-email classification. Everything here is a heuristic
 // suggestion (never a verified fact); local overrides on the item always win.
 // Pure module: no framework imports, so it can be unit-tested with `node --test`.
@@ -13,7 +15,7 @@ export type ClassifiableItem = {
   subject: string; sender: string; summary: string; kind?: string;
   categories?: string[]; importance?: 'high' | 'normal'; actionState?: 'actionable' | 'dismissed' | 'reviewed';
 };
-export type ClassifyContext = { accountEmail?: string; familyNames?: string[] };
+export type ClassifyContext = { accountEmail?: string; familyNames?: string[]; now?: Date };
 
 const has = (text: string, re: RegExp) => re.test(text);
 export const senderAddress = (sender: string) => (sender.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] || '').toLowerCase();
@@ -84,7 +86,7 @@ export function detectAction(item: ClassifiableItem, ctx: ClassifyContext = {}):
   const subject = item.subject || '';
   const head = `${subject} ${item.summary || ''}`;
   const from = item.sender || '';
-  const due = head.match(DATE)?.[1];
+  const due = DATE.test(head) ? extractDue(head, ctx.now) : '';
   const bulk = BULK_SENDER.test(from) || has(head, /\b(unsubscribe|newsletter|view in browser)\b/i);
 
   if (has(head, /\b(payment (due|failed|declined)|amount due|past due|overdue|pay (now|by)|balance due|final notice)\b/i)) return { kind: 'financial', reason: 'Payment or balance due', due };

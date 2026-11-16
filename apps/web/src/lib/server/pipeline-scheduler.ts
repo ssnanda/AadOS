@@ -39,7 +39,7 @@ async function pass() {
         if (stop) { console.log(`[aados] scheduled sync paused: ${stop}`); return; }
         try {
           if (!hasAccount(state, pipeline)) continue;
-          await syncView(state, pipeline);
+          await syncView(state, pipeline, { scheduled: true });
         }
         catch (cause) { pipeline.lastError = cause instanceof Error ? cause.message : 'Sync failed'; }
       }

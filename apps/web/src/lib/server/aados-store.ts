@@ -53,7 +53,7 @@ export type PipelineItem = {
 };
 // Shared OAuth app credentials per provider; one OAuth client serves many accounts.
 type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number };
-type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number };
+type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string };
 // One connected mailbox. `remoteId` is the Zoho mail account id (unused for Gmail).
 export type MailAccount = {
   id: string;
@@ -67,6 +67,8 @@ export type MailAccount = {
   /** Connection health, updated by syncs. */
   lastSync?: string;
   lastError?: string;
+  /** Excluded from the scheduled sync (manual sync still works). */
+  paused?: boolean;
 };
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
@@ -125,7 +127,7 @@ function decrypt(value: string): AadOSState {
   return {
     ...defaults, ...saved,
     zoho: { clientId: saved.zoho?.clientId || '', clientSecret: saved.zoho?.clientSecret || '', dataCenter: saved.zoho?.dataCenter || 'com', oauthState: saved.zoho?.oauthState || '', oauthStateExpiresAt: saved.zoho?.oauthStateExpiresAt || 0 },
-    gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0 },
+    gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0, pkceVerifier: saved.gmail?.pkceVerifier || '' },
     accounts,
     dismissed: saved.dismissed || [],
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
@@ -210,7 +212,7 @@ export function publicState(state: AadOSState) {
     dataCenter: state.zoho.dataCenter,
     gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
     // Tokens never leave the server.
-    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '' })),
+    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
     pipelines: visiblePipelines(state),
     itemCounts: Object.fromEntries(visiblePipelines(state).map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };
