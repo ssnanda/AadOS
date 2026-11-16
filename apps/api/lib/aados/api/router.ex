@@ -13,6 +13,7 @@ defmodule AadOS.Api.Router do
   scope "/internal/v1", AadOS.Api.Controllers do
     pipe_through [:api, :service_auth]
 
+    post "/mirror/refresh", InternalController, :refresh_mirror
     get "/summary", InternalController, :summary
     get "/accounts", InternalController, :accounts
     get "/messages", InternalController, :messages

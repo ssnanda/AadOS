@@ -1,12 +1,39 @@
 # Local-only development; no external ports and no live mail credentials.
 services:
+  # PostgreSQL: primary storage. Internal network only (no published port); data in the aados-pgdata volume.
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: aados
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set by bin/dev-local.sh}
+      POSTGRES_DB: aados
+    volumes:
+      - aados-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aados -d aados']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
   api:
     build:
       context: ./apps/api
     environment:
       PORT: '4000'
-      AADOS_ENABLE_DATABASE: 'false'
+      # The API runs pending Ecto migrations on start-up (additive, idempotent).
+      AADOS_ENABLE_DATABASE: 'true'
+      DATABASE_URL: ecto://aados:${POSTGRES_PASSWORD:?Set by bin/dev-local.sh}@db:5432/aados
+      AADOS_CREDENTIAL_ENCRYPTION_KEY: ${AADOS_CREDENTIAL_ENCRYPTION_KEY:?Set by bin/dev-local.sh}
+      AADOS_INTERNAL_API_TOKEN: ${AADOS_INTERNAL_API_TOKEN:?Set by bin/dev-local.sh}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Set by bin/dev-local.sh}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/api/health >/dev/null || exit 1']
+      interval: 3s
+      timeout: 3s
+      retries: 40
     ports:
       - '127.0.0.1:${AADOS_API_PORT:-4000}:4000'
     restart: unless-stopped
@@ -23,12 +50,20 @@ services:
       AADOS_USER: ${AADOS_USER:?Set by bin/dev-local.sh}
       AADOS_PASSWORD_HASH: ${AADOS_PASSWORD_HASH:?Set by bin/dev-local.sh}
       AADOS_SESSION_SECRET: ${AADOS_SESSION_SECRET:?Set by bin/dev-local.sh}
+      # PostgreSQL is primary. The first start copies state.enc into it (backup kept, original untouched). Rollback: AADOS_STORAGE=file.
+      AADOS_STORAGE: ${AADOS_STORAGE:-postgres}
+      AADOS_DATABASE_URL: postgres://aados:${POSTGRES_PASSWORD:?Set by bin/dev-local.sh}@db:5432/aados
+      AADOS_CREDENTIAL_ENCRYPTION_KEY: ${AADOS_CREDENTIAL_ENCRYPTION_KEY:?Set by bin/dev-local.sh}
+      AADOS_INTERNAL_API_TOKEN: ${AADOS_INTERNAL_API_TOKEN:?Set by bin/dev-local.sh}
     volumes:
       - aados-data:/data/aados
     ports:
       - '127.0.0.1:${AADOS_WEB_PORT:-3100}:3000'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+      db:
+        condition: service_healthy
     restart: unless-stopped
   # `bin/dev-local.sh test` only (profile `test`): API unit + database tests on a throwaway, in-memory Postgres.
   testdb:
@@ -39,6 +74,8 @@ services:
       POSTGRES_DB: aados_test
     tmpfs:
       - /var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:55432:5432'
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres -d aados_test']
       interval: 2s
@@ -62,5 +99,6 @@ services:
     command: sh -c 'mix local.hex --force >/dev/null && mix local.rebar --force >/dev/null && mix deps.get && mix compile --warnings-as-errors && mix test'
 volumes:
   aados-data:
+  aados-pgdata:
   aados-api-deps:
   aados-api-build:

@@ -29,10 +29,12 @@ docker compose version >/dev/null 2>&1 || { echo 'ERROR: Docker Compose plugin m
 # Local runs never commit, bump or push. Use `bin/dev-local.sh bump` (or bin/bump.sh) when you want that.
 if [[ "$COMMAND" == test ]]; then
   # Same checks CI runs, but on this machine: no GitHub Actions involved.
-  (cd "$ROOT/apps/web" && npm ci --no-audit --no-fund && npm run check && npm test)
   # Compose interpolates every service's required variables; these placeholders are never used by the test services.
-  export SECRET_KEY_BASE=test-only AADOS_USER=test AADOS_PASSWORD_HASH=test AADOS_SESSION_SECRET=test
+  export SECRET_KEY_BASE=test-only AADOS_USER=test AADOS_PASSWORD_HASH=test AADOS_SESSION_SECRET=test POSTGRES_PASSWORD=test AADOS_CREDENTIAL_ENCRYPTION_KEY=test AADOS_INTERNAL_API_TOKEN=test
   status=0
+  docker compose --profile test up -d --wait testdb
+  (cd "$ROOT/apps/web" && npm ci --no-audit --no-fund && npm run check && AADOS_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/aados_test npm test) || status=$?
+  [[ "$status" == 0 ]] || { docker compose --profile test stop testdb >/dev/null 2>&1 || true; exit "$status"; }
   docker compose --profile test run --rm apitest || status=$?
   docker compose --profile test stop testdb >/dev/null 2>&1 || true
   exit "$status"
@@ -57,6 +59,20 @@ if ! grep -q '^SECRET_KEY_BASE=' <<< "$CONFIG"; then
 fi
 if ! grep -q '^AADOS_SESSION_SECRET=' <<< "$CONFIG"; then
   CONFIG="$(printf "%s\nAADOS_SESSION_SECRET='%s'" "$CONFIG" "$(openssl rand -hex 48)")"
+  CONFIG_CHANGED=true
+fi
+# PostgreSQL password, credential-encryption key (base64, 32 bytes) and web->API service token.
+# They live only in the config volume. Losing the credential key makes stored OAuth tokens unreadable (reconnect accounts).
+if ! grep -q '^POSTGRES_PASSWORD=' <<< "$CONFIG"; then
+  CONFIG="$(printf '%s\nPOSTGRES_PASSWORD=%s' "$CONFIG" "$(openssl rand -hex 24)")"
+  CONFIG_CHANGED=true
+fi
+if ! grep -q '^AADOS_CREDENTIAL_ENCRYPTION_KEY=' <<< "$CONFIG"; then
+  CONFIG="$(printf "%s\nAADOS_CREDENTIAL_ENCRYPTION_KEY='%s'" "$CONFIG" "$(openssl rand -base64 32)")"
+  CONFIG_CHANGED=true
+fi
+if ! grep -q '^AADOS_INTERNAL_API_TOKEN=' <<< "$CONFIG"; then
+  CONFIG="$(printf '%s\nAADOS_INTERNAL_API_TOKEN=%s' "$CONFIG" "$(openssl rand -hex 32)")"
   CONFIG_CHANGED=true
 fi
 if ! grep -q '^AADOS_PASSWORD_HASH=' <<< "$CONFIG"; then

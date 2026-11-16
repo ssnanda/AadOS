@@ -13,7 +13,7 @@ defmodule AadOS.Api.DbTest do
   setup do
     System.put_env("AADOS_INTERNAL_API_TOKEN", @token)
     System.put_env("AADOS_CREDENTIAL_ENCRYPTION_KEY", @key)
-    Repo.query!("TRUNCATE mail_message_views, mail_sync_checkpoints, mail_messages, mail_accounts, mail_tasks, mail_credentials CASCADE")
+    Repo.query!("TRUNCATE mail_message_views, mail_sync_checkpoints, mail_messages, mail_accounts, mail_tasks, mail_credentials, app_state CASCADE")
 
     on_exit(fn ->
       System.delete_env("AADOS_INTERNAL_API_TOKEN")
@@ -107,6 +107,25 @@ defmodule AadOS.Api.DbTest do
     for path <- ["/internal/v1/messages", "/internal/v1/accounts", "/internal/v1/summary"] do
       refute get(path).resp_body =~ "SECRET"
     end
+  end
+
+  test "mirror refresh rebuilds the relational tables from the primary app_state document" do
+    doc = %{
+      "accounts" => [%{"id" => "gmail-a", "provider" => "gmail", "email" => "a@x.com", "accessToken" => "", "refreshToken" => ""}],
+      "pipelines" => [%{"id" => "inbox-gmail-a", "accountId" => "gmail-a", "system" => true}],
+      "items" => [%{"pipelineId" => "inbox-gmail-a", "messageId" => "m1", "subject" => "Legacy item without accountId", "unread" => true}],
+      "tasks" => [%{"id" => "t1", "title" => "Pay", "priority" => "high", "done" => false}]
+    }
+
+    assert {:error, :no_state} = Importer.refresh_from_app_state()
+    Repo.query!("INSERT INTO app_state (id, data, version, inserted_at, updated_at) VALUES (1, $1, 1, now(), now())", [doc])
+    assert {:ok, %{messages: 1, accounts: 1, tasks: 1}} = Importer.refresh_from_app_state()
+    assert {:ok, %{messages: 1}} = Importer.refresh_from_app_state()
+
+    conn = conn(:post, "/internal/v1/mirror/refresh") |> put_req_header("authorization", "Bearer " <> @token) |> AadOS.Api.Endpoint.call([])
+    assert conn.status == 200
+    assert Jason.decode!(get("/internal/v1/messages?q=legacy").resp_body)["total"] == 1
+    Repo.query!("TRUNCATE app_state")
   end
 
   test "no data without the token even with a database" do

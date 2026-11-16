@@ -1,5 +1,15 @@
 # Development handoff
 
+## PostgreSQL is primary (local Docker stack) - session 4
+`bin/dev-local.sh rebuild` now starts `db` (postgres:16, volume `aados_aados-pgdata`, no published port), `api` and `web`.
+- **API** runs Ecto migrations automatically on start (`AadOS.Api.Migrator`, after the Repo, before Oban/endpoint). The API image now ships `priv/` (it did not before, so migrations could never have run in a release). Oban tables are created by migration `20261117000002`.
+- **Web** with `AADOS_STORAGE=postgres` (compose default) stores state in `app_state` (jsonb, one row, `SELECT ... FOR UPDATE` transactions). Provider tokens and OAuth client secrets are **not** in that document; they are AES-256-GCM ciphertext in `mail_credentials` (`vault.ts`, same wire format as the Elixir vault, tested both ways). Default when `AADOS_STORAGE` is unset is still the encrypted file, so OpenShift/production is unchanged.
+- **First start auto-migration** (`importLegacyFile`): only when the DB has no state and `state.enc` exists: copy to `state.enc.pre-postgres-<ts>` (0600, same volume), import in one transaction, read back and compare canonical JSON with the source (any mismatch rolls back and the app refuses to start on Postgres), then log counts. `state.enc` is never modified or deleted. Real run on this Mac: 2 accounts, 4324 messages, 5 views imported; original sha256 unchanged; extra host backup at `~/aados-backups/`.
+- **Rollback:** set `AADOS_STORAGE=file` (compose: `AADOS_STORAGE=file ./bin/dev-local.sh rebuild`). state.enc is a point-in-time snapshot from before the import; anything done since lives only in Postgres.
+- **Relational mirror** (`mail_messages`, search index, `/internal/v1/*`) is rebuilt from `app_state` by `POST /internal/v1/mirror/refresh` (web calls it at start-up). Authoritative data is `app_state` + `mail_credentials`.
+- Secrets (`POSTGRES_PASSWORD`, `AADOS_CREDENTIAL_ENCRYPTION_KEY`, `AADOS_INTERNAL_API_TOKEN`) are generated into the `aados-local-config` volume by `dev-local.sh`. **Losing the credential key makes stored tokens unreadable** (reconnect accounts); losing `AADOS_SESSION_SECRET` no longer matters once state is in Postgres, but keep it for rollback to the file.
+- Verified locally (Docker): Node 58 tests incl. 6 real-Postgres tests (import integrity/idempotence, encryption at rest, 25 concurrent writers, rollback, per-account re-encryption, disconnect deletes tokens); Elixir 22 tests incl. real DB; full stack up, all pages 200 from Postgres, form write persisted across a web restart, real read-only sync of both mailboxes (added 1, 0 failed).
+
 ## Verification state (session 3, branch `feat/db-tasks-calendar`)
 Local: `npm ci`-compatible lockfile committed; `npm run check` 0 errors; `npm test` 48/48; `npm run build` OK.
 CI (GitHub Actions, Postgres 16 service): web, api (compile `--warnings-as-errors`, unit + **real-database** tests), scripts.

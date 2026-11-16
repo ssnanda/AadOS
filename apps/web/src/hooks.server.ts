@@ -1,8 +1,10 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { SESSION_COOKIE, validSession } from '$lib/server/auth';
 import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
+import { initStorage } from '$lib/server/aados-store';
 
 const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback']);
+initStorage();
 startPipelineScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {

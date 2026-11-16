@@ -1,5 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import pg from 'pg';
+import { PgStorage } from './pg-store.ts';
+import { keyringFromEnv } from './vault.ts';
 import { dirname, join } from 'node:path';
 import { env } from '$env/dynamic/private';
 import { dataDir } from './data-dir';
@@ -126,7 +129,11 @@ function decrypt(value: string): AadOSState {
   const decipher = createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'));
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   const clear = Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64url')), decipher.final()]).toString('utf8');
-  const saved = JSON.parse(clear) as Partial<AadOSState> & { zoho?: Record<string, any>; gmail?: Record<string, any> };
+  return normalizeState(JSON.parse(clear));
+}
+
+/** Fill defaults and migrate older shapes; idempotent. Used for both storage backends. */
+export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<string, any>; gmail?: Record<string, any> }): AadOSState {
   const defaults = emptyState();
   const accounts: MailAccount[] = [...(saved.accounts || [])];
   // Migrate the old single Zoho/Gmail connection into the accounts list.
@@ -152,7 +159,51 @@ function decrypt(value: string): AadOSState {
 
 let queue = Promise.resolve();
 
+// ---- storage backends: `file` (encrypted state.enc, default) or `postgres` (AADOS_STORAGE=postgres) ----
+const usePostgres = () => env.AADOS_STORAGE === 'postgres';
+let pgPromise: Promise<PgStorage> | undefined;
+
+/** Connect, wait for the API's migrations, and import state.enc once (backup first, integrity-checked, original kept). */
+function postgres(): Promise<PgStorage> {
+  pgPromise ??= (async () => {
+    if (!env.AADOS_DATABASE_URL) throw new Error('AADOS_DATABASE_URL is required when AADOS_STORAGE=postgres');
+    const storage = new PgStorage(new pg.Pool({ connectionString: env.AADOS_DATABASE_URL, max: 5 }), keyringFromEnv(env), normalizeState);
+    await storage.ready();
+    await importLegacyFile(storage);
+    return storage;
+  })().catch((error) => { pgPromise = undefined; throw error; });
+  return pgPromise;
+}
+
+async function importLegacyFile(storage: PgStorage) {
+  const file = stateFile();
+  let raw: string;
+  try { raw = await readFile(file, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+  if (await storage.load()) return; // PostgreSQL already holds state: never overwrite it from the file
+  const backup = `${file}.pre-postgres-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  await copyFile(file, backup);
+  await chmod(backup, 0o600);
+  const result = await storage.importState(decrypt(raw), 'state.enc');
+  console.log(`[aados] imported state.enc into PostgreSQL (${JSON.stringify(result.counts)}); original kept at ${file}, backup at ${backup}`);
+}
+
+/** Best-effort: ask the API to rebuild its relational mirror (search/summary) from the primary state. */
+export async function refreshMirror(): Promise<void> {
+  if (!env.AADOS_API_URL || !env.AADOS_INTERNAL_API_TOKEN) return;
+  try {
+    const res = await fetch(`${env.AADOS_API_URL.replace(/\/$/, '')}/internal/v1/mirror/refresh`, { method: 'POST', headers: { Authorization: `Bearer ${env.AADOS_INTERNAL_API_TOKEN}` }, signal: AbortSignal.timeout(60_000) });
+    console.log(`[aados] mirror refresh: HTTP ${res.status}`);
+  } catch (error) { console.warn('[aados] mirror refresh failed:', error instanceof Error ? error.message : error); }
+}
+
+/** Call once at server start: connects, waits for migrations and imports state.enc, so problems surface in the logs immediately. */
+export function initStorage(): void {
+  if (usePostgres()) postgres().then(() => { console.log('[aados] storage: PostgreSQL (primary)'); void refreshMirror(); }, (error) => console.error('[aados] storage init failed:', error instanceof Error ? error.message : error));
+  else console.log('[aados] storage: encrypted file');
+}
+
 export async function readState(): Promise<AadOSState> {
+  if (usePostgres()) return (await (await postgres()).load()) ?? emptyState();
   try { return decrypt(await readFile(stateFile(), 'utf8')); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
@@ -163,6 +214,7 @@ export async function readState(): Promise<AadOSState> {
 export async function updateState(change: (state: AadOSState) => void | Promise<void>): Promise<AadOSState> {
   let result = emptyState();
   queue = queue.catch(() => undefined).then(async () => {
+    if (usePostgres()) { result = await (await postgres()).transact(change, emptyState); return; }
     const state = await readState();
     await change(state);
     const file = stateFile();

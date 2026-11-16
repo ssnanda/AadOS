@@ -57,6 +57,26 @@ defmodule AadOS.Api.Mail.Importer do
     %{accounts: account_rows, messages: message_rows, memberships: Map.new(memberships), tasks: task_rows}
   end
 
+  @doc """
+  Rebuild the relational mirror (accounts, deduplicated messages, view memberships, tasks) from the primary
+  `app_state` document. Idempotent; credentials are never touched (they already live encrypted in mail_credentials).
+  Returns `{:ok, counts}` or `{:error, :no_state}` when nothing has been stored yet.
+  """
+  def refresh_from_app_state do
+    case Repo.query!("SELECT data FROM app_state WHERE id = 1").rows do
+      [[data]] -> data |> with_account_ids() |> import_export()
+      [] -> {:error, :no_state}
+    end
+  end
+
+  # Items synced before accounts were tracked per item inherit their view's account.
+  defp with_account_ids(%{"items" => items, "pipelines" => pipelines} = data) do
+    account_of = Map.new(pipelines, &{&1["id"], &1["accountId"]})
+    %{data | "items" => Enum.map(items, &Map.put_new(&1, "accountId", account_of[&1["pipelineId"]]))}
+  end
+
+  defp with_account_ids(data), do: Map.merge(%{"items" => [], "pipelines" => []}, data)
+
   @doc "Import inside one transaction. Returns `{:ok, counts}`; counts can be compared with `state-tool verify`."
   def import_export(export) do
     %{accounts: accounts, messages: messages, memberships: memberships, tasks: tasks} = rows(export)

@@ -41,3 +41,17 @@ defmodule AadOS.Api.VaultTest do
     assert {:ok, %{current: {1, @k1}}} = Vault.keyring()
   end
 end
+
+defmodule AadOS.Api.VaultInteropTest do
+  use ExUnit.Case, async: true
+  alias AadOS.Api.Vault
+
+  # Produced by the web app's TypeScript vault (apps/web/src/lib/server/vault.ts) with a fixed key/IV.
+  test "decrypts what the web app's TypeScript vault wrote (shared wire format)" do
+    key = Base.decode64!("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=")
+    sealed = %{key_version: 1, iv: Base.decode64!("CQkJCQkJCQkJCQkJ"), tag: Base.decode64!("/YkkmtEYd1pTfzrsAgpCAQ=="), ciphertext: Base.decode64!("XKf28diCpBLINqRTg4SB5fbiQY4=")}
+    ring = %{current: {1, key}, ring: %{1 => key}}
+    assert {:ok, ~s({"refreshToken":"R"})} = Vault.decrypt("account:gmail-a", sealed, ring)
+    assert {:error, :authentication_failed} = Vault.decrypt("account:other", sealed, ring)
+  end
+end

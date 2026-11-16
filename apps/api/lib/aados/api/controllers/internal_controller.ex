@@ -19,6 +19,15 @@ defmodule AadOS.Api.Controllers.InternalController do
     })
   end
 
+  @doc "Rebuild the relational mirror from the primary app_state document (idempotent)."
+  def refresh_mirror(conn, _params) do
+    case AadOS.Api.Mail.Importer.refresh_from_app_state() do
+      {:ok, counts} -> json(conn, %{refreshed: true, counts: counts})
+      {:error, :no_state} -> conn |> put_status(409) |> json(%{error: "no_state"})
+      {:error, reason} -> conn |> put_status(500) |> json(%{error: inspect(reason)})
+    end
+  end
+
   def accounts(conn, _params) do
     rows =
       Repo.all(

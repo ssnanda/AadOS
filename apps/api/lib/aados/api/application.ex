@@ -6,7 +6,7 @@ defmodule AadOS.Api.Application do
   def start(_type, _args) do
     db_children =
       if System.get_env("AADOS_ENABLE_DATABASE", "false") == "true" do
-        [AadOS.Api.Repo, {Oban, repo: AadOS.Api.Repo, queues: [default: 5]}]
+        [AadOS.Api.Repo, AadOS.Api.Migrator, {Oban, repo: AadOS.Api.Repo, queues: [default: 5]}]
       else
         []
       end
