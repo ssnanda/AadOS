@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { accountId, type AadOSState, type MailAccount, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
-import { parseMessage } from './pipeline-parser';
+import { clean, parseMessage } from './pipeline-parser';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
 const mailHost = (dc: string) => `https://mail.zoho.${dc || 'com'}`;
@@ -108,9 +108,9 @@ async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pip
       const messageId = String(row.messageId || '');
       if (!messageId || known.has(messageId)) continue;
       if (added >= SYNC_BATCH) break;
-      const subject = String(row.subject || '');
-      const sender = String(row.sender || row.fromAddress || row.from || '');
-      let summary = String(row.summary || row.snippet || '');
+      const subject = clean(row.subject);
+      const sender = clean(row.sender || row.fromAddress || row.from);
+      let summary = clean(row.summary || row.snippet);
       let body = '';
       try {
         const content = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);

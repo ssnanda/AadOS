@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
-RUN addgroup -S aados && adduser -S aados -G aados
+RUN addgroup -S aados && adduser -S aados -G aados && mkdir -p /data/aados && chown aados:aados /data/aados
 USER aados
 EXPOSE 3000
 CMD ["node", "build"]

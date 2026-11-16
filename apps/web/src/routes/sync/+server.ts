@@ -3,7 +3,7 @@ import { updateState } from '$lib/server/aados-store';
 import { syncPipeline } from '$lib/server/zoho';
 import { syncGmailPipeline } from '$lib/server/gmail';
 
-// Sync every enabled view now (same work as the hourly scheduler).
+// Sync every enabled view now (same work as the scheduled 15-minute sync).
 export const POST = async () => {
   let added = 0, failed = 0;
   await updateState(async (state) => {

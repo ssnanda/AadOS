@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { accountId, type AadOSState, type MailAccount, type Pipeline, type PipelineItem } from './aados-store';
-import { parseMessage } from './pipeline-parser';
+import { clean, parseMessage } from './pipeline-parser';
 
 async function json(response: Response) {
   const body = await response.json().catch(() => ({}));
@@ -83,9 +83,9 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
       const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers, signal: AbortSignal.timeout(20000) }));
       const messageHeaders = Array.isArray(message.payload?.headers) ? message.payload.headers : [];
       const header = (name: string) => String(messageHeaders.find((item: Record<string, unknown>) => String(item.name).toLowerCase() === name.toLowerCase())?.value || '');
-      const subject = header('Subject');
-      const sender = header('From');
-      const summary = String(message.snippet || '');
+      const subject = clean(header('Subject'));
+      const sender = clean(header('From'));
+      const summary = clean(message.snippet);
       const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
       const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
       const item: PipelineItem = { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };

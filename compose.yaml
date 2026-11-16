@@ -8,7 +8,7 @@ services:
       AADOS_ENABLE_DATABASE: 'false'
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Set by bin/dev-local.sh}
     ports:
-      - '127.0.0.1:4000:4000'
+      - '127.0.0.1:${AADOS_API_PORT:-4000}:4000'
     restart: unless-stopped
   web:
     build:
@@ -18,8 +18,15 @@ services:
       HOST: 0.0.0.0
       PORT: '3000'
       AADOS_API_URL: http://api:4000
+      AADOS_USER: ${AADOS_USER:?Set by bin/dev-local.sh}
+      AADOS_PASSWORD_HASH: ${AADOS_PASSWORD_HASH:?Set by bin/dev-local.sh}
+      AADOS_SESSION_SECRET: ${AADOS_SESSION_SECRET:?Set by bin/dev-local.sh}
+    volumes:
+      - aados-data:/data/aados
     ports:
-      - '127.0.0.1:3000:3000'
+      - '127.0.0.1:${AADOS_WEB_PORT:-3000}:3000'
     depends_on:
       - api
     restart: unless-stopped
+volumes:
+  aados-data:
