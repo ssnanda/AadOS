@@ -54,6 +54,8 @@ export type PipelineItem = {
 // Shared OAuth app credentials per provider; one OAuth client serves many accounts.
 type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number };
 type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string };
+/** Local to-do / reminder. `emailKey` links it to a source message (accountId:messageId). */
+export type Task = { id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string };
 // One connected mailbox. `remoteId` is the Zoho mail account id (unused for Gmail).
 export type MailAccount = {
   id: string;
@@ -73,7 +75,7 @@ export type MailAccount = {
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[] };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[] };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -81,7 +83,8 @@ const emptyState = (): AadOSState => ({
   accounts: [],
   pipelines: [],
   items: [],
-  dismissed: []
+  dismissed: [],
+  tasks: []
 });
 
 /** A view's folders, each resolved to its own account and provider. */
@@ -130,6 +133,7 @@ function decrypt(value: string): AadOSState {
     gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0, pkceVerifier: saved.gmail?.pkceVerifier || '' },
     accounts,
     dismissed: saved.dismissed || [],
+    tasks: saved.tasks || [],
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }

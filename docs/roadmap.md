@@ -10,7 +10,7 @@
 - [ ] Install dependencies and run full build on a connected runner
 
 ## M1 — Secure personal mail connections
-- [ ] Owner identity/session authentication and CSRF-safe OAuth state/PKCE
+- [x] Owner identity/session authentication and CSRF-safe OAuth state (Gmail PKCE done; Zoho PKCE unsupported)
 - [x] Read-only Zoho OAuth, personal-folder discovery and encrypted token storage
 - [x] Folder-driven pipelines with Shop, Health and generic parsers
 - [x] Manual and hourly incremental Zoho folder synchronization
