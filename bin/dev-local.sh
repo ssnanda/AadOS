@@ -34,8 +34,9 @@ config_read() { docker run --rm -v "$CONFIG_VOLUME:/c:ro" node:22-alpine sh -c '
 config_write() { docker run --rm -i -v "$CONFIG_VOLUME:/c" node:22-alpine sh -c 'umask 077; cat > /c/env'; }
 CONFIG="$(config_read)"
 if [[ "$RESET_USER" == true ]]; then
-  # New random username and password; invalidates all sessions. Other settings are kept.
-  CONFIG="$(printf '%s\n' "$CONFIG" | grep -vE '^(AADOS_USER|AADOS_PASSWORD_HASH|AADOS_SESSION_SECRET)=' || true)"
+  # New random username and password; invalidates all sessions (they are signed with the
+  # password hash). AADOS_SESSION_SECRET is kept: it also encrypts the saved mail state.
+  CONFIG="$(printf '%s\n' "$CONFIG" | grep -vE '^(AADOS_USER|AADOS_PASSWORD_HASH)=' || true)"
   CONFIG_CHANGED=true
 fi
 CONFIG_CHANGED="${CONFIG_CHANGED:-false}"
@@ -44,12 +45,16 @@ if ! grep -q '^SECRET_KEY_BASE=' <<< "$CONFIG"; then
   CONFIG="$(printf '%s\nSECRET_KEY_BASE=%s' "$CONFIG" "$(openssl rand -hex 48)")"
   CONFIG_CHANGED=true
 fi
+if ! grep -q '^AADOS_SESSION_SECRET=' <<< "$CONFIG"; then
+  CONFIG="$(printf "%s\nAADOS_SESSION_SECRET='%s'" "$CONFIG" "$(openssl rand -hex 48)")"
+  CONFIG_CHANGED=true
+fi
 if ! grep -q '^AADOS_PASSWORD_HASH=' <<< "$CONFIG"; then
   command -v node >/dev/null 2>&1 || { echo 'ERROR: node required to generate a local login.' >&2; exit 1; }
   NEW_LOGIN_PASSWORD="$(node --input-type=module -e "import { generatePassword } from './apps/web/src/lib/server/password.js'; process.stdout.write(generatePassword())")"
   LOCAL_HASH="$(AADOS_PASSWORD="$NEW_LOGIN_PASSWORD" node --input-type=module -e "import { hashPassword } from './apps/web/src/lib/server/password.js'; process.stdout.write(await hashPassword(process.env.AADOS_PASSWORD))")"
   # Single quotes: the scrypt hash contains '$'.
-  CONFIG="$(printf "%s\nAADOS_USER='%s'\nAADOS_PASSWORD_HASH='%s'\nAADOS_SESSION_SECRET='%s'" "$CONFIG" "u-$(openssl rand -hex 6)" "$LOCAL_HASH" "$(openssl rand -hex 48)")"
+  CONFIG="$(printf "%s\nAADOS_USER='%s'\nAADOS_PASSWORD_HASH='%s'" "$CONFIG" "u-$(openssl rand -hex 6)" "$LOCAL_HASH")"
   CONFIG_CHANGED=true
 fi
 if [[ "$CONFIG_CHANGED" == true ]]; then printf '%s\n' "$CONFIG" | sed '/^$/d' | config_write; fi

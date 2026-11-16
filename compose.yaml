@@ -18,6 +18,8 @@ services:
       HOST: 0.0.0.0
       PORT: '3000'
       AADOS_API_URL: http://api:4000
+      # adapter-node assumes https without this, which breaks OAuth redirect URIs and cookies locally.
+      ORIGIN: http://127.0.0.1:${AADOS_WEB_PORT:-3100}
       AADOS_USER: ${AADOS_USER:?Set by bin/dev-local.sh}
       AADOS_PASSWORD_HASH: ${AADOS_PASSWORD_HASH:?Set by bin/dev-local.sh}
       AADOS_SESSION_SECRET: ${AADOS_SESSION_SECRET:?Set by bin/dev-local.sh}
