@@ -41,7 +41,8 @@ defmodule AadOS.Api.DbTest do
   end
 
   defp get(path) do
-    conn(:get, path) |> put_req_header("authorization", "Bearer " <> @token) |> AadOS.Api.Router.call(AadOS.Api.Router.init([]))
+    # Through the endpoint so query-string params are parsed, as in production.
+    conn(:get, path) |> put_req_header("authorization", "Bearer " <> @token) |> AadOS.Api.Endpoint.call([])
   end
 
   test "migrations are applied (tables exist)" do
