@@ -11,7 +11,7 @@ for arg in "$@"; do
     *) COMMAND="$arg" ;;
   esac
 done
-if [[ "$COMMAND" == bump ]]; then exec "$ROOT/bin/bump.sh"; fi
+if [[ "$COMMAND" == bump ]]; then AADOS_SKIP_CI=1 exec "$ROOT/bin/bump.sh"; fi
 if [[ "$COMMAND" == help || "$COMMAND" == --help || "$COMMAND" == -h ]]; then
   echo 'Usage: bin/dev-local.sh [rebuild|refresh|stop|logs|shell|bump] [--reset-user]'
   echo '  --reset-user  Generate a new username and password, invalidating all sessions'
@@ -25,7 +25,8 @@ command -v docker >/dev/null 2>&1 || { echo 'ERROR: Docker CLI missing.' >&2; ex
 docker compose version >/dev/null 2>&1 || { echo 'ERROR: Docker Compose plugin missing.' >&2; exit 1; }
 # AADOS_SKIP_BUMP=1 skips the commit/push step (for testing uncommitted work).
 if [[ "$COMMAND" == rebuild && "${AADOS_SKIP_BUMP:-}" != 1 && -n "$(git status --porcelain --untracked-files=normal)" ]]; then
-  "$ROOT/bin/bump.sh" --if-dirty
+  # [skip ci]: a local rebuild must not start GitHub Actions.
+  AADOS_SKIP_CI=1 "$ROOT/bin/bump.sh" --if-dirty
 fi
 # Local secrets live in a Docker volume (like oc-deploy.sh keeps them in the cluster),
 # never in the repo. The session secret also encrypts the saved mail state.

@@ -25,6 +25,7 @@
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
     <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails</a>
     {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
+    <small class="ver">v{__APP_VERSION__}</small>
   </aside>
   <main class="main">
     <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions">{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn full" onclick={() => startFullSync()} title="Fetch every email in every view, in the background">⇩ Sync all emails</button><button class="btn purge" onclick={async () => { if (await purgeAndSync()) await invalidateAll(); }} title="Delete all stored emails, then re-sync everything">⌫ Purge &amp; sync</button><button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
@@ -34,6 +35,7 @@
 </div>
 <style>
   .workspace{display:flex;min-height:100vh;color:#283044}
+  .ver{margin-top:auto;padding:12px 10px 0;color:#8a95a8;font-size:11px;font-weight:600}
   .sidebar{width:230px;flex:none;background:#fff;border-right:1px solid #e9ecf4;display:flex;flex-direction:column;padding:28px 14px 18px;gap:3px;min-height:100vh}
   .brand{display:flex;align-items:center;gap:11px;padding:0 10px 26px;font-weight:780;font-size:23px;letter-spacing:-1.3px;line-height:1;color:inherit;text-decoration:none}
   .mark{height:35px;width:35px;display:grid;place-items:center;background:linear-gradient(135deg,#3157de,#8b5cf6);color:#fff;border-radius:11px;font-size:23px}
