@@ -47,7 +47,7 @@ export const actions: Actions = {
         const id = slug(name || folder.name);
         if (!id) throw new Error('Pipeline name is required.');
         if (state.pipelines.some((item) => item.id === id || item.folderId === folderId)) throw new Error('That pipeline or folder is already configured.');
-        state.pipelines.push({ id, name: name || folder.name, folderId, folderName: folder.path || folder.name, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
+        state.pipelines.push({ id, name: name || folder.name, source: 'zoho', folderId, folderName: folder.path || folder.name, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
       });
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not create pipeline.' }); }
     return { created: true };

@@ -2,7 +2,7 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { SESSION_COOKIE, validSession } from '$lib/server/auth';
 import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
 
-const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback']);
+const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback']);
 startPipelineScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -15,6 +15,9 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   if (authenticated && event.url.pathname === '/login') {
     throw redirect(303, '/');
+  }
+  if (authenticated && event.url.pathname === '/settings/zoho') {
+    throw redirect(303, '/settings/emails');
   }
 
   const response = await resolve(event);

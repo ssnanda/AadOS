@@ -24,15 +24,45 @@ for arg in "$@"; do
   esac
 done
 
-for binary in git node oc openssl; do
+for binary in gh git node oc openssl; do
   command -v "$binary" >/dev/null 2>&1 || fail "$binary CLI missing."
 done
 
 # Keep the deployed source in GitHub first, as with AJOPS.
+SOURCE_WAS_DIRTY=false
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+  SOURCE_WAS_DIRTY=true
   echo 'Local changes found; running bin/bump.sh before deployment.'
   "$ROOT/bin/bump.sh" --if-dirty || fail 'Git push failed; deployment cancelled.'
 fi
+
+# GitHub CI is a required gate before cluster changes. A dirty deploy already
+# triggered CI through its push; a clean deploy explicitly dispatches a new run.
+gh auth status >/dev/null 2>&1 || fail 'GitHub CLI is not authenticated. Run gh auth login.'
+BRANCH="$(git symbolic-ref --quiet --short HEAD)" || fail 'Cannot deploy from a detached HEAD.'
+SOURCE_SHA="$(git rev-parse HEAD)"
+CI_RUN_ID=""
+if [[ "$SOURCE_WAS_DIRTY" == true ]]; then
+  echo "Waiting for GitHub CI to register for $SOURCE_SHA..."
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    CI_RUN_ID="$(gh run list --workflow ci.yml --commit "$SOURCE_SHA" --event push --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+    [[ -n "$CI_RUN_ID" ]] && break
+    sleep 5
+  done
+fi
+if [[ -z "$CI_RUN_ID" ]]; then
+  echo "Dispatching GitHub CI for $BRANCH ($SOURCE_SHA)..."
+  gh workflow run ci.yml --ref "$BRANCH" || fail 'Could not dispatch GitHub CI.'
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    CI_RUN_ID="$(gh run list --workflow ci.yml --commit "$SOURCE_SHA" --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+    [[ -n "$CI_RUN_ID" ]] && break
+    sleep 5
+  done
+fi
+[[ -n "$CI_RUN_ID" ]] || fail 'GitHub CI did not register within 60 seconds.'
+echo "GitHub CI run: $(gh run view "$CI_RUN_ID" --json url --jq .url)"
+gh run watch "$CI_RUN_ID" --exit-status || fail 'GitHub CI failed; OpenShift deployment cancelled.'
+echo 'GitHub CI passed.'
 
 AADOS_ENV="${AADOS_ENV:-dev}"
 [[ "$AADOS_ENV" == dev || "$AADOS_ENV" == prod ]] || fail 'AADOS_ENV must be dev or prod.'

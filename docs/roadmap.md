@@ -14,7 +14,8 @@
 - [x] Read-only Zoho OAuth, personal-folder discovery and encrypted token storage
 - [x] Folder-driven pipelines with Shop, Health and generic parsers
 - [x] Manual and hourly incremental Zoho folder synchronization
-- [ ] Gmail `gmail.readonly` and Microsoft Graph `Mail.Read` grants
+- [x] Gmail `gmail.readonly`, user-label discovery and folder-driven synchronization
+- [ ] Microsoft Graph `Mail.Read` grant
 - [ ] Encrypted tokens in Postgres, per-account access isolation, revocation
 - [ ] CloudNativePG deployment and Ecto migrations, Row-Level Security
 - [ ] Oban incremental sync, dedupe, cursor/checkpoint and retry safety

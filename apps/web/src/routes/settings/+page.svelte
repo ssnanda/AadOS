@@ -1,0 +1,3 @@
+<svelte:head><title>Settings · AadOS</title></svelte:head>
+<main><header><a href="/">← Home</a><div><h1>Settings</h1><p>Connections and preferences.</p></div></header><a class="card" href="/settings/emails"><span>✉</span><div><h2>Emails</h2><p>Connect Zoho and Gmail accounts.</p></div><b>→</b></a></main>
+<style>main{max-width:850px;margin:auto;padding:35px;color:#29344c}header{display:flex;gap:25px;margin-bottom:25px}header a,.card{color:#3157de;text-decoration:none}h1{margin:0}header p,.card p{color:#8a95a8}.card{display:flex;align-items:center;gap:15px;background:#fff;border:1px solid #e3e8f1;border-radius:13px;padding:20px;color:#29344c}.card>span{font-size:25px;color:#3157de}.card h2,.card p{margin:2px 0}.card b{margin-left:auto;color:#3157de}</style>

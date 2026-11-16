@@ -36,6 +36,8 @@
     <div class="workspace-label">WORKSPACE</div>
     <div class="nav-heading">MY SPACE</div>
     <div class="nav-active"><span class="nav-icon">✉</span><span>Inbox</span><span class="nav-count">{data.overview.counts.all}</span></div>
+    <a class="nav-muted" href="/emails"><span class="nav-icon">▧</span><span>Emails</span></a>
+    <a class="nav-muted" href="/settings"><span class="nav-icon">⚙</span><span>Settings</span></a>
     <div class="nav-muted"><span class="nav-icon">▦</span><span>Dashboard</span><span class="soon">Soon</span></div>
     <div class="nav-muted"><span class="nav-icon">▤</span><span>Calendar</span><span class="soon">Soon</span></div>
     <div class="nav-muted"><span class="nav-icon">✓</span><span>Tasks</span><span class="soon">Soon</span></div>
@@ -54,7 +56,7 @@
     <header class="topbar">
       <button class="mobile-menu" onclick={() => mobileNavigation = !mobileNavigation} aria-label="Toggle navigation">☰</button>
       <div class="breadcrumb">My workspace <span>/</span> <strong>Inbox</strong></div>
-      <div class="topbar-right"><span class:offline={data.apiStatus === 'offline'} class="api-indicator"></span><span class="api-text">API {data.apiStatus}</span><a class="pipelines-link" href="/settings/zoho">Pipelines</a><form method="POST" action="/logout"><button class="signout" type="submit">Sign out</button></form><span class="avatar">A</span></div>
+      <div class="topbar-right"><span class:offline={data.apiStatus === 'offline'} class="api-indicator"></span><span class="api-text">API {data.apiStatus}</span><a class="pipelines-link" href="/emails">Emails</a><form method="POST" action="/logout"><button class="signout" type="submit">Sign out</button></form><span class="avatar">A</span></div>
     </header>
 
     <div class="content">
@@ -118,4 +120,5 @@
   @media(max-width:1150px){.columns{grid-template-columns:minmax(0,1fr) 250px}.sidebar{width:217px}.content{padding:35px 25px}.topbar{padding:0 25px}.stats{gap:10px}.stat-card{padding:15px}.stat-trend{font-size:8px}.right-column{gap:12px}}
   @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%;box-shadow:10px 0 25px #151c2d18}.sidebar.expanded{transform:translateX(0)}.mobile-menu{display:inline-block}.topbar{gap:14px;justify-content:flex-start}.topbar-right{margin-left:auto}.columns{grid-template-columns:1fr}.right-column{display:grid;grid-template-columns:1fr 1fr;align-items:start}.version-note{display:none}}
   @media(max-width:620px){.content{padding:25px 14px}.topbar{height:62px;padding:0 15px}.api-text{display:none}.welcome-row{margin-bottom:30px}.welcome-row h1{font-size:25px}.welcome-row p{max-width:270px}.release-label{display:none}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat-card{min-height:119px}.columns{gap:14px}.right-column{grid-template-columns:1fr}.panel-header{padding:18px}.searchbox{margin:0 18px 12px}.filters{padding:0 10px}.panel-foot{flex-direction:column}.inbox-empty{padding-left:20px;padding-right:20px}}
+  .nav-muted{text-decoration:none}
 </style>

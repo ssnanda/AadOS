@@ -9,6 +9,7 @@ export type ZohoFolder = { id: string; name: string; path: string; type: string 
 export type Pipeline = {
   id: string;
   name: string;
+  source: 'zoho' | 'gmail';
   folderId: string;
   folderName: string;
   parser: PipelineParser;
@@ -43,10 +44,12 @@ type ZohoState = {
   oauthStateExpiresAt: number;
   folders: ZohoFolder[];
 };
-export type AadOSState = { zoho: ZohoState; pipelines: Pipeline[]; items: PipelineItem[] };
+type GmailState = { clientId: string; clientSecret: string; connectedEmail: string; accessToken: string; refreshToken: string; expiresAt: number; oauthState: string; oauthStateExpiresAt: number; folders: ZohoFolder[] };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; pipelines: Pipeline[]; items: PipelineItem[] };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', connectedEmail: '', accountId: '', accessToken: '', refreshToken: '', expiresAt: 0, apiDomain: '', oauthState: '', oauthStateExpiresAt: 0, folders: [] },
+  gmail: { clientId: '', clientSecret: '', connectedEmail: '', accessToken: '', refreshToken: '', expiresAt: 0, oauthState: '', oauthStateExpiresAt: 0, folders: [] },
   pipelines: [],
   items: []
 });
@@ -71,7 +74,9 @@ function decrypt(value: string): AadOSState {
   const decipher = createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64url'));
   decipher.setAuthTag(Buffer.from(tag, 'base64url'));
   const clear = Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64url')), decipher.final()]).toString('utf8');
-  return { ...emptyState(), ...JSON.parse(clear) } as AadOSState;
+  const saved = JSON.parse(clear) as Partial<AadOSState>;
+  const defaults = emptyState();
+  return { ...defaults, ...saved, zoho: { ...defaults.zoho, ...(saved.zoho || {}) }, gmail: { ...defaults.gmail, ...(saved.gmail || {}) }, pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho' })) } as AadOSState;
 }
 
 let queue = Promise.resolve();
@@ -107,6 +112,10 @@ export function publicState(state: AadOSState) {
     connectedEmail: state.zoho.connectedEmail,
     dataCenter: state.zoho.dataCenter,
     folders: state.zoho.folders,
+    gmailConnected: Boolean(state.gmail.refreshToken),
+    gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
+    gmailEmail: state.gmail.connectedEmail,
+    gmailFolders: state.gmail.folders,
     pipelines: state.pipelines,
     itemCounts: Object.fromEntries(state.pipelines.map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };
