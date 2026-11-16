@@ -68,7 +68,21 @@ export async function discoverAccountAndFolders(state: AadOSState) {
 }
 
 export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
-  const query = new URLSearchParams({ folderId: pipeline.folderId, start: String(pipeline.cursor || 0), limit: '50' });
+  let scanned = 0;
+  let added = 0;
+  for (const folder of pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }]) {
+    const result = await syncFolder(state, pipeline, folder.id);
+    scanned += result.scanned;
+    added += result.added;
+  }
+  pipeline.cursor = 0;
+  pipeline.lastSync = new Date().toISOString();
+  pipeline.lastError = '';
+  return { scanned, added };
+}
+
+async function syncFolder(state: AadOSState, pipeline: Pipeline, folderId: string) {
+  const query = new URLSearchParams({ folderId, start: String(pipeline.cursor || 0), limit: '50' });
   const response = await api(state, `/accounts/${encodeURIComponent(state.zoho.accountId)}/messages/view?${query}`);
   const rows = Array.isArray(response.data) ? response.data : [];
   const known = new Set(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => item.messageId));
@@ -82,7 +96,7 @@ export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
     let summary = String(row.summary || row.snippet || '');
     let body = '';
     try {
-      const content = await api(state, `/accounts/${encodeURIComponent(state.zoho.accountId)}/folders/${encodeURIComponent(pipeline.folderId)}/messages/${encodeURIComponent(messageId)}/content`);
+      const content = await api(state, `/accounts/${encodeURIComponent(state.zoho.accountId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);
       body = String(content.data?.content || content.data?.htmlContent || content.data || '');
       if (!summary) summary = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
     } catch { /* A list item is still useful when Zoho withholds message content. */ }
@@ -93,8 +107,5 @@ export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
     state.items.push(item);
     added++;
   }
-  pipeline.cursor = 0;
-  pipeline.lastSync = new Date().toISOString();
-  pipeline.lastError = '';
   return { scanned: rows.length, added };
 }

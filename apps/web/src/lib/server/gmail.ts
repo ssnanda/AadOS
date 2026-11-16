@@ -37,9 +37,22 @@ export async function discoverGmailFolders(state: AadOSState) {
 }
 
 export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline) {
+  let scanned = 0;
+  let added = 0;
+  for (const folder of pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }]) {
+    const result = await syncGmailLabel(state, pipeline, folder.id);
+    scanned += result.scanned;
+    added += result.added;
+  }
+  pipeline.lastSync = new Date().toISOString();
+  pipeline.lastError = '';
+  return { scanned, added };
+}
+
+async function syncGmailLabel(state: AadOSState, pipeline: Pipeline, folderId: string) {
   const access = await token(state);
   const headers = { Authorization: `Bearer ${access}` };
-  const query = new URLSearchParams({ labelIds: pipeline.folderId, maxResults: '50' });
+  const query = new URLSearchParams({ labelIds: folderId, maxResults: '50' });
   const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
   const rows = Array.isArray(list.messages) ? list.messages : [];
   const known = new Set(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => item.messageId));
@@ -60,7 +73,5 @@ export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline) {
     state.items.push(item);
     added++;
   }
-  pipeline.lastSync = new Date().toISOString();
-  pipeline.lastError = '';
   return { scanned: rows.length, added };
 }

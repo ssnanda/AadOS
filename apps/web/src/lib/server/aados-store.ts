@@ -12,6 +12,7 @@ export type Pipeline = {
   source: 'zoho' | 'gmail';
   folderId: string;
   folderName: string;
+  folders: { id: string; name: string }[];
   parser: PipelineParser;
   enabled: boolean;
   cursor: number;
@@ -76,7 +77,7 @@ function decrypt(value: string): AadOSState {
   const clear = Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64url')), decipher.final()]).toString('utf8');
   const saved = JSON.parse(clear) as Partial<AadOSState>;
   const defaults = emptyState();
-  return { ...defaults, ...saved, zoho: { ...defaults.zoho, ...(saved.zoho || {}) }, gmail: { ...defaults.gmail, ...(saved.gmail || {}) }, pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho' })) } as AadOSState;
+  return { ...defaults, ...saved, zoho: { ...defaults.zoho, ...(saved.zoho || {}) }, gmail: { ...defaults.gmail, ...(saved.gmail || {}) }, pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] })) } as AadOSState;
 }
 
 let queue = Promise.resolve();

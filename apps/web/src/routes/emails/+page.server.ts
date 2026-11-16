@@ -10,16 +10,18 @@ export const actions: Actions = {
   create: async ({ request }) => {
     const form = await request.formData();
     const source = String(form.get('source') || '') as 'zoho' | 'gmail';
-    const folderId = String(form.get('folderId') || '');
+    const folderIds = form.getAll('folderId').map(String).filter(Boolean);
     const parser = String(form.get('parser') || '') as PipelineParser;
     const name = String(form.get('name') || '').trim();
-    if (!['zoho', 'gmail'].includes(source) || !['shop', 'health'].includes(parser)) return fail(400, { error: 'Choose a provider and workflow.' });
+    if (!['zoho', 'gmail'].includes(source) || !['shop', 'health', 'generic'].includes(parser)) return fail(400, { error: 'Choose a provider and view type.' });
     try { await updateState((state) => {
-      const folder = state[source].folders.find((item) => item.id === folderId);
-      if (!folder) throw new Error('Choose a regular folder or label.');
+      const folders = folderIds.map((id) => state[source].folders.find((item) => item.id === id)).filter((item) => item !== undefined);
+      if (!folders.length || folders.length !== folderIds.length) throw new Error('Choose at least one regular folder or label.');
       const id = slug(`${source}-${name || parser}`);
-      if (state.pipelines.some((item) => item.id === id || (item.source === source && item.folderId === folderId))) throw new Error('That workflow or folder is already configured.');
-      state.pipelines.push({ id, name: name || (parser === 'shop' ? 'Shopping' : 'Health'), source, folderId, folderName: folder.path || folder.name, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
+      if (state.pipelines.some((item) => item.id === id)) throw new Error('That view name is already configured.');
+      const selected = folders.map((folder) => ({ id: folder.id, name: folder.path || folder.name }));
+      const defaultName = parser === 'shop' ? 'Shopping' : parser === 'health' ? 'Health' : folders[0].name;
+      state.pipelines.push({ id, name: name || defaultName, source, folderId: selected[0].id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
     }); return { created: true }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not create workflow.' }); }
   },

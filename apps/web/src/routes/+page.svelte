@@ -33,14 +33,8 @@
 <div class="workspace">
   <aside class:expanded={mobileNavigation} class="sidebar" aria-label="Primary navigation">
     <div class="brand"><span class="brand-mark">a</span><span>Aad<span class="brand-os">OS</span><small>PERSONAL OS</small></span></div>
-    <div class="workspace-label">WORKSPACE</div>
-    <div class="nav-heading">MY SPACE</div>
     <div class="nav-active"><span class="nav-icon">✉</span><span>Inbox</span><span class="nav-count">{data.overview.counts.all}</span></div>
     <a class="nav-muted" href="/emails"><span class="nav-icon">▧</span><span>Emails</span></a>
-    <a class="nav-muted" href="/settings"><span class="nav-icon">⚙</span><span>Settings</span></a>
-    <div class="nav-muted"><span class="nav-icon">▦</span><span>Dashboard</span><span class="soon">Soon</span></div>
-    <div class="nav-muted"><span class="nav-icon">▤</span><span>Calendar</span><span class="soon">Soon</span></div>
-    <div class="nav-muted"><span class="nav-icon">✓</span><span>Tasks</span><span class="soon">Soon</span></div>
     <div class="nav-heading accounts-heading">CONNECTED ACCOUNTS</div>
     {#if data.overview.accounts.length === 0}
       <div class="no-accounts"><span class="empty-account-icon">◎</span><span>No accounts yet</span></div>
@@ -49,34 +43,23 @@
         <div class="account-row"><span class="account-avatar">{account.provider === 'gmail' ? 'G' : 'M'}</span><span class="account-email">{account.address}</span></div>
       {/each}
     {/if}
-    <div class="sidebar-bottom"><div class="privacy-dot"></div><div><strong>Privacy first</strong><small>Read-only by design</small></div></div>
   </aside>
 
   <main class="main">
     <header class="topbar">
       <button class="mobile-menu" onclick={() => mobileNavigation = !mobileNavigation} aria-label="Toggle navigation">☰</button>
-      <div class="breadcrumb">My workspace <span>/</span> <strong>Inbox</strong></div>
-      <div class="topbar-right"><span class:offline={data.apiStatus === 'offline'} class="api-indicator"></span><span class="api-text">API {data.apiStatus}</span><a class="pipelines-link" href="/emails">Emails</a><form method="POST" action="/logout"><button class="signout" type="submit">Sign out</button></form><span class="avatar">A</span></div>
+      <div class="breadcrumb"><strong>Inbox</strong></div>
+      <div class="topbar-right"><span class:offline={data.apiStatus === 'offline'} class="api-indicator"></span><span class="api-text">API {data.apiStatus}</span><a class="pipelines-link" href="/settings">Settings</a><form method="POST" action="/logout"><button class="signout" type="submit">Sign out</button></form><span class="avatar">A</span></div>
     </header>
 
     <div class="content">
-      <div class="welcome-row"><div><div class="eyebrow">YOUR PERSONAL COMMAND CENTER</div><h1>Good to have you here<span>.</span></h1><p>Everything that matters across your inbox, in one calm place.</p></div><div class="release-label">AadOS <span>v0.1.0</span></div></div>
-
       {#if data.apiStatus === 'offline'}
         <div class="status-alert" role="status"><span class="status-alert-icon">!</span><span>The AadOS API is offline. Start the Phoenix backend to retrieve live connection status. Mailbox data is not available.</span></div>
       {/if}
 
-      <div class="section-label">YOUR INBOX AT A GLANCE <span class="section-line"></span></div>
-      <div class="stats">
-        <div class="stat-card"><div class="stat-top"><span class="stat-icon lavender">▣</span><span class="stat-trend">ALL ACCOUNTS</span></div><div class="stat-value">{data.overview.counts.all}</div><div class="stat-desc">Total emails</div></div>
-        <div class="stat-card"><div class="stat-top"><span class="stat-icon blue">◉</span><span class="stat-trend">TO REVIEW</span></div><div class="stat-value">{data.overview.counts.unread}</div><div class="stat-desc">Unread messages</div></div>
-        <div class="stat-card"><div class="stat-top"><span class="stat-icon amber">↪</span><span class="stat-trend">ACTION ITEMS</span></div><div class="stat-value">{data.overview.counts.needs_reply}</div><div class="stat-desc">Needs your reply</div></div>
-        <div class="stat-card"><div class="stat-top"><span class="stat-icon rose">☆</span><span class="stat-trend">PRIORITIZED</span></div><div class="stat-value">{data.overview.counts.important}</div><div class="stat-desc">Important messages</div></div>
-      </div>
-
-      <div class="columns">
+      <div class="columns single">
         <section class="inbox-panel" aria-labelledby="inbox-title">
-          <div class="panel-header"><div><div class="panel-overline">MAIL CENTER</div><h2 id="inbox-title">Your inbox</h2></div><span class="readonly-badge"><span>●</span> Read-only</span></div>
+          <div class="panel-header"><h2 id="inbox-title">Inbox</h2><span class="readonly-badge"><span>●</span> Read-only</span></div>
           <div class="searchbox"><span class="search-symbol">⌕</span><input type="search" bind:value={searchText} placeholder="Search across your inbox..." aria-label="Search across connected inboxes" /><span class="search-key">SEARCH</span></div>
           <div class="filters" role="group" aria-label="Filter messages">
             {#each filters as filter}
@@ -84,9 +67,9 @@
             {/each}
           </div>
           {#if visibleMessages.length === 0}
-            <div class="inbox-empty"><div class="empty-illustration"><div class="mail-envelope">✉</div><span class="floating-sparkle one">✦</span><span class="floating-sparkle two">✧</span></div>
+            <div class="inbox-empty">
               {#if data.overview.accounts.length === 0}
-                <h3>Your inbox starts here</h3><p>Gmail and Microsoft account connections are coming in the next milestone. No emails have been imported.</p><span class="empty-cta">Provider connections not enabled yet</span>
+                <h3>No email accounts connected</h3><p>Connect Zoho or Gmail in Email settings.</p><a class="empty-cta" href="/settings/emails">Open Email settings</a>
               {:else if searchText.trim() !== ''}
                 <h3>No matching messages</h3><p>Try another search to find your email.</p>
               {:else}
@@ -96,18 +79,9 @@
           {:else}
             <div class="message-list">{#each visibleMessages as message (message.id)}<article class:unread={message.unread} class="message"><div class="message-sender">{message.sender}</div><h3>{message.subject}</h3><p>{message.snippet}</p><span>{message.category}</span></article>{/each}</div>
           {/if}
-          <div class="panel-foot"><span>Showing {visibleMessages.length} messages</span><span>Original messages stay with your provider</span></div>
+          <div class="panel-foot"><span>{visibleMessages.length} messages</span></div>
         </section>
 
-        <aside class="right-column" aria-label="Account setup and AI assistant">
-          <div class="connect-panel"><div class="connect-icon">✧</div><h2>Bring your email together</h2><p>One place for all your personal email. Your accounts stay separate and under your control.</p>
-            <div class="provider google"><span class="provider-logo google-logo">G</span><div><strong>Gmail</strong><small>Google account</small></div><span class="provider-tag">Coming soon</span></div>
-            <div class="provider microsoft"><span class="provider-logo microsoft-logo">⊞</span><div><strong>Outlook</strong><small>Microsoft account</small></div><span class="provider-tag">Coming soon</span></div>
-            <div class="safe-note"><span>♧</span> Initially read-only. Your messages remain in their original accounts.</div>
-          </div>
-          <div class="ai-panel"><div class="ai-top"><div class="ai-icon">✦</div><span class="ai-label">ON THE ROADMAP</span></div><h3>Less noise. More clarity.</h3><p>AI-powered priority sorting, subscription detection, and draft suggestions—always with your approval.</p><span class="ai-status">AI triage · Planned</span></div>
-          <div class="version-note">Built for your day, not more busywork. <strong>AadOS</strong></div>
-        </aside>
       </div>
     </div>
   </main>
@@ -121,4 +95,6 @@
   @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%;box-shadow:10px 0 25px #151c2d18}.sidebar.expanded{transform:translateX(0)}.mobile-menu{display:inline-block}.topbar{gap:14px;justify-content:flex-start}.topbar-right{margin-left:auto}.columns{grid-template-columns:1fr}.right-column{display:grid;grid-template-columns:1fr 1fr;align-items:start}.version-note{display:none}}
   @media(max-width:620px){.content{padding:25px 14px}.topbar{height:62px;padding:0 15px}.api-text{display:none}.welcome-row{margin-bottom:30px}.welcome-row h1{font-size:25px}.welcome-row p{max-width:270px}.release-label{display:none}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat-card{min-height:119px}.columns{gap:14px}.right-column{grid-template-columns:1fr}.panel-header{padding:18px}.searchbox{margin:0 18px 12px}.filters{padding:0 10px}.panel-foot{flex-direction:column}.inbox-empty{padding-left:20px;padding-right:20px}}
   .nav-muted{text-decoration:none}
+  .columns.single{grid-template-columns:minmax(0,1fr)}
+  a.empty-cta{text-decoration:none}
 </style>
