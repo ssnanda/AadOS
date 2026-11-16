@@ -1,12 +1,13 @@
 <script lang="ts">
-  import type { ActionData } from './$types';
-  let { form }: { form: ActionData } = $props();
+  import type { ActionData, PageData } from './$types';
+  let { data, form }: { data: PageData; form: ActionData } = $props();
 </script>
 
 <svelte:head><title>Sign in · AadOS</title></svelte:head>
 
 <main class="login-shell">
   <form method="POST" class="login-card">
+    <input type="hidden" name="csrfToken" value={data.csrfToken} />
     <div class="brand"><span>a</span><strong>Aad<span>OS</span></strong></div>
     <h1>Welcome back</h1>
     <p>Sign in to your personal workspace.</p>
