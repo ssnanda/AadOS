@@ -12,6 +12,18 @@ parameters:
   - name: CERT_ISSUER
     value: letsencrypt-prod
 objects:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ${APP_NAME}-web-data
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: web
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 1Gi
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -130,6 +142,8 @@ objects:
                   value: '0.0.0.0'
                 - name: PORT
                   value: '3000'
+                - name: ORIGIN
+                  value: https://${HOSTNAME}
                 - name: AADOS_API_URL
                   value: http://${APP_NAME}-api:4000
                 - name: AADOS_USER
@@ -147,6 +161,11 @@ objects:
                     secretKeyRef:
                       name: aados-api-secrets
                       key: secret_key_base
+                - name: AADOS_DATA_DIR
+                  value: /data/aados
+              volumeMounts:
+                - name: web-data
+                  mountPath: /data/aados
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -170,6 +189,10 @@ objects:
                   port: http
                 initialDelaySeconds: 5
                 periodSeconds: 10
+          volumes:
+            - name: web-data
+              persistentVolumeClaim:
+                claimName: ${APP_NAME}-web-data
   - apiVersion: v1
     kind: Service
     metadata:

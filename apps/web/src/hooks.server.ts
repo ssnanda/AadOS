@@ -1,7 +1,9 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { SESSION_COOKIE, validSession } from '$lib/server/auth';
+import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
 
-const PUBLIC_PATHS = new Set(['/health', '/login']);
+const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback']);
+startPipelineScheduler();
 
 export const handle: Handle = async ({ event, resolve }) => {
   const authenticated = validSession(event.cookies.get(SESSION_COOKIE));
