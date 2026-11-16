@@ -19,7 +19,7 @@ Use `AADOS_NAMESPACE=<namespace> ./bin/oc-deploy.sh` to override the project, `A
 ## Notes
 
 - The current app has no OAuth connections or authenticated users. It serves a read-only empty inbox and health endpoints.
-- DNS for `os.aadnanda.com` must point to the OpenShift router. The default certificate issuer is `letsencrypt-ncllc`, matching the existing AJMCP deployment pattern.
+- DNS for `os.aadnanda.com` must point to the OpenShift router. The default certificate issuer is `letsencrypt-prod`, which has the Cloudflare DNS solver used by existing `aadnanda.com` certificates.
 - `AADOS_ENABLE_DATABASE=false` until CloudNativePG/PostgreSQL and migrations are configured.
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.

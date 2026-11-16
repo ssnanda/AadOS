@@ -10,7 +10,7 @@ parameters:
   - name: HOSTNAME
     value: os.aadnanda.com
   - name: CERT_ISSUER
-    value: letsencrypt-ncllc
+    value: letsencrypt-prod
 objects:
   - apiVersion: apps/v1
     kind: Deployment
