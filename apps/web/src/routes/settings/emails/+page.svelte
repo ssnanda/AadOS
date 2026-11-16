@@ -2,6 +2,10 @@
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let error = $derived(form && 'error' in form ? form.error : data.error);
+  let accountId = $state('');
+  let chosen = $derived(data.accounts.find((a) => a.id === accountId) ?? data.accounts[0]);
+  let folders = $derived(chosen?.folders ?? []);
+  const accountLabel = (id: string) => { const a = data.accounts.find((x) => x.id === id); return a ? a.email || a.id : ''; };
   let zohoAccounts = $derived(data.accounts.filter((a) => a.provider === 'zoho'));
   let gmailAccounts = $derived(data.accounts.filter((a) => a.provider === 'gmail'));
   let homepageUrl = $derived(data.zohoRedirect.replace('/oauth/zoho/callback', ''));
@@ -31,8 +35,16 @@
   <li>Create the client, copy its Client ID and Client Secret below, save, then connect Gmail. AadOS reads regular user labels and messages only.</li>
 </ol></details>
 <form method="POST" action="?/saveGmail" class="grid"><label>Client ID<input name="clientId" required></label><label>Client secret<input name="clientSecret" type="password" placeholder={data.gmailConfigured?'Saved — leave blank to keep':''}></label><label class="wide">Redirect URI<input value={data.gmailRedirect} readonly></label><button>Save Gmail</button></form><div class="actions"><form method="POST" action="?/connectGmail"><button class="primary">{gmailAccounts.length?'Add another Gmail account':'Connect Gmail'}</button></form></div></section>
-<a class="workflows" href="/emails">Choose Shopping and Health folders →</a></main>
+<section id="views"><h2 class="vh">Views</h2><details class="add-view" open><summary>+ Add view</summary><form method="POST" action="?/create" class="grid">
+    <label>Account<select name="accountId" value={chosen?.id ?? ''} onchange={(e) => accountId = e.currentTarget.value}>{#each data.accounts as a (a.id)}<option value={a.id}>{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} — {a.email || a.id}</option>{/each}{#if data.accounts.length === 0}<option value="" disabled>No accounts — connect one first</option>{/if}</select></label>
+    <label>Folders or labels<select name="folderId" required multiple size="6">{#each folders as folder}<option value={folder.id}>{folder.path || folder.name}</option>{/each}</select><small>Choose one or more. Use Command/Ctrl-click.</small></label>
+    <label>View type<select name="parser" required><option value="shop">Shopping</option><option value="health">Health</option><option value="generic">Custom</option></select></label>
+    <label>Name<input name="name" placeholder="Use folder or label name" /></label><button disabled={folders.length === 0}>Add view</button>
+  </form></details>
+  {#if data.pipelines.length === 0}<p class="hint">No views yet.</p>{/if}<div class="views">{#each data.pipelines as workflow (workflow.id)}<article><div class="vicon">{workflow.parser === 'shop' ? '🛍' : workflow.parser === 'health' ? '♡' : '✉'}</div><div><small>{workflow.source === 'gmail' ? 'Gmail label' : 'Zoho folder'} · {accountLabel(workflow.accountId) || 'account removed'} · {workflow.folderName}</small><h3><a href={`/pipelines/${workflow.id}`}>{workflow.name}</a></h3><p>{data.itemCounts[workflow.id] || 0} items · {workflow.enabled ? 'hourly sync' : 'paused'}{workflow.lastError ? ` · ${workflow.lastError}` : ''}</p></div><div class="actions"><form method="POST" action="?/sync"><input type="hidden" name="id" value={workflow.id}><button>Sync now</button></form><form method="POST" action="?/toggle"><input type="hidden" name="id" value={workflow.id}><button>{workflow.enabled ? 'Pause' : 'Enable'}</button></form></div></article>{/each}</div></section>
+</main>
 <style>
+  .vh{margin:0 0 14px;font-size:16px}.add-view{border:1px solid #e3e8f1;border-radius:10px;margin-bottom:14px}.add-view summary{cursor:pointer;padding:11px 14px;font-weight:700;color:#43516c}.add-view .grid{padding:0 14px 14px}.views{display:grid;gap:10px}.views article{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;border:1px solid #e7ebf2;border-radius:10px;padding:12px}.vicon{font-size:22px}.views h3{margin:3px 0;font-size:15px}.views h3 a{color:#304fbe;text-decoration:none}.views p,.views small{margin:0;color:#8a95a8;font-size:11px}.views .actions{margin:0}@media(max-width:650px){.views article{grid-template-columns:30px 1fr}.views .actions{grid-column:2;flex-wrap:wrap}}
   .accounts{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:6px}.accounts li{display:flex;gap:8px;align-items:center;border:1px solid #e7ebf2;border-radius:9px;padding:8px 12px}.accounts li div{flex:1;min-width:0}.accounts strong{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis}.accounts small,.hint{color:#8a95a8;font-size:11px}.accounts form{margin:0}.hint{margin:8px 0 0}.danger{color:#a5414d}
   .setup{border:1px solid #e3e8f1;border-radius:10px;margin:0 0 18px}
   .setup summary{cursor:pointer;padding:12px 14px;font-weight:700;color:#43516c}

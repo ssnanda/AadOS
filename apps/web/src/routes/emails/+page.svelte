@@ -1,21 +1,24 @@
 <script lang="ts">
-  import type { ActionData, PageData } from './$types';
-  let { data, form }: { data: PageData; form: ActionData } = $props();
-  let accountId = $state('');
-  let chosen = $derived(data.accounts.find((a) => a.id === accountId) ?? data.accounts[0]);
-  let error = $derived(form && 'error' in form ? form.error : '');
-  let folders = $derived(chosen?.folders ?? []);
-  let accountLabel = (id: string) => { const a = data.accounts.find((x) => x.id === id); return a ? a.email || a.id : ''; };
+  import AppShell from '$lib/components/AppShell.svelte';
+  import type { PageData } from './$types';
+  let { data }: { data: PageData } = $props();
+  const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
 </script>
 <svelte:head><title>Emails · AadOS</title></svelte:head>
-<main><header><a href="/">← Inbox</a><div><h1>Emails</h1><p>Turn regular Zoho folders and Gmail labels into focused views.</p></div><a class="settings" href="/settings/emails">Email settings</a></header>
-  {#if error}<div class="alert">{error}</div>{/if}
-  <section><details class="add-view"><summary>+ Add view</summary><form method="POST" action="?/create" class="grid">
-    <label>Account<select name="accountId" value={chosen?.id ?? ''} onchange={(e) => accountId = e.currentTarget.value}>{#each data.accounts as a (a.id)}<option value={a.id}>{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} — {a.email || a.id}</option>{/each}{#if data.accounts.length === 0}<option value="" disabled>No accounts — connect one first</option>{/if}</select></label>
-    <label>Folders or labels<select name="folderId" required multiple size="6">{#each folders as folder}<option value={folder.id}>{folder.path || folder.name}</option>{/each}</select><small>Choose one or more. Use Command/Ctrl-click.</small></label>
-    <label>View type<select name="parser" required><option value="shop">Shopping</option><option value="health">Health</option><option value="generic">Custom</option></select></label>
-    <label>Name<input name="name" placeholder="Use folder or label name" /></label><button disabled={folders.length === 0}>Add view</button>
-  </form></details></section>
-  <section><h2>Email views</h2>{#if data.pipelines.length === 0}<p class="muted">Choose a folder for Shopping or Health.</p>{/if}<div class="views">{#each data.pipelines as workflow}<article><div class="icon">{workflow.parser === 'shop' ? '🛍' : workflow.parser === 'health' ? '♡' : '✉'}</div><div><small>{workflow.source === 'gmail' ? 'Gmail label' : 'Zoho folder'} · {accountLabel(workflow.accountId) || 'account removed'} · {workflow.folderName}</small><h3><a href={`/pipelines/${workflow.id}`}>{workflow.name}</a></h3><p>{data.itemCounts[workflow.id] || 0} items · {workflow.enabled ? 'hourly sync' : 'paused'}{workflow.lastError ? ` · ${workflow.lastError}` : ''}</p></div><div class="actions"><form method="POST" action="?/sync"><input type="hidden" name="id" value={workflow.id}><button>Sync now</button></form><form method="POST" action="?/toggle"><input type="hidden" name="id" value={workflow.id}><button>{workflow.enabled ? 'Pause' : 'Enable'}</button></form></div>{#if data.recent[workflow.id]?.length}<ul class="recent">{#each data.recent[workflow.id] as m (m.id)}<li><span>{m.subject || '(no subject)'}</span><small>{m.sender} · {new Date(m.receivedAt).toLocaleDateString()}</small></li>{/each}<li class="all"><a href={`/pipelines/${workflow.id}`}>View all {data.itemCounts[workflow.id]} →</a></li></ul>{/if}</article>{/each}</div></section>
-</main>
-<style>.recent{grid-column:2/-1;list-style:none;margin:0;padding:8px 0 0;border-top:1px solid #eef0f5;display:grid;gap:5px}.recent li{display:flex;gap:10px;justify-content:space-between;font-size:12px}.recent li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recent small{white-space:nowrap}.recent .all{justify-content:flex-start}main{max-width:980px;margin:auto;padding:32px;color:#29344c}header{display:flex;gap:24px;align-items:flex-start;margin-bottom:24px}header>a{color:#3157de;text-decoration:none;margin-top:7px}header div{flex:1}h1{margin:0}header p,.muted{color:#8994a8}.settings{white-space:nowrap}section{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:20px;margin:16px 0}h2{font-size:14px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px;color:#68758e}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}label{display:grid;gap:6px;font-size:11px;font-weight:750;color:#647087}input,select{width:100%;border:1px solid #dbe1eb;border-radius:8px;padding:10px;background:#fbfcfe}button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:9px 13px;color:#43516c}.grid>button{align-self:end}.views{display:grid;gap:10px}.views article{display:grid;grid-template-columns:38px 1fr auto;gap:13px;align-items:center;border:1px solid #e7ebf2;border-radius:10px;padding:13px}.icon{font-size:22px}.views h3{margin:3px 0}.views a{color:#304fbe;text-decoration:none}.views p,.views small{margin:0;color:#8a95a8;font-size:11px}.actions{display:flex;gap:8px}.actions form{margin:0}.alert{padding:11px 14px;border-radius:9px;background:#fff0f1;color:#a5414d}@media(max-width:650px){.grid{grid-template-columns:1fr}header{display:block}.settings{display:inline-block;margin-top:8px}.views article{grid-template-columns:30px 1fr}.actions{grid-column:2;flex-wrap:wrap}}</style>
+<AppShell title="Emails">
+  {#if data.views.length === 0}<div class="empty">No views yet. <a href="/settings/emails#views">Create a view in Settings → Emails</a>.</div>{/if}
+  {#each data.views as v (v.id)}
+    <section><header><span class="icon">{icon(v.parser)}</span><div><h2><a href={`/pipelines/${v.id}`}>{v.name}</a></h2><small>{v.account} · {v.count} emails</small></div><a class="all" href={`/pipelines/${v.id}`}>View all →</a></header>
+      {#if v.items.length === 0}<p class="muted">Nothing synced yet.</p>{:else}<ul>{#each v.items as m (m.id)}<li><span class="kind">{m.kind}</span><span class="subject">{m.subject || '(no subject)'}</span><small>{m.sender}</small><small class="date">{new Date(m.receivedAt).toLocaleDateString()}</small></li>{/each}</ul>{/if}
+    </section>
+  {/each}
+</AppShell>
+<style>
+  section{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:18px;margin-bottom:16px}
+  header{display:flex;gap:12px;align-items:center;margin-bottom:10px}header div{flex:1}.icon{font-size:22px}
+  h2{margin:0;font-size:16px}h2 a{color:#29344c;text-decoration:none}small,.muted{color:#8a95a8;font-size:11px}.all{color:#3157de;text-decoration:none;font-size:12px}
+  ul{list-style:none;margin:0;padding:0}li{display:grid;grid-template-columns:80px minmax(0,2fr) minmax(0,1fr) 80px;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #eef0f5;font-size:12px}
+  .kind{font-size:10px;font-weight:800;text-transform:uppercase;color:#536bc0}.subject,small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.date{text-align:right}
+  .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:35px;text-align:center;color:#8c96a8}.empty a{color:#3157de}
+  @media(max-width:700px){li{grid-template-columns:1fr}.date{text-align:left}}
+</style>
