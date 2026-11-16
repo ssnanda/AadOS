@@ -2,10 +2,9 @@ import { env } from '$env/dynamic/private';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { createSession, sameUsername, SESSION_COOKIE, sessionCookieOptions } from '$lib/server/auth';
+import { createSession, security, sameUsername, SESSION_COOKIE, sessionCookieOptions } from '$lib/server/auth';
 import { verifyPassword } from '$lib/server/password.js';
 
-const failures = new Map<string, number[]>();
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_FAILURES = 8;
 const CSRF_COOKIE = 'aados_login_csrf';
@@ -26,9 +25,8 @@ export const load: PageServerLoad = ({ cookies, request, url }) => {
 export const actions: Actions = {
   default: async ({ cookies, getClientAddress, request, url }) => {
     const address = getClientAddress();
-    const now = Date.now();
-    const recent = (failures.get(address) || []).filter((time) => now - time < WINDOW_MS);
-    if (recent.length >= MAX_FAILURES) return fail(429, { error: 'Too many attempts. Try again later.', username: '' });
+    // Counters live in security.json so a restart does not reset the lockout.
+    if (security().recentFailures(address, WINDOW_MS) >= MAX_FAILURES) return fail(429, { error: 'Too many attempts. Try again later.', username: '' });
 
     const data = await request.formData();
     const username = String(data.get('username') || '');
@@ -38,13 +36,12 @@ export const actions: Actions = {
     if (!submittedToken || !cookieToken || !sameToken(submittedToken, cookieToken)) return fail(403, { error: 'Login form expired. Reload and try again.', username });
     const valid = sameUsername(username) && await verifyPassword(password, env.AADOS_PASSWORD_HASH || '');
     if (!valid) {
-      recent.push(now);
-      failures.set(address, recent);
+      security().addFailure(address, WINDOW_MS);
       await new Promise((resolve) => setTimeout(resolve, 500));
       return fail(400, { error: 'Invalid username or password.', username });
     }
 
-    failures.delete(address);
+    security().clearFailures(address);
     const secure = url.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
     cookies.set(SESSION_COOKIE, createSession(), sessionCookieOptions(secure));
     cookies.delete(CSRF_COOKIE, { path: '/login' });

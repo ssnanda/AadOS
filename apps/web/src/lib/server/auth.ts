@@ -1,6 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import { env } from '$env/dynamic/private';
+import { dataDir } from './data-dir';
+import { SecurityStore } from './security-store';
 
 export const SESSION_COOKIE = 'aados_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
@@ -16,8 +18,10 @@ function signature(value: string): Buffer {
   return createHmac('sha256', signingKey()).update(value).digest();
 }
 
+export const security = () => new SecurityStore(dataDir());
+
 export function createSession(): string {
-  const payload = Buffer.from(JSON.stringify({ expires: Date.now() + SESSION_SECONDS * 1000 })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ iat: Date.now(), expires: Date.now() + SESSION_SECONDS * 1000 })).toString('base64url');
   return `${payload}.${signature(payload).toString('base64url')}`;
 }
 
@@ -30,7 +34,8 @@ export function validSession(token: string | undefined): boolean {
     const expected = signature(payload);
     if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return false;
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return Number.isSafeInteger(parsed.expires) && parsed.expires > Date.now();
+    // `iat` (issue time) lets "sign out everywhere" revoke every earlier session server-side.
+    return Number.isSafeInteger(parsed.expires) && parsed.expires > Date.now() && (Number(parsed.iat) || 0) >= security().validAfter();
   } catch {
     return false;
   }

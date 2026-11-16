@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, applyUnread, validOAuthState, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
+import { accountId, applyUnread, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 import { fetchRetry, needsReconnect } from './retry';
+import { addFlow, consumeFlow } from './oauth-state';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
 const mailHost = (dc: string) => `https://mail.zoho.${dc || 'com'}`;
@@ -13,8 +14,8 @@ async function jsonResponse(response: Response) {
 }
 
 export function beginOAuth(state: AadOSState, redirectUri: string) {
-  state.zoho.oauthState = randomBytes(24).toString('base64url');
-  state.zoho.oauthStateExpiresAt = Date.now() + 10 * 60 * 1000;
+  const token = randomBytes(24).toString('base64url');
+  addFlow((state.zoho.pending ||= {}), token);
   const query = new URLSearchParams({
     client_id: state.zoho.clientId,
     response_type: 'code',
@@ -22,17 +23,15 @@ export function beginOAuth(state: AadOSState, redirectUri: string) {
     scope: 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ',
     access_type: 'offline',
     prompt: 'consent',
-    state: state.zoho.oauthState
+    state: token
   });
   return `${accountsHost(state.zoho.dataCenter)}/oauth/v2/auth?${query}`;
 }
 
 export async function finishOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
-  if (!validOAuthState(state.zoho.oauthState, state.zoho.oauthStateExpiresAt, returnedState)) throw new Error('Zoho OAuth state is invalid or expired');
+  if (!consumeFlow((state.zoho.pending ||= {}), returnedState)) throw new Error('Zoho OAuth state is invalid or expired');
   const form = new URLSearchParams({ code, grant_type: 'authorization_code', client_id: state.zoho.clientId, client_secret: state.zoho.clientSecret, redirect_uri: redirectUri });
   const tokens = await jsonResponse(await fetch(`${accountsHost(state.zoho.dataCenter)}/oauth/v2/token`, { method: 'POST', body: form, signal: AbortSignal.timeout(15000) }));
-  state.zoho.oauthState = '';
-  state.zoho.oauthStateExpiresAt = 0;
   // Identify the mailbox first, then add it or refresh the tokens of an existing one.
   const account: MailAccount = { id: '', provider: 'zoho', email: '', remoteId: '', accessToken: String(tokens.access_token || ''), refreshToken: String(tokens.refresh_token || ''), expiresAt: Date.now() + Number(tokens.expires_in || 3600) * 1000, folders: [] };
   await discoverAccountAndFolders(state, account);

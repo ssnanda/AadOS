@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { ensureInboxPipelines, hasAccount, updateState } from './aados-store';
+import { ensureInboxPipelines, hasAccount, updateState, updateStateDetached } from './aados-store';
 import { syncView } from './pipeline-sync';
 import { syncJob } from './sync-job';
 
@@ -31,8 +31,9 @@ async function pass() {
   if (busy) { console.log(`[aados] scheduled sync skipped: ${busy}`); return; }
   globalThis.__aadosSyncRunning = true;
   try {
-    await updateState(async (state) => {
-      ensureInboxPipelines(state);
+    await updateState((state) => { ensureInboxPipelines(state); });
+    // Runs on a snapshot, so mailbox network calls never block other writes.
+    await updateStateDetached(async (state) => {
       for (const pipeline of state.pipelines.filter((item) => item.enabled)) {
         // Re-check between views so a long sync backs off when the machine gets busy.
         const stop = busyReason();

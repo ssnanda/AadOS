@@ -1,6 +1,6 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { ensureInboxPipelines, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { ensureInboxPipelines, updateStateDetached, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
 import { syncView } from '$lib/server/pipeline-sync';
@@ -34,7 +34,7 @@ export const actions: Actions = {
   },
   sync: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
-    try { let result = { scanned: 0, added: 0 }; await updateState(async (state) => { const pipeline = state.pipelines.find((item) => item.id === id); if (!pipeline) throw new Error('Email workflow not found.'); result = await syncView(state, pipeline); }); return { synced: id, ...result }; }
+    try { let result = { scanned: 0, added: 0 }; await updateStateDetached(async (state) => { const pipeline = state.pipelines.find((item) => item.id === id); if (!pipeline) throw new Error('Email workflow not found.'); result = await syncView(state, pipeline); }); return { synced: id, ...result }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
   },
   toggle: async ({ request }) => {
@@ -78,9 +78,8 @@ export const actions: Actions = {
     const id = String((await request.formData()).get('id') || '');
     try {
       let added = 0;
-      await updateState(async (s) => {
-        if (!s.accounts.some((item) => item.id === id)) throw new Error('Account not found.');
-        ensureInboxPipelines(s);
+      await updateState((s) => { if (!s.accounts.some((item) => item.id === id)) throw new Error('Account not found.'); ensureInboxPipelines(s); });
+      await updateStateDetached(async (s) => {
         for (const p of s.pipelines.filter((item) => item.enabled && pipelineFolders(item).some((f) => f.accountId === id))) added += (await syncView(s, p, { accountId: id })).added;
       });
       return { synced: id, added };

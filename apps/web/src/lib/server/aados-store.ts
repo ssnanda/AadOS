@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { env } from '$env/dynamic/private';
+import { dataDir } from './data-dir';
 
 export type PipelineParser = 'shop' | 'health' | 'generic';
 
@@ -52,10 +53,10 @@ export type PipelineItem = {
   facts: Record<string, string | number | boolean>;
 };
 // Shared OAuth app credentials per provider; one OAuth client serves many accounts.
-type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number };
-type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string };
+type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number; pending?: PendingFlows };
+type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string; pending?: PendingFlows };
 /** Local to-do / reminder. `emailKey` links it to a source message (accountId:messageId). */
-export type Task = { id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string };
+export type Task = { id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string; priority?: 'high' | 'normal' | 'low'; completedAt?: string };
 // One connected mailbox. `remoteId` is the Zoho mail account id (unused for Gmail).
 export type MailAccount = {
   id: string;
@@ -94,10 +95,12 @@ export const pipelineFolders = (pipeline: Pipeline) => (pipeline.folders?.length
 export const hasAccount = (state: AadOSState, pipeline: Pipeline) => pipelineFolders(pipeline).some((folder) => state.accounts.some((account) => account.id === folder.accountId));
 
 export { validOAuthState } from './oauth-state.ts';
+import { mergeSync } from './sync-merge.ts';
+import type { PendingFlows } from './oauth-state.ts';
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
 
-const stateFile = () => join(env.AADOS_DATA_DIR || (env.NODE_ENV === 'production' ? '/data/aados' : join(process.cwd(), '.data')), 'state.enc');
+const stateFile = () => join(dataDir(), 'state.enc');
 const key = () => {
   const secret = env.AADOS_SESSION_SECRET || '';
   if (secret.length < 64) throw new Error('AADOS_SESSION_SECRET must contain at least 64 characters');
@@ -129,8 +132,8 @@ function decrypt(value: string): AadOSState {
   const firstAccount = (provider: string) => accounts.find((item) => item.provider === provider)?.id || '';
   return {
     ...defaults, ...saved,
-    zoho: { clientId: saved.zoho?.clientId || '', clientSecret: saved.zoho?.clientSecret || '', dataCenter: saved.zoho?.dataCenter || 'com', oauthState: saved.zoho?.oauthState || '', oauthStateExpiresAt: saved.zoho?.oauthStateExpiresAt || 0 },
-    gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0, pkceVerifier: saved.gmail?.pkceVerifier || '' },
+    zoho: { clientId: saved.zoho?.clientId || '', clientSecret: saved.zoho?.clientSecret || '', dataCenter: saved.zoho?.dataCenter || 'com', oauthState: '', oauthStateExpiresAt: 0, pending: saved.zoho?.pending || {} },
+    gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0, pkceVerifier: '', pending: saved.gmail?.pending || {} },
     accounts,
     dismissed: saved.dismissed || [],
     tasks: saved.tasks || [],
@@ -162,6 +165,20 @@ export async function updateState(change: (state: AadOSState) => void | Promise<
   });
   await queue;
   return result;
+}
+
+/**
+ * Run a long, network-bound change (a sync) on a private snapshot so other writes are not blocked,
+ * then merge only its effects into the latest state inside one short locked update.
+ * If `work` throws, partial results that were produced are still merged (so progress survives), then the error is rethrown.
+ */
+export async function updateStateDetached(work: (snapshot: AadOSState) => Promise<void>): Promise<void> {
+  const before = await readState();
+  const working = structuredClone(before);
+  let failure: unknown;
+  try { await work(working); } catch (cause) { failure = cause; }
+  await updateState((latest) => mergeSync(latest, before, working));
+  if (failure) throw failure;
 }
 
 /** Message ids of a view that are already stored or were dismissed. */

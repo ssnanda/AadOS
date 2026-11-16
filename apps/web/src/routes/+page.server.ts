@@ -2,6 +2,7 @@ import type { PageServerLoad } from './$types';
 import { pipelineFolders, readState, visiblePipelines } from '$lib/server/aados-store';
 import { isUnread } from '$lib/server/search';
 import { buildRows, queryInbox } from '$lib/server/inbox';
+import { overview } from '$lib/server/tasks';
 
 export const load: PageServerLoad = async () => {
   const state = await readState();
@@ -16,7 +17,13 @@ export const load: PageServerLoad = async () => {
     };
   });
   // Deduplicated across accounts and views; the page size of 1 keeps this cheap (only counts are used).
-  const { counts } = queryInbox(buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items }), { view: 'all', pageSize: 1 });
+  const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
+  const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 });
+  const brief = overview({ rows, tasks: state.tasks, accounts: state.accounts, today: new Date().toISOString().slice(0, 10) });
+  const slim = (list: typeof rows) => list.map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, due: r.due, account: r.accountEmail }));
   const inbox = { unread: counts.unread, needsReply: counts.needsReply, important: counts.important, bills: counts.categories['Bills'] || 0, renewals: counts.categories['Renewals'] || 0, receipts: counts.categories['Receipts'] || 0 };
-  return { tiles, accounts: state.accounts.length, unread: counts.unread, inbox };
+  return {
+    tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
+    brief: { counts: brief.counts, important: slim(brief.important), needsReply: slim(brief.needsReply), billsRenewals: slim(brief.billsRenewals), upcoming: slim(brief.upcoming), tasksToday: brief.tasksToday.map((t) => ({ id: t.id, title: t.title })), tasksOverdue: brief.tasksOverdue.map((t) => ({ id: t.id, title: t.title, due: t.due })), errors: brief.errors }
+  };
 };
