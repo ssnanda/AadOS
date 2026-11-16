@@ -1,15 +1,25 @@
-# OpenShift deployment
+# OpenShift deployment (oc only; no Helm)
 
-Current chart targets `aados-dev` and `aados-prod` using separate values overlays. Do not confuse this project with other OpenShift deployments.
+AadOS follows the AJOPS `oc-deploy.sh` approach: OpenShift `ImageStream` + binary `BuildConfig` + `oc start-build --from-dir` + `oc apply` of private Kubernetes resources. **You only need `oc` plus a logged-in session on your Mac.** Neither Helm nor a Docker daemon nor an external image registry is required for the OpenShift path. The OpenShift cluster must support BuildConfigs and its internal registry.
 
-Required environment and resources:
+## Development (recommended)
 
-1. Log in with `oc login`, select the intended cluster and verify namespace access. Pre-create the namespace (`aados-dev` or `aados-prod`).
-2. Create namespace Secret `aados-api-secrets` with key `secret_key_base` via your approved secrets manager. Do not store a literal secret in Git.
-3. Build and push API/web images from `apps/api/Dockerfile` and `apps/web/Dockerfile` to your configured registry. Set `API_IMAGE` and `WEB_IMAGE` to the full immutable image references.
-4. Run `AADOS_ENV=dev API_IMAGE=... WEB_IMAGE=... bin/deploy-openshift.sh`. Production additionally requires an explicit interactive confirmation.
-5. Services are **ClusterIP only**. Until authentication is implemented, use an access-controlled `oc port-forward` for testing, not a public Route.
+1. On your Mac, check `oc whoami` and `oc get nodes`.
+2. Run `./bin/pull-latest.sh` in a clean checkout to get the current code.
+3. Run `./bin/oc-deploy.sh` from the AadOS repository. This runs `./bin/bump.sh --if-dirty` first if any local changes need committing and pushing to GitHub.
+4. The script creates `aados-dev` only if it does not exist and generates the `aados-api-secrets` development secret only when absent. It processes `openshift/build.yaml`, builds both Dockerfiles in OpenShift from `apps/api` and `apps/web`, processes `openshift/app.yaml`, and verifies both rollouts.
+5. Access from your Mac with `oc port-forward -n aados-dev svc/aados-web 3000:3000`, then visit `http://127.0.0.1:3000`.
 
-The script does not create namespaces or deploy a database. The chart starts the API with `AADOS_ENABLE_DATABASE=false` until the supported Postgres/CloudNativePG deployment and migrations are implemented. Image pull credentials and SCC permissions are the cluster administrator's responsibility.
+Use `AADOS_NAMESPACE=<namespace> ./bin/oc-deploy.sh` if you have an existing namespace. To see results: `oc get pods,deploy,svc -n aados-dev`. Deployment logs are in `build/deploy/` (gitignored). The old `bin/deploy-openshift.sh` remains as an alias.
 
-The bootstrap chart does not provide production readiness, backup automation, TLS edge routing or a release promotion workflow. Do not deploy it to production for live email use.
+## Production boundary
+
+`AADOS_ENV=prod ./bin/oc-deploy.sh` requires typing `DEPLOY-PROD`, an **existing** production namespace and a pre-created `aados-api-secrets` with key `secret_key_base`. Production deployments are discouraged until authentication, database migrations, operational backups and authorization are implemented. The script intentionally creates **no Route or Ingress**, irrespective of environment. Do not ingest personal email or expose services publicly in this bootstrap.
+
+## Notes
+
+- The current app has no OAuth connections or authenticated users. It serves a read-only empty inbox and health endpoints.
+- `AADOS_ENABLE_DATABASE=false` until CloudNativePG/PostgreSQL and migrations are configured.
+- OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
+- The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.
+- `bin/dev-local.sh` uses Docker Compose for optional local-only testing, not for OpenShift.

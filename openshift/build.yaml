@@ -1,0 +1,76 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: aados-binary-builds
+parameters:
+  - name: APP_NAME
+    value: aados
+  - name: NAMESPACE
+    required: true
+objects:
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: ${APP_NAME}-api
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: api
+    spec:
+      lookupPolicy:
+        local: true
+  - apiVersion: image.openshift.io/v1
+    kind: ImageStream
+    metadata:
+      name: ${APP_NAME}-web
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: web
+    spec:
+      lookupPolicy:
+        local: true
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: ${APP_NAME}-api
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: api
+    spec:
+      runPolicy: Serial
+      successfulBuildsHistoryLimit: 2
+      failedBuildsHistoryLimit: 2
+      completionDeadlineSeconds: 1800
+      source:
+        type: Binary
+        binary: {}
+      strategy:
+        type: Docker
+        dockerStrategy:
+          dockerfilePath: Dockerfile
+      output:
+        to:
+          kind: ImageStreamTag
+          name: ${APP_NAME}-api:latest
+  - apiVersion: build.openshift.io/v1
+    kind: BuildConfig
+    metadata:
+      name: ${APP_NAME}-web
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: web
+    spec:
+      runPolicy: Serial
+      successfulBuildsHistoryLimit: 2
+      failedBuildsHistoryLimit: 2
+      completionDeadlineSeconds: 1800
+      source:
+        type: Binary
+        binary: {}
+      strategy:
+        type: Docker
+        dockerStrategy:
+          dockerfilePath: Dockerfile
+      output:
+        to:
+          kind: ImageStreamTag
+          name: ${APP_NAME}-web:latest

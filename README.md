@@ -1,58 +1,59 @@
 # AadOS
 
-AadOS is an independent, self-hosted personal AI operating system. **Email is the first priority.** This repository starts with a read-only email dashboard shell and a Phoenix JSON API that explicitly reports no connected accounts. No email is ingested, modified, sent, or deleted by this release.
+AadOS is an independent, self-hosted personal AI operating system. **Email is the first priority.** The initial application is a Phoenix JSON API and SvelteKit read-only dashboard with an explicitly empty/not-connected inbox. No provider credentials, messages, or tokens are shipped.
 
-## Version and scope
+## Current status
 
-`VERSION`: **0.1.0** — initial bootstrap. This is a working **foundation**, not a connected-email MVP. The dashboard displays real API connection state, including offline handling; no sample messages are presented as actual mail.
+- Version: **0.1.1** (bootstrap, not a connected email MVP).
+- API: Elixir/Phoenix health and email overview/messages endpoints.
+- Web: SvelteKit 2 / Svelte 5 / Tailwind CSS 4 dashboard.
+- Future: secure identity, Gmail and Outlook read-only OAuth, CloudNativePG/Postgres, AI triage and SwiftUI app.
+- No public Route/Ingress until authentication, authorization, encrypted token storage and security checks are implemented.
 
-## Layout
+## Scripts
 
-- `apps/api`: Phoenix/Elixir JSON API, Ecto/PostgreSQL and Oban foundations (DB optional during bootstrap)
-- `apps/web`: SvelteKit 2 / Svelte 5 / TypeScript / Tailwind CSS 4 dashboard
-- `charts/aados`: private-by-default OpenShift Helm resources
-- `bin`: safe pull, patch-default push, iOS build and OpenShift deployment scripts
-- `docs`: rollout, security, architecture, next milestones
+| Command | Purpose |
+| --- | --- |
+| `./bin/pull-latest.sh` | Safely fast-forward clean local checkout from GitHub |
+| `./bin/bump.sh` | Patch-default version bump, commit, tag and push (option 5 = no bump) |
+| `./bin/dev-local.sh` | Local-only Docker Compose rebuild, refresh, logs, stop or shell |
+| `./bin/oc-deploy.sh` | Deploy to OpenShift using `oc`, binary BuildConfigs and internal registry; no Helm |
+| `./bin/build-ipa.sh` | Signed IPA build; requires a future native Xcode project |
 
-## Local development
+Legacy commands `bin/push.sh` and `bin/deploy-openshift.sh` still work as aliases.
 
-Prerequisites: Elixir >= 1.17 and Erlang/OTP compatible with it; Node.js >= 22 and npm; optionally PostgreSQL 16+.
+## OpenShift — using your existing oc login
 
-**API**
-
-```sh
-cd apps/api
-mix local.hex --force
-mix deps.get
-export SECRET_KEY_BASE="$(mix phx.gen.secret)"
-export AADOS_ENABLE_DATABASE=false
-mix phx.server
-```
-
-The API listens at `http://localhost:4000`. Check `GET /api/health` and `GET /api/v1/email/overview`.
-
-**Web (separate terminal)**
+From a clean AadOS Git checkout on your Mac:
 
 ```sh
-cd apps/web
-npm install
-AADOS_API_URL=http://localhost:4000 npm run dev -- --host 127.0.0.1
+./bin/pull-latest.sh
+./bin/oc-deploy.sh
 ```
 
-Open `http://localhost:5173`. The UI is intentionally a not-connected state until OAuth and authorization are implemented.
+This targets `aados-dev` by default. It creates the development project if needed, generates a development Phoenix secret (only if missing), builds both images inside OpenShift from source, and applies two private services and deployments. **Neither Helm nor Docker is needed on your Mac for OpenShift deployment.** The OpenShift cluster must support BuildConfigs and the internal image registry.
 
-**Optional PostgreSQL**: set `DATABASE_URL`, `AADOS_ENABLE_DATABASE=true`, and run `mix ecto.create` before starting the API. Database-backed mail storage/migrations are planned for the next milestone; Oban is only started when the database is enabled.
+Access the UI securely through your existing `oc` login:
 
-## Release and deployment
+```sh
+oc port-forward -n aados-dev svc/aados-web 3000:3000
+```
 
-`bin/pull-latest.sh` only fast-forwards a clean working tree. `bin/push.sh` prompts for version level (Patch is default; No bump is option 5), commits and pushes without force, and checks existing tags before creating a release tag. Scripts do not supply or invent signing credentials, cluster settings, or secrets.
+Open http://127.0.0.1:3000. To select an existing namespace, set `AADOS_NAMESPACE`. Production requires `AADOS_ENV=prod` and explicit `DEPLOY-PROD` confirmation; do not deploy this unauthenticated bootstrap publicly. See [OpenShift instructions](docs/openshift.md).
 
-`bin/deploy-openshift.sh` requires configured images, `oc`, `helm`, an existing `aados-dev` or `aados-prod` namespace, and the `aados-api-secrets` Secret containing `secret_key_base`. It validates access and image settings before deploying. **No public Route is created in this release**: owner authentication is not yet present. See [OpenShift guide](docs/openshift.md).
+## Optional local development
 
-`bin/build-ipa.sh` validates a configured macOS/Xcode build project, signing and export settings. The native iOS project is a future milestone; this script correctly stops if it has not been supplied.
+`./bin/dev-local.sh` requires Docker and Docker Compose. It generates gitignored `.env.local` with a local development-only secret if absent, builds API/web containers, and binds them to localhost. Web: http://127.0.0.1:3000; API: http://127.0.0.1:4000.
 
-## Security boundary
+For native development without Docker, use Elixir >= 1.17 / Node >= 22, run `mix deps.get` then `mix phx.server` in `apps/api` with `SECRET_KEY_BASE` and `AADOS_ENABLE_DATABASE=false`, and run `npm install && npm run dev` in `apps/web` with `AADOS_API_URL=http://localhost:4000`.
 
-No email provider credentials or tokens are shipped or requested. No auth or OAuth is implemented yet, so **do not expose this bootstrap to the public internet**. The Helm chart uses ClusterIP services only. Provider OAuth scopes will be Gmail `gmail.readonly` and Microsoft Graph `Mail.Read`, with separate per-account grants and encrypted token storage after identity and session security are in place. No send/archive/delete capability is included.
+## Source layout
 
-See [Architecture](docs/architecture.md), [Roadmap](docs/roadmap.md), [Security](docs/security.md).
+- `apps/api`: Phoenix, Ecto, Oban foundation; DB disabled in bootstrap.
+- `apps/web`: SvelteKit dashboard.
+- `openshift`: ImageStreams, binary builds, private deployments and services.
+- `charts/aados`: retained legacy Helm chart (not required by `oc-deploy.sh`).
+- `bin`: Git, local development, OpenShift and iOS scripts.
+- `docs`: [Architecture](docs/architecture.md), [Roadmap](docs/roadmap.md), [Security](docs/security.md).
+
+**Security:** No public exposure or live email ingestion until login, OAuth, RLS/authorization and encrypted credentials are implemented.

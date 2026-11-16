@@ -11,9 +11,9 @@ AadOS is **not** Family OS, AJMCP, or AJ Core. The source of truth is `ssnanda/A
 | Identity | WebAuthn, RBAC/ReBAC, encrypted tokens | Not implemented; no public exposure |
 | AI | LiteLLM/Ollama/llama.cpp; LangGraph | Later; human approval for all state-changing actions |
 | Files | RustFS; later documents | Later |
-| Operations | OpenShift, Helm, GitHub Actions; later Argo CD | Helm chart and CI, private-only services |
+| Operations | OpenShift oc ImageStreams/BuildConfigs, GitHub Actions; later Argo CD | Binary builds, private-only services and CI (Helm chart retained as reference) |
 | Observability | OpenTelemetry/Grafana LGTM | Later |
 
 The initial email experience is provider-agnostic and read-only. Each connector will preserve the source mailbox and enforce account-specific access; token grants will be per-account and stored encrypted at rest. Provider sync and AI classification will run asynchronously once a secure database schema and identity foundation exist.
 
-**Current trust model**: no user authentication or OAuth in v0.1.0. API returns only empty, static connection state. Keep within a trusted development network. Public routes, live connectors and AI handling of personal email are blocked until security gates land.
+**Current trust model**: no user authentication or OAuth in v0.1.1. API returns only empty, static connection state. Keep within a trusted development network. Public routes, live connectors and AI handling of personal email are blocked until security gates land.

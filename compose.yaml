@@ -1,0 +1,25 @@
+# Local-only development; no external ports and no live mail credentials.
+services:
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      PORT: '4000'
+      AADOS_ENABLE_DATABASE: 'false'
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?Set by bin/dev-local.sh}
+    ports:
+      - '127.0.0.1:4000:4000'
+    restart: unless-stopped
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: '3000'
+      AADOS_API_URL: http://api:4000
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      - api
+    restart: unless-stopped

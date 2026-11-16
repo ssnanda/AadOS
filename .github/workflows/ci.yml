@@ -48,3 +48,42 @@ jobs:
         run: bash -n bin/*.sh
       - name: JSON metadata validation
         run: python3 -m json.tool apps/web/package.json >/dev/null
+  release-tag:
+    name: Tag successful versioned release
+    needs: [api, web, scripts]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify version metadata and create version tag when absent
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          v = Path('VERSION').read_text().strip()
+          assert json.loads(Path('apps/web/package.json').read_text())['version'] == v
+          assert f'version: "{v}"' in Path('apps/api/mix.exs').read_text()
+          assert f'version: "{v}"' in Path('apps/api/lib/aados/api/controllers/health_controller.ex').read_text()
+          assert f'version: "{v}"' in Path('charts/aados/Chart.yaml').read_text()
+          assert f'appVersion: "{v}"' in Path('charts/aados/Chart.yaml').read_text()
+          PY
+          version="$(tr -d '[:space:]' < VERSION)"
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Invalid SemVer: $version" >&2
+            exit 1
+          fi
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; no tag overwrite."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" -m "AadOS $tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"

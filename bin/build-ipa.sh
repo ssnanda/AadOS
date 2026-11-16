@@ -3,8 +3,8 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
-  echo 'Local changes detected; running bin/push.sh first.'
-  ./bin/push.sh || { echo 'ERROR: push failed; build cancelled.' >&2; exit 1; }
+  echo 'Local changes detected; running bin/bump.sh first.'
+  ./bin/bump.sh --if-dirty || { echo 'ERROR: push failed; build cancelled.' >&2; exit 1; }
 fi
 version="$(cat VERSION)"
 if [[ "$(uname -s)" != Darwin ]]; then
