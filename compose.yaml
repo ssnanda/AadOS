@@ -30,5 +30,37 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+  # `bin/dev-local.sh test` only (profile `test`): API unit + database tests on a throwaway, in-memory Postgres.
+  testdb:
+    profiles: [test]
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aados_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d aados_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  apitest:
+    profiles: [test]
+    image: elixir:1.17.3
+    working_dir: /app
+    environment:
+      MIX_ENV: test
+      AADOS_TEST_DATABASE_URL: ecto://postgres:postgres@testdb:5432/aados_test
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-test-only-secret-key-base-test-only-secret-key-base-test-only-secret}
+    volumes:
+      - ./apps/api:/app
+      - aados-api-deps:/app/deps
+      - aados-api-build:/app/_build
+    depends_on:
+      testdb:
+        condition: service_healthy
+    command: sh -c 'mix local.hex --force >/dev/null && mix local.rebar --force >/dev/null && mix deps.get && mix compile --warnings-as-errors && mix test'
 volumes:
   aados-data:
+  aados-api-deps:
+  aados-api-build:

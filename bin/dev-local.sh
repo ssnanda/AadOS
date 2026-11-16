@@ -13,20 +13,29 @@ for arg in "$@"; do
 done
 if [[ "$COMMAND" == bump ]]; then AADOS_SKIP_CI=1 exec "$ROOT/bin/bump.sh"; fi
 if [[ "$COMMAND" == help || "$COMMAND" == --help || "$COMMAND" == -h ]]; then
-  echo 'Usage: bin/dev-local.sh [rebuild|refresh|stop|logs|shell|bump] [--reset-user]'
+  echo 'Usage: bin/dev-local.sh [rebuild|refresh|stop|logs|shell|test|bump] [--reset-user]'
+  echo '  rebuild  Build and start the local stack. Never touches git (no commit, bump, push or CI).'
+  echo '  test     Run all checks locally: web check + Node tests, then API tests against a throwaway Postgres (Docker).'
+  echo '  bump     Explicit commit/version/push via bump.sh (adds [skip ci]); the only command that uses git.'
   echo '  --reset-user  Generate a new username and password, invalidating all sessions'
   echo 'Local web: http://127.0.0.1:3100 | API: http://127.0.0.1:4000 (override with AADOS_WEB_PORT / AADOS_API_PORT)'
   exit 0
 fi
-[[ "$COMMAND" == rebuild || "$COMMAND" == refresh || "$COMMAND" == stop || "$COMMAND" == logs || "$COMMAND" == shell ]] || {
+[[ "$COMMAND" == rebuild || "$COMMAND" == refresh || "$COMMAND" == stop || "$COMMAND" == logs || "$COMMAND" == shell || "$COMMAND" == test ]] || {
   echo "ERROR: Unknown command $COMMAND" >&2; exit 2;
 }
 command -v docker >/dev/null 2>&1 || { echo 'ERROR: Docker CLI missing.' >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo 'ERROR: Docker Compose plugin missing.' >&2; exit 1; }
-# AADOS_SKIP_BUMP=1 skips the commit/push step (for testing uncommitted work).
-if [[ "$COMMAND" == rebuild && "${AADOS_SKIP_BUMP:-}" != 1 && -n "$(git status --porcelain --untracked-files=normal)" ]]; then
-  # [skip ci]: a local rebuild must not start GitHub Actions.
-  AADOS_SKIP_CI=1 "$ROOT/bin/bump.sh" --if-dirty
+# Local runs never commit, bump or push. Use `bin/dev-local.sh bump` (or bin/bump.sh) when you want that.
+if [[ "$COMMAND" == test ]]; then
+  # Same checks CI runs, but on this machine: no GitHub Actions involved.
+  (cd "$ROOT/apps/web" && npm ci --no-audit --no-fund && npm run check && npm test)
+  # Compose interpolates every service's required variables; these placeholders are never used by the test services.
+  export SECRET_KEY_BASE=test-only AADOS_USER=test AADOS_PASSWORD_HASH=test AADOS_SESSION_SECRET=test
+  status=0
+  docker compose --profile test run --rm apitest || status=$?
+  docker compose --profile test stop testdb >/dev/null 2>&1 || true
+  exit "$status"
 fi
 # Local secrets live in a Docker volume (like oc-deploy.sh keeps them in the cluster),
 # never in the repo. The session secret also encrypts the saved mail state.

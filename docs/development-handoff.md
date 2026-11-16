@@ -6,6 +6,12 @@ CI (GitHub Actions, Postgres 16 service): web, api (compile `--warnings-as-error
 Not verified: UI in a browser, live Gmail/Zoho/Google Calendar/Zoho Calendar calls (no credentials), Gmail history sync against a real mailbox.
 Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by the permission classifier), so Elixir changes are verified only by CI.
 
+## Local workflow (no GitHub Actions needed)
+- `bin/dev-local.sh rebuild` builds/starts the stack and **never touches git** (it used to auto-run `bump.sh` on a dirty tree: interactive prompt, commit, version bump, push).
+- `bin/dev-local.sh test` runs `npm ci`, `npm run check`, `npm test`, then the Elixir unit + Postgres integration tests in Docker (`apitest` + throwaway in-memory `testdb`, compose profile `test`). Same checks as CI.
+- `bin/dev-local.sh bump` (or `bin/bump.sh`) is the only path that commits/pushes; `AADOS_SKIP_CI=1` adds `[skip ci]`. CI runs only on pushes/PRs to `main` and manual dispatch.
+- Not yet run on this machine: Docker commands were blocked by the permission classifier during development; `bin/dev-local.sh test` is syntax- and compose-validated only.
+
 ## Architecture
 - SvelteKit app still owns mail logic; authoritative state is the AES-256-GCM file `state.enc` (key derived from `AADOS_SESSION_SECRET`; rotating it makes the file unreadable).
 - Phoenix API + PostgreSQL is a **mirror** (nothing reads from it for user data yet). Legacy state stays authoritative until the owner switches over.
