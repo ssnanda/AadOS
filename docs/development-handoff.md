@@ -9,7 +9,7 @@ Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by 
 ## Local workflow (no GitHub Actions needed)
 - `bin/dev-local.sh rebuild` builds/starts the stack and **never touches git** (it used to auto-run `bump.sh` on a dirty tree: interactive prompt, commit, version bump, push).
 - `bin/dev-local.sh test` runs `npm ci`, `npm run check`, `npm test`, then the Elixir unit + Postgres integration tests in Docker (`apitest` + throwaway in-memory `testdb`, compose profile `test`). Same checks as CI.
-- `bin/dev-local.sh bump` (or `bin/bump.sh`) is the only path that commits/pushes; `AADOS_SKIP_CI=1` adds `[skip ci]`. CI runs only on pushes/PRs to `main` and manual dispatch.
+- `bin/dev-local.sh bump` (or `bin/bump.sh`) is the only path that commits/pushes; The commit always carries `[skip ci]` (no Actions run) unless `AADOS_RUN_CI=1`. The release tag is created and pushed by the script itself. CI otherwise runs only on pushes/PRs to `main` without that marker and on manual dispatch.
 - Not yet run on this machine: Docker commands were blocked by the permission classifier during development; `bin/dev-local.sh test` is syntax- and compose-validated only.
 
 ## Architecture
