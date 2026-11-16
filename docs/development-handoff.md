@@ -1,6 +1,6 @@
 # Development handoff
 
-## PostgreSQL is primary (local Docker stack) - session 4
+## PostgreSQL is primary (local Docker stack) - session 4 (v0.1.27)
 `bin/dev-local.sh rebuild` now starts `db` (postgres:16, volume `aados_aados-pgdata`, no published port), `api` and `web`.
 - **API** runs Ecto migrations automatically on start (`AadOS.Api.Migrator`, after the Repo, before Oban/endpoint). The API image now ships `priv/` (it did not before, so migrations could never have run in a release). Oban tables are created by migration `20261117000002`.
 - **Web** with `AADOS_STORAGE=postgres` (compose default) stores state in `app_state` (jsonb, one row, `SELECT ... FOR UPDATE` transactions). Provider tokens and OAuth client secrets are **not** in that document; they are AES-256-GCM ciphertext in `mail_credentials` (`vault.ts`, same wire format as the Elixir vault, tested both ways). Default when `AADOS_STORAGE` is unset is still the encrypted file, so OpenShift/production is unchanged.
