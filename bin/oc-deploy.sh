@@ -31,7 +31,8 @@ done
 # Keep the deployed source in GitHub first, as with AJOPS.
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
   echo 'Local changes found; running bin/bump.sh before deployment.'
-  "$ROOT/bin/bump.sh" --if-dirty  # bump.sh adds [skip ci]: no GitHub Actions run || fail 'Git push failed; deployment cancelled.'
+  # bump.sh adds [skip ci] by default, so this push starts no GitHub Actions run.
+  "$ROOT/bin/bump.sh" --if-dirty || fail 'Git push failed; deployment cancelled.'
 fi
 
 AADOS_ENV="${AADOS_ENV:-dev}"
