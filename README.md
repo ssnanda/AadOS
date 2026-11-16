@@ -20,7 +20,7 @@ AadOS is an independent, self-hosted personal AI operating system. **Email is th
 | `./bin/oc-deploy.sh` | Deploy to OpenShift using `oc`, binary BuildConfigs and internal registry; no Helm |
 | `./bin/build-ipa.sh` | Signed IPA build; requires a future native Xcode project |
 
-Legacy commands `bin/push.sh` and `bin/deploy-openshift.sh` still work as aliases.
+The legacy `bin/push.sh` command remains available as an alias.
 
 ## OpenShift — using your existing oc login
 

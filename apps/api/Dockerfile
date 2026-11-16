@@ -1,4 +1,6 @@
-FROM elixir:1.17-alpine AS build
+FROM elixir:1.17-alpine AS base
+
+FROM base AS build
 WORKDIR /app
 ENV MIX_ENV=prod
 RUN mix local.hex --force && mix local.rebar --force
@@ -8,8 +10,8 @@ COPY config ./config
 COPY lib ./lib
 RUN mix compile && mix release
 
-FROM alpine:3.20
-RUN apk add --no-cache libstdc++ openssl ncurses-libs && addgroup -S aados && adduser -S aados -G aados
+FROM base AS runtime
+RUN addgroup -S aados && adduser -S aados -G aados
 WORKDIR /app
 COPY --from=build --chown=aados:aados /app/_build/prod/rel/aados_api ./
 USER aados

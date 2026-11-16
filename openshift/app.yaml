@@ -7,6 +7,10 @@ parameters:
     value: aados
   - name: NAMESPACE
     required: true
+  - name: HOSTNAME
+    value: os.aadnanda.com
+  - name: CERT_ISSUER
+    value: letsencrypt-ncllc
 objects:
   - apiVersion: apps/v1
     kind: Deployment
@@ -165,3 +169,32 @@ objects:
         - name: http
           port: 3000
           targetPort: http
+  # OpenShift's default Ingress controller generates the Route. cert-manager
+  # provisions and renews the custom-host certificate in ${APP_NAME}-tls.
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: ${APP_NAME}-web
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: web
+      annotations:
+        cert-manager.io/cluster-issuer: ${CERT_ISSUER}
+        route.openshift.io/termination: edge
+    spec:
+      ingressClassName: openshift-default
+      tls:
+        - hosts:
+            - ${HOSTNAME}
+          secretName: ${APP_NAME}-tls
+      rules:
+        - host: ${HOSTNAME}
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: ${APP_NAME}-web
+                    port:
+                      name: http

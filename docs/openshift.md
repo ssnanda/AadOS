@@ -7,18 +7,19 @@ AadOS follows the AJOPS `oc-deploy.sh` approach: OpenShift `ImageStream` + binar
 1. On your Mac, check `oc whoami` and `oc get nodes`.
 2. Run `./bin/pull-latest.sh` in a clean checkout to get the current code.
 3. Run `./bin/oc-deploy.sh` from the AadOS repository. This runs `./bin/bump.sh --if-dirty` first if any local changes need committing and pushing to GitHub.
-4. The script creates `aados-dev` only if it does not exist and generates the `aados-api-secrets` development secret only when absent. It processes `openshift/build.yaml`, builds both Dockerfiles in OpenShift from `apps/api` and `apps/web`, processes `openshift/app.yaml`, and verifies both rollouts.
-5. Access from your Mac with `oc port-forward -n aados-dev svc/aados-web 3000:3000`, then visit `http://127.0.0.1:3000`.
+4. The script creates `aados` only if it does not exist and generates the `aados-api-secrets` development secret only when absent. It processes `openshift/build.yaml`, builds both Dockerfiles in OpenShift from `apps/api` and `apps/web`, processes `openshift/app.yaml`, and verifies both rollouts.
+5. Visit `https://os.aadnanda.com`. For local access, run `oc port-forward -n aados svc/aados-web 3000:3000`, then visit `http://127.0.0.1:3000`.
 
-Use `AADOS_NAMESPACE=<namespace> ./bin/oc-deploy.sh` if you have an existing namespace. To see results: `oc get pods,deploy,svc -n aados-dev`. Deployment logs are in `build/deploy/` (gitignored). The old `bin/deploy-openshift.sh` remains as an alias.
+Use `AADOS_NAMESPACE=<namespace> ./bin/oc-deploy.sh` to override the project, `AADOS_HOST=<hostname>` to override the public hostname, or `CERT_MANAGER_CLUSTER_ISSUER=<issuer>` to override the certificate issuer. To see results: `oc get pods,deploy,svc,ingress,route -n aados`. Deployment logs are in `build/deploy/` (gitignored).
 
 ## Production boundary
 
-`AADOS_ENV=prod ./bin/oc-deploy.sh` requires typing `DEPLOY-PROD`, an **existing** production namespace and a pre-created `aados-api-secrets` with key `secret_key_base`. Production deployments are discouraged until authentication, database migrations, operational backups and authorization are implemented. The script intentionally creates **no Route or Ingress**, irrespective of environment. Do not ingest personal email or expose services publicly in this bootstrap.
+`AADOS_ENV=prod ./bin/oc-deploy.sh` requires typing `DEPLOY-PROD`, an **existing** production namespace and a pre-created `aados-api-secrets` with key `secret_key_base`. Production deployments are discouraged until authentication, database migrations, operational backups and authorization are implemented. The deployment creates a cert-manager-backed HTTPS Ingress, so do not ingest personal email until authentication and authorization are implemented.
 
 ## Notes
 
 - The current app has no OAuth connections or authenticated users. It serves a read-only empty inbox and health endpoints.
+- DNS for `os.aadnanda.com` must point to the OpenShift router. The default certificate issuer is `letsencrypt-ncllc`, matching the existing AJMCP deployment pattern.
 - `AADOS_ENABLE_DATABASE=false` until CloudNativePG/PostgreSQL and migrations are configured.
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.

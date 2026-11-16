@@ -5,7 +5,7 @@
 - [x] Email overview endpoint that does not fabricate messages
 - [x] Dashboard showing account connection state and basic inbox layout
 - [x] Safe Git workflows and OpenShift/iOS entrypoint scripts
-- [x] Private-by-default deployment manifests and baseline CI
+- [x] OpenShift deployment with HTTPS route for `os.aadnanda.com` and baseline CI
 - [ ] Install dependencies and run full build on a connected runner
 
 ## M1 — Secure Gmail + Outlook read-only connections

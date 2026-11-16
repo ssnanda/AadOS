@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # AadOS — AJOPS-style binary builds deployed with oc; Helm is not required.
-# This bootstrap intentionally has no public Route or Ingress.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,10 +17,14 @@ fi
 
 AADOS_ENV="${AADOS_ENV:-dev}"
 [[ "$AADOS_ENV" == dev || "$AADOS_ENV" == prod ]] || fail 'AADOS_ENV must be dev or prod.'
-NAMESPACE="${AADOS_NAMESPACE:-${OPENSHIFT_PROJECT:-aados-$AADOS_ENV}}"
+NAMESPACE="${AADOS_NAMESPACE:-${OPENSHIFT_PROJECT:-aados}}"
 APP_NAME="${AADOS_APP_NAME:-aados}"
+HOSTNAME="${AADOS_HOST:-os.aadnanda.com}"
+ISSUER="${CERT_MANAGER_CLUSTER_ISSUER:-letsencrypt-ncllc}"
 [[ "$NAMESPACE" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ && ${#NAMESPACE} -le 63 ]] || fail "Invalid OpenShift namespace: $NAMESPACE"
 [[ "$APP_NAME" =~ ^[a-z]([-a-z0-9]*[a-z0-9])?$ && ${#APP_NAME} -le 40 ]] || fail "Invalid OpenShift app name: $APP_NAME"
+[[ "$HOSTNAME" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && "$HOSTNAME" == *.* && ${#HOSTNAME} -le 253 ]] || fail "Invalid AADOS_HOST: $HOSTNAME"
+[[ "$ISSUER" =~ ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$ ]] || fail "Invalid CERT_MANAGER_CLUSTER_ISSUER: $ISSUER"
 
 oc whoami >/dev/null 2>&1 || fail 'OpenShift session expired. Run oc login on your Mac.'
 CLUSTER="$(oc config current-context)"
@@ -39,12 +42,15 @@ if ! oc get namespace "$NAMESPACE" >/dev/null 2>&1; then
   if [[ "$AADOS_ENV" == prod ]]; then
     fail "Production namespace $NAMESPACE does not exist. Create it explicitly first."
   fi
-  echo "Creating development project $NAMESPACE..."
-  oc new-project "$NAMESPACE" --display-name='AadOS Development' >/dev/null || fail "Cannot create namespace $NAMESPACE."
+  echo "Creating project $NAMESPACE..."
+  oc new-project "$NAMESPACE" --display-name='AadOS' >/dev/null || fail "Cannot create namespace $NAMESPACE."
 fi
 
 oc auth can-i create buildconfigs.build.openshift.io -n "$NAMESPACE" | grep -qx yes || fail 'Missing BuildConfig creation permission.'
 oc auth can-i create deployments.apps -n "$NAMESPACE" | grep -qx yes || fail 'Missing Deployment creation permission.'
+oc auth can-i create ingresses.networking.k8s.io -n "$NAMESPACE" | grep -qx yes || fail 'Missing Ingress creation permission.'
+oc get clusterissuer "$ISSUER" >/dev/null 2>&1 || fail "Missing or unreadable ClusterIssuer: $ISSUER"
+oc get ingressclass openshift-default >/dev/null 2>&1 || fail 'Missing or unreadable openshift-default IngressClass.'
 
 # Only development creates a secret automatically, never production.
 if ! oc get secret aados-api-secrets -n "$NAMESPACE" >/dev/null 2>&1; then
@@ -70,6 +76,7 @@ on_error() {
 trap on_error ERR
 
 echo "AadOS v$VERSION | cluster=$CLUSTER | oc user=$USER | namespace=$NAMESPACE | environment=$AADOS_ENV"
+echo "HTTPS URL: https://$HOSTNAME | certificate issuer=$ISSUER"
 echo 'No Helm dependency. Using OpenShift ImageStreams and binary Docker BuildConfigs.'
 
 # Build images from local source; OpenShift's internal registry stores them.
@@ -89,7 +96,11 @@ EXISTING_API=false
 EXISTING_WEB=false
 oc get deployment "$APP_NAME-api" -n "$NAMESPACE" >/dev/null 2>&1 && EXISTING_API=true
 oc get deployment "$APP_NAME-web" -n "$NAMESPACE" >/dev/null 2>&1 && EXISTING_WEB=true
-oc process -f openshift/app.yaml -p "APP_NAME=$APP_NAME" -p "NAMESPACE=$NAMESPACE" | oc apply -n "$NAMESPACE" -f -
+oc process -f openshift/app.yaml \
+  -p "APP_NAME=$APP_NAME" \
+  -p "NAMESPACE=$NAMESPACE" \
+  -p "HOSTNAME=$HOSTNAME" \
+  -p "CERT_ISSUER=$ISSUER" | oc apply -n "$NAMESPACE" -f -
 if [[ "$EXISTING_API" == true ]]; then oc rollout restart "deployment/$APP_NAME-api" -n "$NAMESPACE"; fi
 if [[ "$EXISTING_WEB" == true ]]; then oc rollout restart "deployment/$APP_NAME-web" -n "$NAMESPACE"; fi
 
@@ -97,13 +108,22 @@ for component in api web; do
   echo "Verifying rollout for $APP_NAME-$component..."
   if ! oc rollout status "deployment/$APP_NAME-$component" -n "$NAMESPACE" --timeout=300s; then
     oc logs "deployment/$APP_NAME-$component" -n "$NAMESPACE" --tail=60 || true
+    existing_var="EXISTING_${component^^}"
+    if [[ "${!existing_var}" == true ]]; then
+      echo "Rolling $APP_NAME-$component back to its previous Deployment revision..." >&2
+      oc rollout undo "deployment/$APP_NAME-$component" -n "$NAMESPACE" || true
+      oc rollout status "deployment/$APP_NAME-$component" -n "$NAMESPACE" --timeout=90s || true
+    fi
     fail "Rollout failed for $APP_NAME-$component; inspect log $LOG"
   fi
 done
 
 oc get deployment "$APP_NAME-api" "$APP_NAME-web" -n "$NAMESPACE"
 echo "Deployed AadOS v$VERSION successfully."
-echo 'Public URL: none (private ClusterIP services, no Route).'
+echo "Public URL: https://$HOSTNAME"
+echo "Route: oc get routes -n '$NAMESPACE'"
+echo "TLS: oc get certificate '$APP_NAME-tls' -n '$NAMESPACE'"
 echo "Local access: oc port-forward -n $NAMESPACE svc/$APP_NAME-web 3000:3000"
 echo 'Then open http://localhost:3000'
+echo "Ensure DNS points $HOSTNAME to the OpenShift router; cert-manager manages renewal."
 echo "Log: $LOG"
