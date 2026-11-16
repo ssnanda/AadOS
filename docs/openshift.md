@@ -22,6 +22,8 @@ Normal deploys keep the existing username and password hash. Run `./bin/oc-deplo
 
 - The current app has one password-protected owner workspace but no OAuth provider connections. It serves a read-only empty inbox and health endpoints.
 - DNS for `os.aadnanda.com` must point to the OpenShift router. The default certificate issuer is `letsencrypt-prod`, which has the Cloudflare DNS solver used by existing `aadnanda.com` certificates.
+- `aados-web-data` is a 1 GiB persistent volume. Zoho OAuth credentials, folder mappings, cursors and parsed items are encrypted before being written there with a key derived from `secret_key_base`.
+- Register `https://os.aadnanda.com/oauth/zoho/callback` in the Zoho API Console. The app requests read-only account, folder and message scopes.
 - `AADOS_ENABLE_DATABASE=false` until CloudNativePG/PostgreSQL and migrations are configured.
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.

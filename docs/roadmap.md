@@ -9,8 +9,11 @@
 - [x] Password-protected owner login with explicit credential reset
 - [ ] Install dependencies and run full build on a connected runner
 
-## M1 — Secure Gmail + Outlook read-only connections
+## M1 — Secure personal mail connections
 - [ ] Owner identity/session authentication and CSRF-safe OAuth state/PKCE
+- [x] Read-only Zoho OAuth, personal-folder discovery and encrypted token storage
+- [x] Folder-driven pipelines with Shop, Health and generic parsers
+- [x] Manual and hourly incremental Zoho folder synchronization
 - [ ] Gmail `gmail.readonly` and Microsoft Graph `Mail.Read` grants
 - [ ] Encrypted tokens in Postgres, per-account access isolation, revocation
 - [ ] CloudNativePG deployment and Ecto migrations, Row-Level Security
@@ -19,7 +22,7 @@
 - [ ] Show unread, actionable, and account connection errors accurately
 
 ## M2 — AI email triage
-- [ ] Newsletter/promotion/receipt/bill/appointment/travel classification
+- [ ] Newsletter/promotion/receipt/bill/appointment/travel classification beyond initial Shop and Health rules
 - [ ] Clear explanations, confidence, importance and action needed
 - [ ] Draft response suggestions with human review (no automatic sending)
 

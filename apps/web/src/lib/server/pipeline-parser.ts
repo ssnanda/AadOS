@@ -3,7 +3,7 @@ import type { PipelineItem, PipelineParser } from './aados-store';
 const money = (text: string) => text.match(/(?:\$|USD\s*)(\d{1,6}(?:,\d{3})*(?:\.\d{2})?)/i)?.[1]?.replaceAll(',', '') || '';
 const date = (text: string) => text.match(/\b(20\d{2}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/20\d{2})\b/)?.[1] || '';
 
-export function parseMessage(parser: PipelineParser, input: Pick<PipelineItem, 'subject' | 'sender' | 'summary'> & { body?: string }) {
+export function parseMessage(parser: PipelineParser, input: Pick<PipelineItem, 'subject' | 'sender' | 'summary'> & { body?: string }): { kind: string; facts: Record<string, string | number | boolean> } {
   const text = `${input.subject}\n${input.sender}\n${input.summary}\n${input.body || ''}`;
   if (parser === 'shop') {
     const order = text.match(/(?:order|confirmation|receipt)\s*(?:#|number|no\.?|:)\s*([A-Z0-9-]{4,})/i)?.[1] || '';

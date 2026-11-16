@@ -1,4 +1,5 @@
-import { error, type PageServerLoad } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 import { readState } from '$lib/server/aados-store';
 
 export const load: PageServerLoad = async ({ params }) => {

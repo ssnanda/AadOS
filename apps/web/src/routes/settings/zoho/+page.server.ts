@@ -1,4 +1,5 @@
-import { fail, redirect, type Actions, type PageServerLoad } from '@sveltejs/kit';
+import { fail, redirect, type Actions } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
 import { publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth, discoverAccountAndFolders, syncPipeline } from '$lib/server/zoho';
 
