@@ -1,6 +1,5 @@
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { Buffer } from 'node:buffer';
-import { promisify } from 'node:util';
 
 const N = 16384;
 const R = 8;
@@ -15,12 +14,12 @@ const KEY_LENGTH = 32;
  * @param {number} p
  * @returns {Promise<Buffer>}
  */
-const scryptAsync = promisify(scrypt);
-
-const derive = async (password, salt, n, r, p) => {
-  const key = await scryptAsync(String(password), salt, KEY_LENGTH, { N: n, r, p, maxmem: 64 * 1024 * 1024 });
-  return /** @type {Buffer} */ (key);
-};
+const derive = (password, salt, n, r, p) => new Promise((resolve, reject) => {
+  scrypt(String(password), salt, KEY_LENGTH, { N: n, r, p, maxmem: 64 * 1024 * 1024 }, (error, key) => {
+    if (error) reject(error);
+    else resolve(key);
+  });
+});
 
 export function generatePassword() {
   return randomBytes(15).toString('base64url');

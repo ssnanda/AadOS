@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { Buffer } from 'node:buffer';
 import { env } from '$env/dynamic/private';
 
 export const SESSION_COOKIE = 'aados_session';
