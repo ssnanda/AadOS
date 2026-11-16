@@ -8,6 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "state:backup": "node scripts/state-tool.mjs backup",
+    "state:verify": "node scripts/state-tool.mjs verify",
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {

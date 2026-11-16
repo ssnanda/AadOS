@@ -49,7 +49,9 @@ export async function discoverGmailFolders(state: AadOSState, account: MailAccou
   const headers = { Authorization: `Bearer ${access}` };
   const [profile, labels] = await Promise.all([json(await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers })), json(await fetch('https://gmail.googleapis.com/gmail/v1/users/me/labels', { headers }))]);
   account.email = String(profile.emailAddress || '');
-  account.folders = (labels.labels || []).filter((label: Record<string, unknown>) => label.type === 'user').map((label: Record<string, unknown>) => ({ id: String(label.id), name: String(label.name), path: String(label.name), type: 'label' }));
+  // User labels plus the useful system ones (Inbox, Starred, Important, Sent, Gmail's inbox categories); never Spam/Trash/Drafts.
+  const SYSTEM: Record<string, string> = { INBOX: 'Inbox', STARRED: 'Starred', IMPORTANT: 'Important', SENT: 'Sent', CATEGORY_PERSONAL: 'Category: Personal', CATEGORY_UPDATES: 'Category: Updates', CATEGORY_PROMOTIONS: 'Category: Promotions', CATEGORY_SOCIAL: 'Category: Social', CATEGORY_FORUMS: 'Category: Forums' };
+  account.folders = (labels.labels || []).filter((label: Record<string, unknown>) => label.type === 'user' || (label.type === 'system' && String(label.id) in SYSTEM)).map((label: Record<string, unknown>) => ({ id: String(label.id), name: label.type === 'system' ? SYSTEM[String(label.id)] : String(label.name), path: label.type === 'system' ? SYSTEM[String(label.id)] : String(label.name), type: label.type === 'system' ? 'system' : 'label' }));
 }
 
 export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline, only?: (accountId: string) => boolean) {
