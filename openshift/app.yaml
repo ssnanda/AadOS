@@ -66,6 +66,18 @@ objects:
                     secretKeyRef:
                       name: aados-api-secrets
                       key: secret_key_base
+                - name: AADOS_CREDENTIAL_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: credential-encryption-key
+                      optional: true
+                - name: AADOS_INTERNAL_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: internal-api-token
+                      optional: true
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -163,6 +175,14 @@ objects:
                       key: secret_key_base
                 - name: AADOS_DATA_DIR
                   value: /data/aados
+                - name: AADOS_DB_READ
+                  value: 'off'
+                - name: AADOS_INTERNAL_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: internal-api-token
+                      optional: true
               volumeMounts:
                 - name: web-data
                   mountPath: /data/aados

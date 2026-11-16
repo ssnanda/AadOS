@@ -1,40 +1,49 @@
 # Development handoff
 
-## Status (v0.1.26 candidate, session 2)
-Verified locally: `npm run check` (0 errors), `npm test` (19/19), `npm run build`. CI on branch run 43949265259: web, api (compile --warnings-as-errors + mix test), scripts all green.
-Not verified: the Svelte UI in a browser (no live Gmail/Zoho credentials here), the Postgres importer against a real database (only its pure mapping is tested), a live OAuth/PKCE round trip.
+## Verification state (session 3, branch `feat/db-tasks-calendar`)
+Local: `npm ci`-compatible lockfile committed; `npm run check` 0 errors; `npm test` 48/48; `npm run build` OK.
+CI (GitHub Actions, Postgres 16 service): web, api (compile `--warnings-as-errors`, unit + **real-database** tests), scripts.
+Not verified: UI in a browser, live Gmail/Zoho/Google Calendar/Zoho Calendar calls (no credentials), Gmail history sync against a real mailbox.
+Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by the permission classifier), so Elixir changes are verified only by CI.
 
 ## Architecture
-- SvelteKit app owns all mail logic; state is one AES-256-GCM file `state.enc` (key = sha256 of `AADOS_SESSION_SECRET`, so **rotating that secret makes the file unreadable** — back it up first).
-- Phoenix API (`apps/api`) is still a stub for email; Postgres/Oban only start when `AADOS_ENABLE_DATABASE=true`.
-- Per-account hidden Inbox feeds (`Pipeline.system`) + user views feed one deduplicated unified inbox (`lib/server/inbox.ts`, key `accountId:messageId`).
-- Pure, test-covered modules (no framework imports): `inbox.ts`, `categories.ts`, `dates.ts`, `retry.ts`, `oauth-state.ts`.
+- SvelteKit app still owns mail logic; authoritative state is the AES-256-GCM file `state.enc` (key derived from `AADOS_SESSION_SECRET`; rotating it makes the file unreadable).
+- Phoenix API + PostgreSQL is a **mirror** (nothing reads from it for user data yet). Legacy state stays authoritative until the owner switches over.
+- Pure, test-covered modules: `inbox`, `categories`, `dates`, `tasks`, `retry`, `oauth-state`, `sync-merge`, `security-store`, `gmail-history`, `db-compare`, `calendar/{model,google,zoho}`.
 
-## Completed
-- Unified inbox, filters, search, pagination, dedupe, categories, Needs Reply, local follow-ups/importance (session 1).
-- Gmail PKCE (S256), shared retry/backoff (`retry.ts`) for Gmail and Zoho, Zoho 401 refresh-and-retry, reconnect messages for dead refresh tokens (shown in Settings with a Reconnect button), Gmail system labels (Inbox, Starred, Important, Sent, categories) selectable.
-- Due-date extraction, per-account Sync / Auto on-off / Clear data, last sync + error per account.
-- Local Tasks page (`/tasks`): tasks with due dates, email follow-ups -> tasks. Stored in `state.tasks`.
-- DB foundation (additive): migration `20261116000001_create_mail_tables.exs` (mail_accounts, mail_messages with unique `(account_id, provider_message_id)` + GIN full-text, mail_message_views, mail_sync_checkpoints), `AadOS.Api.Mail.Importer`, `mix aados.import_state`.
+## Credential encryption design (`AadOS.Api.Vault`)
+AES-256-GCM, fresh 96-bit IV per value, scope (`account:<id>`, `app:gmail`, `app:zoho`) bound as AAD so ciphertext moved between rows fails. Key: `AADOS_CREDENTIAL_ENCRYPTION_KEY` (base64 of 32 bytes: `openssl rand -base64 32`), independent of the session secret. `AADOS_CREDENTIAL_KEY_VERSION` (default 1) labels it; for rotation set the new key + new version and keep the old one as `AADOS_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` / `AADOS_CREDENTIAL_KEY_VERSION_PREVIOUS`, then call `AadOS.Api.Mail.Credentials.rotate/0`. Nothing is generated or stored by the app; the OpenShift manifest references optional secret keys `credential-encryption-key` and `internal-api-token` in `aados-api-secrets` (create them yourself; absent keys don't break rollout).
 
-## Database migration path (nothing is switched over yet)
-1. Backup: `cd apps/web && npm run state:backup` (copies state.enc, 0600, verifies it decrypts, prints counts only).
-2. Export without tokens: `node scripts/state-tool.mjs export /safe/path/export.json` (refuses to overwrite).
-3. On the API host with `AADOS_ENABLE_DATABASE=true`, `DATABASE_URL`: `mix ecto.migrate && mix aados.import_state /safe/path/export.json` (idempotent; reports counts).
-4. Compare: `npm run state:verify` (accounts/messages) vs the importer's counts (messages are deduplicated, so DB count <= file count).
-5. Rollback: `DROP TABLE mail_message_views, mail_sync_checkpoints, mail_messages, mail_accounts;` (or `mix ecto.rollback`). state.enc is never modified by any of this. OAuth tokens are NOT in the DB.
+## Database schema (migrations, additive only)
+- `20261116000001`: `mail_accounts`, `mail_messages` (unique `account_id, provider_message_id`; generated tsvector + GIN), `mail_message_views`, `mail_sync_checkpoints`.
+- `20261116000002`: `mail_credentials` (ciphertext only), `mail_tasks`.
 
-## Not done / next
-1. Credential vault: store provider tokens encrypted in Postgres (separate key from the session secret) — required before the file can be retired.
-2. Read path: Phoenix endpoints (authenticated with a shared service secret) for messages/search; switch web inbox reads behind a flag; dual-read comparison.
-3. Oban jobs for sync + checkpoints (`mail_sync_checkpoints` exists but is unused); Gmail history-API incremental sync; Zoho timestamp-incremental sync.
-4. DB-backed importer test (needs a Postgres service in CI) and a mocked-provider integration harness (OAuth callback, refresh, concurrent `updateState`).
-5. Calendars (Google / Zoho): need `calendar.readonly` / `ZohoCalendar.*.READ` scopes added, which means re-consent — needs the owner's approval. Not started.
-6. Daily Dashboard: tasks + follow-ups + due soon are available; no dedicated page yet.
-7. AJMCP (AI) and RustFS: no endpoints/credentials provided; not integrated.
+## Internal API (`/internal/v1`, bearer `AADOS_INTERNAL_API_TOKEN`, >= 32 chars, fails closed; 503 while DB disabled)
+`GET /summary`, `GET /accounts` (no tokens), `GET /messages?account=&q=&unread=&category=&limit=&offset=` (full-text, max 200). Never returns credentials (tested).
 
-## Known issues / audit gaps
-- OAuth state is one slot per provider (parallel connect flows overwrite each other); Zoho has no PKCE support in this flow.
-- Sessions are stateless (no server-side revocation); login rate limit is in-memory.
-- Every request decrypts the whole state file; `updateState` holds the global queue during network syncs (writes wait).
-- Scheduled sync skips paused accounts; manual sync does not.
+## Feature flags
+- `AADOS_ENABLE_DATABASE=true` (API): starts Repo + Oban. Default false.
+- `AADOS_DB_READ=off|compare` (web): `compare` shows legacy-vs-database count differences under Settings -> General; legacy remains authoritative. There is deliberately no `on` yet (see below). Needs `AADOS_API_URL` and `AADOS_INTERNAL_API_TOKEN` on the web pod.
+
+## Migration procedure (nothing destroys state.enc)
+1. `cd apps/web && npm run state:backup` (verified 0600 copy; prints counts only).
+2. `node scripts/state-tool.mjs export /safe/export.json --with-credentials` (adds tokens + OAuth app secrets; 0600; refuses to overwrite).
+3. API host with `AADOS_ENABLE_DATABASE=true`, `DATABASE_URL`, `AADOS_CREDENTIAL_ENCRYPTION_KEY`: `mix ecto.migrate && mix aados.import_state /safe/export.json` (idempotent; tokens encrypted by the Vault before storage).
+4. Move `/safe/export.json` to the Trash. Set `AADOS_DB_READ=compare` and check Settings -> General; `npm run state:verify` gives the legacy counts.
+5. Rollback: `mix ecto.rollback --all` (or drop the `mail_*` tables); state.enc was never modified.
+
+## Completed this session
+Tasks (edit, priority, today/overdue/upcoming/no-date/done filters, sort), daily dashboard overview, detached syncs (network syncs run on a snapshot and merge in a short locked update: `sync-merge.ts`), parallel OAuth flows (per-attempt state, Gmail PKCE verifier per flow), persistent login rate limit and server-side session revocation ("Sign out everywhere", `security.json`), scheduled/bulk sync skips paused accounts (explicit per-account sync does not), Gmail history-API incremental sync with 404 fallback and per-label checkpoints, Calendar domain (recurrence incl. DST/EXDATE/overrides, Google + Zoho mappers, read-only agenda page), vault + internal API + Postgres integration tests in CI, deterministic installs (`npm ci`, committed lockfile).
+
+## Not done
+1. **DB read path (`on`)**: needs sync ingestion to write to Postgres first (categories/needs-reply are computed in TypeScript, so DB search can't match inbox filters yet). Next: Phoenix ingestion endpoint or move sync into the API, then flip reads.
+2. **Oban durable sync jobs / `mail_sync_checkpoints` usage**: sync still runs in the web process (scheduler + per-page checkpoints in state.enc). Provider logic lives in TypeScript; porting to Elixir was deliberately not started.
+3. **Zoho incremental sync**: no verified provider cursor; still the known-page walk. Don't invent one.
+4. **Calendar live sync**: adapters are mock-tested only. Needs owner re-consent (`calendar.readonly` for Google, `ZohoCalendar.calendar.READ`/`ZohoCalendar.event.READ` for Zoho) and a connect flow + scheduler; Zoho endpoint/field names are unverified. State fields `calendars`, `events`, `calendarSync` exist.
+5. Mocked OAuth-callback and token-refresh integration tests for the SvelteKit routes (needs a `$env` test harness).
+6. AJMCP (AI) and RustFS integrations: no endpoints/credentials supplied.
+
+## Known issues
+- `updateState` still serialises writers; only sync network I/O moved off the lock. OAuth callbacks and per-page full sync still run inside the lock.
+- Sessions are stateless apart from the `validAfter` cut-off; whole state file is decrypted per request.
+- Gmail history checkpoint is set after a possibly truncated first scan (older mail is picked up by "Sync all").
