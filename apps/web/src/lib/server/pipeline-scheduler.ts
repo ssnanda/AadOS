@@ -8,13 +8,9 @@ async function pass() {
   await updateState(async (state) => {
     for (const pipeline of state.pipelines.filter((item) => item.enabled)) {
       try {
-        if (pipeline.source === 'gmail') {
-          if (!state.gmail.refreshToken) continue;
-          await syncGmailPipeline(state, pipeline);
-        } else {
-          if (!state.zoho.refreshToken || !state.zoho.accountId) continue;
-          await syncPipeline(state, pipeline);
-        }
+        if (!state.accounts.some((account) => account.id === pipeline.accountId)) continue;
+        if (pipeline.source === 'gmail') await syncGmailPipeline(state, pipeline);
+        else await syncPipeline(state, pipeline);
       }
       catch (cause) { pipeline.lastError = cause instanceof Error ? cause.message : 'Sync failed'; }
     }

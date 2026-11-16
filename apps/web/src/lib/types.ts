@@ -1,6 +1,6 @@
 export type EmailAccount = {
   id: string;
-  provider: 'gmail' | 'microsoft';
+  provider: 'gmail' | 'microsoft' | 'zoho';
   address: string;
   status: 'connected' | 'error' | 'disconnected';
 };

@@ -40,7 +40,7 @@
       <div class="no-accounts"><span class="empty-account-icon">◎</span><span>No accounts yet</span></div>
     {:else}
       {#each data.overview.accounts as account (account.id)}
-        <div class="account-row"><span class="account-avatar">{account.provider === 'gmail' ? 'G' : 'M'}</span><span class="account-email">{account.address}</span></div>
+        <div class="account-row"><span class="account-avatar">{account.provider === 'gmail' ? 'G' : account.provider === 'zoho' ? 'Z' : 'M'}</span><span class="account-email">{account.address}</span></div>
       {/each}
     {/if}
   </aside>
@@ -79,7 +79,7 @@
           {:else}
             <div class="message-list">{#each visibleMessages as message (message.id)}<article class:unread={message.unread} class="message"><div class="message-sender">{message.sender}</div><h3>{message.subject}</h3><p>{message.snippet}</p><span>{message.category}</span></article>{/each}</div>
           {/if}
-          <div class="panel-foot"><span>{visibleMessages.length} messages</span></div>
+          <div class="panel-foot"><span>{visibleMessages.length} shown · {data.overview.counts.all} synced</span></div>
         </section>
 
       </div>
