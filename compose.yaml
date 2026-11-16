@@ -24,7 +24,7 @@ services:
     volumes:
       - aados-data:/data/aados
     ports:
-      - '127.0.0.1:${AADOS_WEB_PORT:-3000}:3000'
+      - '127.0.0.1:${AADOS_WEB_PORT:-3100}:3000'
     depends_on:
       - api
     restart: unless-stopped

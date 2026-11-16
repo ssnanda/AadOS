@@ -7,7 +7,7 @@ COMMAND="${1:-rebuild}"
 if [[ "$COMMAND" == bump ]]; then exec "$ROOT/bin/bump.sh"; fi
 if [[ "$COMMAND" == help || "$COMMAND" == --help || "$COMMAND" == -h ]]; then
   echo 'Usage: bin/dev-local.sh [rebuild|refresh|stop|logs|shell|bump]'
-  echo 'Local web: http://127.0.0.1:3000 | API: http://127.0.0.1:4000 (override with AADOS_WEB_PORT / AADOS_API_PORT)'
+  echo 'Local web: http://127.0.0.1:3100 | API: http://127.0.0.1:4000 (override with AADOS_WEB_PORT / AADOS_API_PORT)'
   exit 0
 fi
 [[ "$COMMAND" == rebuild || "$COMMAND" == refresh || "$COMMAND" == stop || "$COMMAND" == logs || "$COMMAND" == shell ]] || {
@@ -45,7 +45,7 @@ set +a
 case "$COMMAND" in
   rebuild)
     docker compose up -d --build --remove-orphans
-    echo "AadOS local web: http://127.0.0.1:${AADOS_WEB_PORT:-3000}"
+    echo "AadOS local web: http://127.0.0.1:${AADOS_WEB_PORT:-3100}"
     ;;
   refresh) docker compose up -d --no-build ;;
   stop) docker compose down ;;
