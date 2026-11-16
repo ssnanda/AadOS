@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
+import { accountId, applyUnread, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 async function json(response: Response) {
@@ -93,6 +93,23 @@ export async function syncGmailPage(state: AadOSState, account: MailAccount, pip
   return { scanned: rows.length, added: fresh.length, unknown: unknownIds.length, next: String(list.nextPageToken || '') };
 }
 
+/** Align stored read state with Gmail's UNREAD list for this label (all pages, or nothing is applied). */
+export async function reconcileGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const unread = new Set<string>();
+  let pageToken = '';
+  for (let n = 0; n < MAX_PAGES; n++) {
+    const query = new URLSearchParams({ maxResults: '500' });
+    query.append('labelIds', folderId);
+    if (folderId !== 'UNREAD') query.append('labelIds', 'UNREAD');
+    if (pageToken) query.set('pageToken', pageToken);
+    const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
+    for (const row of Array.isArray(list.messages) ? list.messages : []) unread.add(String(row.id || ''));
+    pageToken = String(list.nextPageToken || '');
+    if (!pageToken) { applyUnread(state, pipeline, folderId, unread); return; }
+  }
+}
+
 // Incremental: walk from the newest page and stop at the first page that is already known.
 async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
   let cursor = '0', scanned = 0, added = 0;
@@ -102,6 +119,7 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
     if (result.unknown === 0) break;
     cursor = result.next;
   }
+  await reconcileGmailUnread(state, account, pipeline, folderId);
   return { scanned, added };
 }
 

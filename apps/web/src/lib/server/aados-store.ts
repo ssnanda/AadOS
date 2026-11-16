@@ -142,6 +142,19 @@ export function knownMessageIds(state: AadOSState, pipelineId: string): Set<stri
   return known;
 }
 
+/**
+ * Make read state match the mailbox: items of the folder in `unreadIds` become unread, the rest read.
+ * Items with no recorded folder are only reset when the view has a single folder (else only flagged unread).
+ */
+export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: string, unreadIds: Set<string>) {
+  const single = (pipeline.folders?.length || 1) <= 1;
+  for (const item of state.items) {
+    if (item.pipelineId !== pipeline.id) continue;
+    if (unreadIds.has(item.messageId)) { item.unread = true; item.folderId ||= folderId; }
+    else if (item.folderId === folderId || (!item.folderId && single)) item.unread = false;
+  }
+}
+
 export function publicState(state: AadOSState) {
   return {
     configured: Boolean(state.zoho.clientId && state.zoho.clientSecret),

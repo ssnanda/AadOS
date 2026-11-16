@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import SyncProgress from './SyncProgress.svelte';
-  import { startFullSync } from '$lib/sync';
+  import { purgeAndSync, startFullSync } from '$lib/sync';
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
@@ -27,7 +27,7 @@
     {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions">{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn full" onclick={() => startFullSync()} title="Fetch every email in every view, in the background">⇩ Sync all emails</button><button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions">{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn full" onclick={() => startFullSync()} title="Fetch every email in every view, in the background">⇩ Sync all emails</button><button class="btn purge" onclick={async () => { if (await purgeAndSync()) await invalidateAll(); }} title="Delete all stored emails, then re-sync everything">⌫ Purge &amp; sync</button><button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
 <SyncProgress />
@@ -52,6 +52,7 @@
   .sync{background:#e3f6f3;color:#0f7f74}.sync:hover{background:#cdeee9}.sync:disabled{opacity:.7;cursor:wait}
   .cfg{background:#f1ebff;color:#6a3fd1}.cfg:hover,.cfg.on{background:#6a3fd1;color:#fff}
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
+  .purge{background:#fff0f1;color:#c24457}.purge:hover{background:#c24457;color:#fff}
   .full{background:#fff4df;color:#a1752a}.full:hover{background:#f6e0b0}
   .spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   .content{max-width:2200px;margin:auto;padding:32px}

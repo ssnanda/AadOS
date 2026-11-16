@@ -1,6 +1,6 @@
 import { readState, updateState, type PageResult } from './aados-store';
-import { syncZohoPage } from './zoho';
-import { syncGmailPage } from './gmail';
+import { reconcileZohoUnread, syncZohoPage } from './zoho';
+import { reconcileGmailUnread, syncGmailPage } from './gmail';
 
 // Full sync: walks every page of every folder/label of the chosen views in the background.
 // It is not tied to an HTTP request, so there is no request timeout, and each page is saved
@@ -53,6 +53,12 @@ async function run(job: SyncJob, ids: string[]) {
           job.scanned += result.scanned; job.added += result.added; cursor = result.next;
           await wait(200);
         }
+        // After the folder's last page, align read state with the mailbox's unread list.
+        if (!job.cancel) await updateState(async (state) => {
+          const current = state.pipelines.find((item) => item.id === id);
+          const account = current && state.accounts.find((item) => item.id === current.accountId && item.provider === current.source);
+          if (current && account) await (current.source === 'gmail' ? reconcileGmailUnread : reconcileZohoUnread)(state, account, current, folder.id);
+        });
       }
       if (!job.cancel) await updateState((state) => { const current = state.pipelines.find((item) => item.id === id); if (current) { current.lastSync = new Date().toISOString(); current.lastError = ''; } });
       job.done++;

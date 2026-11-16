@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
+import { accountId, applyUnread, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
@@ -136,6 +136,23 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
   return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1) };
 }
 
+/**
+ * Re-read the folder's unread list from Zoho and align every stored item with it, so mail read in
+ * the mailbox (or never flagged) is counted correctly. Rows are re-checked by their own status, so
+ * it stays correct even if Zoho ignores the status filter. Skipped (not applied) if any page fails
+ * or the folder is too large to finish, so a partial list never marks unread mail as read.
+ */
+export async function reconcileZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+  const unread = new Set<string>();
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const query = new URLSearchParams({ folderId, status: 'unread', start: String(page * PAGE_SIZE + 1), limit: String(PAGE_SIZE) });
+    const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
+    const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
+    for (const row of rows) if (String(row.status) === '0') unread.add(String(row.messageId || ''));
+    if (rows.length < PAGE_SIZE) { applyUnread(state, pipeline, folderId, unread); return; }
+  }
+}
+
 // Incremental: walk from the newest page and stop at the first page that is already known.
 async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
   let cursor = '0', scanned = 0, added = 0;
@@ -145,6 +162,7 @@ async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pip
     if (result.unknown === 0) break;
     cursor = result.next;
   }
+  await reconcileZohoUnread(state, account, pipeline, folderId);
   return { scanned, added };
 }
 
