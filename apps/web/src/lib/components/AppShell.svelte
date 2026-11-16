@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
+  import SyncProgress from './SyncProgress.svelte';
+  import { startFullSync } from '$lib/sync';
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
@@ -25,9 +27,10 @@
     {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><div class="actions">{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions">{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn full" onclick={() => startFullSync()} title="Fetch every email in every view, in the background">⇩ Sync all emails</button><button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
+<SyncProgress />
 </div>
 <style>
   .workspace{display:flex;min-height:100vh;color:#283044}
@@ -44,13 +47,14 @@
   .heading{padding:16px 12px 6px;color:#a3adbf;font-size:10px;font-weight:750;letter-spacing:1.3px}
   .main{flex:1;min-width:0}
   .topbar{height:62px;background:#fff;border-bottom:1px solid #e9ecf4;display:flex;align-items:center;gap:12px;padding:0 32px}
-  .topbar strong{color:#3e4860}.actions{margin-left:auto;display:flex;align-items:center;gap:8px}.actions form{margin:0}.actions small{color:#139488;font-weight:700;font-size:12px}
+  .topbar strong{color:#3e4860}.search{display:flex;align-items:center;gap:8px;flex:1;max-width:420px;background:#f4f6fb;border:1px solid #e6eaf3;border-radius:10px;padding:0 12px;margin:0 12px}.search:focus-within{border-color:#8da2f0;background:#fff}.search span{color:#8a95a8;font-size:18px}.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;padding:9px 0;font-size:13px;color:#29344c;font-family:inherit}.actions{margin-left:auto;display:flex;align-items:center;gap:8px}.actions form{margin:0}.actions small{color:#139488;font-weight:700;font-size:12px}
   .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
   .sync{background:#e3f6f3;color:#0f7f74}.sync:hover{background:#cdeee9}.sync:disabled{opacity:.7;cursor:wait}
   .cfg{background:#f1ebff;color:#6a3fd1}.cfg:hover,.cfg.on{background:#6a3fd1;color:#fff}
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
+  .full{background:#fff4df;color:#a1752a}.full:hover{background:#f6e0b0}
   .spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   .content{max-width:1200px;margin:auto;padding:32px}
   .menu{display:none;border:0;background:transparent;color:#4b5e86;font-size:19px}
-  @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.menu{display:inline-block}.topbar{padding:0 16px}.content{padding:20px 14px}.topbar strong{display:none}}
+  @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.menu{display:inline-block}.topbar{padding:0 16px}.content{padding:20px 14px}.topbar strong{display:none}.search{margin:0}}
 </style>

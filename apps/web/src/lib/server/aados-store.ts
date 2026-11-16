@@ -46,14 +46,18 @@ export type MailAccount = {
   expiresAt: number;
   folders: ZohoFolder[];
 };
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[] };
+// One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
+export type PageResult = { scanned: number; added: number; unknown: number; next: string };
+// `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[] };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
   gmail: { clientId: '', clientSecret: '', oauthState: '', oauthStateExpiresAt: 0 },
   accounts: [],
   pipelines: [],
-  items: []
+  items: [],
+  dismissed: []
 });
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
@@ -93,6 +97,7 @@ function decrypt(value: string): AadOSState {
     zoho: { clientId: saved.zoho?.clientId || '', clientSecret: saved.zoho?.clientSecret || '', dataCenter: saved.zoho?.dataCenter || 'com', oauthState: saved.zoho?.oauthState || '', oauthStateExpiresAt: saved.zoho?.oauthStateExpiresAt || 0 },
     gmail: { clientId: saved.gmail?.clientId || '', clientSecret: saved.gmail?.clientSecret || '', oauthState: saved.gmail?.oauthState || '', oauthStateExpiresAt: saved.gmail?.oauthStateExpiresAt || 0 },
     accounts,
+    dismissed: saved.dismissed || [],
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }
@@ -121,6 +126,14 @@ export async function updateState(change: (state: AadOSState) => void | Promise<
   });
   await queue;
   return result;
+}
+
+/** Message ids of a view that are already stored or were dismissed. */
+export function knownMessageIds(state: AadOSState, pipelineId: string): Set<string> {
+  const known = new Set(state.items.filter((item) => item.pipelineId === pipelineId).map((item) => item.messageId));
+  const prefix = `${pipelineId}:`;
+  for (const id of state.dismissed) if (id.startsWith(prefix)) known.add(id.slice(prefix.length));
+  return known;
 }
 
 export function publicState(state: AadOSState) {

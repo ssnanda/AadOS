@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import SyncProgress from '$lib/components/SyncProgress.svelte';
   let { children } = $props();
   const items = [
     { href: '/settings', label: 'General', icon: '⚙' },
@@ -12,6 +13,7 @@
   <nav aria-label="Settings"><a class="home" href="/">← Home</a>{#each items as item}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>{/each}</nav>
   <div class="content">{@render children()}</div>
 </div>
+<SyncProgress />
 <style>
   .settings{display:flex;align-items:flex-start;max-width:1150px;margin:auto;color:#29344c}
   nav{position:sticky;top:0;display:grid;gap:4px;width:190px;flex:none;padding:35px 0 0 24px}

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, type AadOSState, type MailAccount, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
+import { accountId, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 const accountsHost = (dc: string) => `https://accounts.zoho.${dc || 'com'}`;
@@ -88,44 +88,54 @@ export async function syncPipeline(state: AadOSState, pipeline: Pipeline) {
   return { scanned, added };
 }
 
-// New messages added per folder per sync. Each one costs a content fetch, so keep a
-// run short enough for the web request; repeated syncs keep backfilling older mail.
+// Request-bound syncs (Sync button, schedule) add at most this many per folder; the
+// background full sync (sync-job.ts) has no cap.
 const SYNC_BATCH = 100;
 const PAGE_SIZE = 50;
 const MAX_PAGES = 200;
+const CONCURRENCY = 4;
 
+async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, row: Record<string, unknown>): Promise<PipelineItem> {
+  const messageId = String(row.messageId || '');
+  const subject = clean(row.subject);
+  const sender = clean(row.sender || row.fromAddress || row.from);
+  let summary = clean(row.summary || row.snippet);
+  let body = '';
+  try {
+    const content = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);
+    body = String(content.data?.content || content.data?.htmlContent || content.data || '');
+    if (!summary) summary = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+  } catch { /* A list item is still useful when Zoho withholds message content. */ }
+  const parsed = parseMessage(pipeline.parser, { subject, sender, summary, body });
+  const rawReceived = Number(row.receivedTime || row.receivedDate || Date.now());
+  const receivedAt = new Date(Number.isFinite(rawReceived) ? rawReceived : Date.now()).toISOString();
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
+}
+
+/** Fetch one page of a folder (cursor = page number, newest first) and store unknown messages. */
+export async function syncZohoPage(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, cursor: string, maxAdd = Infinity): Promise<PageResult> {
+  const page = Number(cursor) || 0;
+  const known = knownMessageIds(state, pipeline.id);
+  const query = new URLSearchParams({ folderId, start: String(page * PAGE_SIZE + 1), limit: String(PAGE_SIZE) });
+  const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
+  const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
+  const unknownRows = rows.filter((row) => { const id = String(row.messageId || ''); return id && !known.has(id); });
+  const fresh = unknownRows.slice(0, maxAdd);
+  for (let i = 0; i < fresh.length; i += CONCURRENCY) {
+    const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((row) => zohoItem(state, account, pipeline, folderId, row)));
+    state.items.push(...items);
+  }
+  return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1) };
+}
+
+// Incremental: walk from the newest page and stop at the first page that is already known.
 async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
-  const known = new Set(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => item.messageId));
-  let scanned = 0;
-  let added = 0;
-  // Page back through the folder (newest first), skipping messages already stored.
-  for (let page = 0; page < MAX_PAGES && added < SYNC_BATCH; page++) {
-    const query = new URLSearchParams({ folderId, start: String(page * PAGE_SIZE + 1), limit: String(PAGE_SIZE) });
-    const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
-    const rows = Array.isArray(response.data) ? response.data : [];
-    scanned += rows.length;
-    for (const row of rows) {
-      const messageId = String(row.messageId || '');
-      if (!messageId || known.has(messageId)) continue;
-      if (added >= SYNC_BATCH) break;
-      const subject = clean(row.subject);
-      const sender = clean(row.sender || row.fromAddress || row.from);
-      let summary = clean(row.summary || row.snippet);
-      let body = '';
-      try {
-        const content = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);
-        body = String(content.data?.content || content.data?.htmlContent || content.data || '');
-        if (!summary) summary = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
-      } catch { /* A list item is still useful when Zoho withholds message content. */ }
-      const parsed = parseMessage(pipeline.parser, { subject, sender, summary, body });
-      const rawReceived = Number(row.receivedTime || row.receivedDate || Date.now());
-      const receivedAt = new Date(Number.isFinite(rawReceived) ? rawReceived : Date.now()).toISOString();
-      const item: PipelineItem = { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
-      state.items.push(item);
-      known.add(messageId);
-      added++;
-    }
-    if (rows.length < PAGE_SIZE) break;
+  let cursor = '0', scanned = 0, added = 0;
+  for (let n = 0; cursor && n < MAX_PAGES && added < SYNC_BATCH; n++) {
+    const result = await syncZohoPage(state, account, pipeline, folderId, cursor, SYNC_BATCH - added);
+    scanned += result.scanned; added += result.added;
+    if (result.unknown === 0) break;
+    cursor = result.next;
   }
   return { scanned, added };
 }

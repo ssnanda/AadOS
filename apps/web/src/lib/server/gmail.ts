@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, type AadOSState, type MailAccount, type Pipeline, type PipelineItem } from './aados-store';
+import { accountId, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 
 async function json(response: Response) {
@@ -58,43 +58,49 @@ export async function syncGmailPipeline(state: AadOSState, pipeline: Pipeline) {
   return { scanned, added };
 }
 
-// New messages added per label per sync; repeated syncs keep backfilling older mail.
+// Request-bound syncs (Sync button, schedule) add at most this many per label; the
+// background full sync (sync-job.ts) has no cap.
 const SYNC_BATCH = 100;
 const MAX_PAGES = 200;
+const CONCURRENCY = 4;
 
+async function gmailItem(headers: Record<string, string>, pipeline: Pipeline, messageId: string): Promise<PipelineItem> {
+  const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers, signal: AbortSignal.timeout(20000) }));
+  const messageHeaders = Array.isArray(message.payload?.headers) ? message.payload.headers : [];
+  const header = (name: string) => String(messageHeaders.find((item: Record<string, unknown>) => String(item.name).toLowerCase() === name.toLowerCase())?.value || '');
+  const subject = clean(header('Subject'));
+  const sender = clean(header('From'));
+  const summary = clean(message.snippet);
+  const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
+  const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
+}
+
+/** Fetch one page of a label (cursor '0' = first page, else Gmail's pageToken) and store unknown messages. */
+export async function syncGmailPage(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, cursor: string, maxAdd = Infinity): Promise<PageResult> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const known = knownMessageIds(state, pipeline.id);
+  const query = new URLSearchParams({ labelIds: folderId, maxResults: '100' });
+  if (cursor && cursor !== '0') query.set('pageToken', cursor);
+  const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
+  const rows: Record<string, unknown>[] = Array.isArray(list.messages) ? list.messages : [];
+  const unknownIds = rows.map((row) => String(row.id || '')).filter((id) => id && !known.has(id));
+  const fresh = unknownIds.slice(0, maxAdd);
+  for (let i = 0; i < fresh.length; i += CONCURRENCY) {
+    const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
+    state.items.push(...items);
+  }
+  return { scanned: rows.length, added: fresh.length, unknown: unknownIds.length, next: String(list.nextPageToken || '') };
+}
+
+// Incremental: walk from the newest page and stop at the first page that is already known.
 async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
-  const access = await token(state, account);
-  const headers = { Authorization: `Bearer ${access}` };
-  const known = new Set(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => item.messageId));
-  let scanned = 0;
-  let added = 0;
-  let pageToken = '';
-  // Page back through the label (newest first), skipping messages already stored.
-  for (let page = 0; page < MAX_PAGES && added < SYNC_BATCH; page++) {
-    const query = new URLSearchParams({ labelIds: folderId, maxResults: '100' });
-    if (pageToken) query.set('pageToken', pageToken);
-    const list = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers, signal: AbortSignal.timeout(20000) }));
-    const rows = Array.isArray(list.messages) ? list.messages : [];
-    scanned += rows.length;
-    for (const row of rows) {
-      const messageId = String(row.id || '');
-      if (!messageId || known.has(messageId)) continue;
-      if (added >= SYNC_BATCH) break;
-      const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers, signal: AbortSignal.timeout(20000) }));
-      const messageHeaders = Array.isArray(message.payload?.headers) ? message.payload.headers : [];
-      const header = (name: string) => String(messageHeaders.find((item: Record<string, unknown>) => String(item.name).toLowerCase() === name.toLowerCase())?.value || '');
-      const subject = clean(header('Subject'));
-      const sender = clean(header('From'));
-      const summary = clean(message.snippet);
-      const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
-      const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
-      const item: PipelineItem = { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
-      state.items.push(item);
-      known.add(messageId);
-      added++;
-    }
-    pageToken = String(list.nextPageToken || '');
-    if (!pageToken) break;
+  let cursor = '0', scanned = 0, added = 0;
+  for (let n = 0; cursor && n < MAX_PAGES && added < SYNC_BATCH; n++) {
+    const result = await syncGmailPage(state, account, pipeline, folderId, cursor, SYNC_BATCH - added);
+    scanned += result.scanned; added += result.added;
+    if (result.unknown === 0) break;
+    cursor = result.next;
   }
   return { scanned, added };
 }

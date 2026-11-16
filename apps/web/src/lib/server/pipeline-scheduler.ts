@@ -2,6 +2,7 @@ import os from 'node:os';
 import { updateState } from './aados-store';
 import { syncPipeline } from './zoho';
 import { syncGmailPipeline } from './gmail';
+import { syncJob } from './sync-job';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
 
@@ -26,7 +27,7 @@ export function busyReason(): string {
 }
 
 async function pass() {
-  if (globalThis.__aadosSyncRunning) return;
+  if (globalThis.__aadosSyncRunning || syncJob().running) return;
   const busy = busyReason();
   if (busy) { console.log(`[aados] scheduled sync skipped: ${busy}`); return; }
   globalThis.__aadosSyncRunning = true;
