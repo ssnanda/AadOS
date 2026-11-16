@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { ensureInboxPipelines, hasAccount, updateState, updateStateDetached } from './aados-store';
 import { syncView } from './pipeline-sync';
+import { syncCalendars } from './calendar-sync';
 import { syncJob } from './sync-job';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
@@ -44,6 +45,7 @@ async function pass() {
         }
         catch (cause) { pipeline.lastError = cause instanceof Error ? cause.message : 'Sync failed'; }
       }
+      await syncCalendars(state); // read-only; per-account errors are recorded on the account
     });
   } finally { globalThis.__aadosSyncRunning = false; }
 }

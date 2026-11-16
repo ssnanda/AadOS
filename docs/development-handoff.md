@@ -1,5 +1,11 @@
 # Development handoff
 
+## Calendar (read-only) - session 4
+- **Consent flow:** Settings -> Emails -> account row -> "Enable calendar" re-authorizes with the extra scope (Google `calendar.readonly` via incremental auth + PKCE + `login_hint`; Zoho `ZohoCalendar.calendar.READ,ZohoCalendar.event.READ`). `account.calendar` is true only when the provider's token response actually lists the scope. A plain Gmail reconnect keeps the grant (`include_granted_scopes`); a Zoho reconnect re-requests calendar scopes if any Zoho account has them.
+- **Sync** (`lib/server/calendar-sync.ts`): scheduler (every 15 min, skips paused accounts, off the state lock via the detached path) + "Calendar sync" per account + "Sync calendars" on /calendar. Google: calendarList + events.list with `syncToken` (410 -> full resync), deletions applied. Zoho: calendars + 30-day `range` windows (-7d..+90d), full replace per calendar. Per-account errors are shown, never thrown; data is kept on failure. "Clear calendar" forgets an account's calendar data locally.
+- **Tested with mocks only** (65 Node tests incl. calendar sync/merge/prune/410 fallback/concurrent-merge). The consent redirect was verified on the running stack (scopes, PKCE, login_hint). **No live Google/Zoho calendar call has happened yet** - needs the owner to click "Enable calendar" and approve. Zoho Calendar endpoint and field names follow its v1 docs but are unverified live.
+- Calendar events live in the state document (`events`, `calendars`, `calendarSync`), so they are in PostgreSQL when `AADOS_STORAGE=postgres`. Not mirrored to relational tables yet.
+
 ## PostgreSQL is primary (local Docker stack) - session 4 (v0.1.27)
 `bin/dev-local.sh rebuild` now starts `db` (postgres:16, volume `aados_aados-pgdata`, no published port), `api` and `web`.
 - **API** runs Ecto migrations automatically on start (`AadOS.Api.Migrator`, after the Repo, before Oban/endpoint). The API image now ships `priv/` (it did not before, so migrations could never have run in a release). Oban tables are created by migration `20261117000002`.

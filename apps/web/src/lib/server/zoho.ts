@@ -13,14 +13,17 @@ async function jsonResponse(response: Response) {
   return body;
 }
 
-export function beginOAuth(state: AadOSState, redirectUri: string) {
+export const ZOHO_MAIL_SCOPE = 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ';
+export const ZOHO_CALENDAR_SCOPE = 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ';
+
+export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean } = {}) {
   const token = randomBytes(24).toString('base64url');
   addFlow((state.zoho.pending ||= {}), token);
   const query = new URLSearchParams({
     client_id: state.zoho.clientId,
     response_type: 'code',
     redirect_uri: redirectUri,
-    scope: 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ',
+    scope: opts.calendar ? `${ZOHO_MAIL_SCOPE},${ZOHO_CALENDAR_SCOPE}` : ZOHO_MAIL_SCOPE,
     access_type: 'offline',
     prompt: 'consent',
     state: token
@@ -37,10 +40,13 @@ export async function finishOAuth(state: AadOSState, code: string, returnedState
   await discoverAccountAndFolders(state, account);
   account.id = accountId('zoho', account.email || account.remoteId);
   const existing = state.accounts.find((item) => item.id === account.id);
+  account.calendar = String(tokens.scope || '').includes('ZohoCalendar');
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Zoho did not return a refresh token. Remove AadOS from Zoho connected apps and try again.');
   else state.accounts.push(account);
 }
+
+export async function zohoAccessToken(state: AadOSState, account: MailAccount) { return accessToken(state, account); }
 
 async function accessToken(state: AadOSState, account: MailAccount) {
   if (account.accessToken && account.expiresAt > Date.now() + 60_000) return account.accessToken;

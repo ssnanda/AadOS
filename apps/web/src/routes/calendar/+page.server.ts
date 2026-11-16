@@ -1,5 +1,7 @@
 import type { PageServerLoad } from './$types';
-import { readState } from '$lib/server/aados-store';
+import { fail, type Actions } from '@sveltejs/kit';
+import { readState, updateStateDetached } from '$lib/server/aados-store';
+import { syncCalendars } from '$lib/server/calendar-sync';
 import { agenda } from '$lib/calendar/model';
 
 // Read-only agenda from synced calendar events (Google / Zoho). Nothing is fabricated: empty until a calendar is authorized.
@@ -13,5 +15,17 @@ export const load: PageServerLoad = async ({ url }) => {
     key: `${o.id}:${o.occurrenceStart}`, title: o.title, start: o.start, end: o.end, allDay: o.allDay, location: o.location, timeZone: o.timeZone,
     calendar: names.get(o.calendarId)?.name || '', provider: o.provider, tentative: o.status === 'tentative'
   }));
-  return { items, days, calendars: state.calendars.length, accounts: state.accounts.filter((a) => a.provider === 'gmail' || a.provider === 'zoho').length };
+  const enabled = state.accounts.filter((a) => a.calendar);
+  return {
+    items, days, calendars: state.calendars.length, accounts: state.accounts.length, enabled: enabled.length,
+    errors: enabled.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} · ${a.email}`, message: a.calendarError! })),
+    lastSync: enabled.map((a) => a.calendarLastSync || '').sort().pop() || ''
+  };
+};
+
+export const actions: Actions = {
+  sync: async () => {
+    try { let r = { accounts: 0, failed: 0 }; await updateStateDetached(async (s) => { r = await syncCalendars(s); }); return { synced: r }; }
+    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Calendar sync failed.' }); }
+  }
 };

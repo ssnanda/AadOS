@@ -2,7 +2,7 @@
 // Pure (type-only imports) so it is unit-tested with `node --test`.
 import type { AadOSState } from './aados-store';
 
-const ACCOUNT_FIELDS = ['accessToken', 'refreshToken', 'expiresAt', 'folders', 'lastSync', 'lastError', 'email', 'remoteId', 'historyIds'] as const;
+const ACCOUNT_FIELDS = ['accessToken', 'refreshToken', 'expiresAt', 'folders', 'lastSync', 'lastError', 'email', 'remoteId', 'historyIds', 'calendar', 'calendarLastSync', 'calendarError'] as const;
 const PIPELINE_FIELDS = ['cursor', 'lastSync', 'lastError'] as const;
 const ITEM_FIELDS = ['unread', 'folderId', 'accountId', 'threadId'] as const;
 
@@ -29,6 +29,8 @@ export function mergeSync(latest: AadOSState, before: AadOSState, after: AadOSSt
     if (!target || !old) continue;
     for (const field of ACCOUNT_FIELDS) if (JSON.stringify(account[field]) !== JSON.stringify(old[field])) (target as Record<string, unknown>)[field] = account[field];
   }
+  // Calendar data is written only by calendar syncs, so take their result as a whole.
+  for (const key of ['calendars', 'events', 'calendarSync'] as const) if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) (latest as Record<string, unknown>)[key] = after[key];
   for (const pipeline of after.pipelines) {
     const target = latest.pipelines.find((p) => p.id === pipeline.id), old = before.pipelines.find((p) => p.id === pipeline.id);
     if (!target || !old) continue;

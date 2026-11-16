@@ -4,6 +4,7 @@ import { ensureInboxPipelines, updateStateDetached, hasAccount, pipelineFolders,
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
 import { syncView } from '$lib/server/pipeline-sync';
+import { clearCalendarData, syncCalendars } from '$lib/server/calendar-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
@@ -44,7 +45,7 @@ export const actions: Actions = {
     return { toggled: id };
   },
   saveZoho: async ({ request }) => { const f=await request.formData(), id=String(f.get('clientId')||'').trim(), secret=String(f.get('clientSecret')||'').trim(); if(!id)return fail(400,{error:'Zoho Client ID is required.'}); await updateState((s)=>{s.zoho.clientId=id;if(secret)s.zoho.clientSecret=secret;s.zoho.dataCenter=String(f.get('dataCenter')||'com');}); return {saved:'zoho'}; },
-  connectZoho: async ({ url }) => { let target=''; await updateState((s)=>{if(!s.zoho.clientId||!s.zoho.clientSecret)throw new Error('Save Zoho credentials first.');target=beginZoho(s,`${url.origin}/oauth/zoho/callback`);}); throw redirect(303,target); },
+  connectZoho: async ({ url }) => { let target=''; await updateState((s)=>{if(!s.zoho.clientId||!s.zoho.clientSecret)throw new Error('Save Zoho credentials first.');target=beginZoho(s,`${url.origin}/oauth/zoho/callback`,{calendar:s.accounts.some((a)=>a.provider==='zoho'&&a.calendar)});}); throw redirect(303,target); },
   saveGmail: async ({ request }) => {
     const form = await request.formData();
     const clientId = String(form.get('clientId') || '').trim();
@@ -84,6 +85,30 @@ export const actions: Actions = {
       });
       return { synced: id, added };
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
+  },
+  // Re-consent with the read-only calendar scope for an existing account (Google: incremental auth, same login).
+  enableCalendar: async ({ request, url }) => {
+    const id = String((await request.formData()).get('id') || '');
+    let target = '';
+    try {
+      await updateState((s) => {
+        const a = s.accounts.find((item) => item.id === id);
+        if (!a) throw new Error('Account not found.');
+        if (a.provider === 'gmail') { if (!s.gmail.clientId || !s.gmail.clientSecret) throw new Error('Save Gmail credentials first.'); target = beginGmailOAuth(s, `${url.origin}/oauth/gmail/callback`, { calendar: true, loginHint: a.email }); }
+        else { if (!s.zoho.clientId || !s.zoho.clientSecret) throw new Error('Save Zoho credentials first.'); target = beginZoho(s, `${url.origin}/oauth/zoho/callback`, { calendar: true }); }
+      });
+    } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start calendar authorization.' }); }
+    throw redirect(303, target);
+  },
+  syncCalendarAccount: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    try { await updateStateDetached(async (s) => { await syncCalendars(s, id); }); return { calendarSynced: id }; }
+    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Calendar sync failed.' }); }
+  },
+  clearCalendar: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    await updateState((s) => { clearCalendarData(s, id); });
+    return { calendarCleared: id };
   },
   toggleAccountSync: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');

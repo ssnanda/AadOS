@@ -14,13 +14,17 @@ async function json(response: Response) {
 /** Gmail API fetch with bounded retry/backoff for rate limits and 5xx. */
 export const gmailFetch = (url: string, init: RequestInit) => fetchRetry(url, init);
 
-export function beginGmailOAuth(state: AadOSState, redirectUri: string) {
+export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+
+export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; loginHint?: string } = {}) {
   // One entry per connect attempt, so parallel flows cannot overwrite each other. PKCE (S256): the verifier stays server-side.
   const token = randomBytes(24).toString('base64url');
   const verifier = randomBytes(48).toString('base64url');
   addFlow((state.gmail.pending ||= {}), token, verifier);
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'https://www.googleapis.com/auth/gmail.readonly', access_type: 'offline', prompt: 'consent select_account', state: token, code_challenge: challenge, code_challenge_method: 'S256' })}`;
+  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: opts.calendar ? `${GMAIL_SCOPE} ${CALENDAR_SCOPE}` : GMAIL_SCOPE, access_type: 'offline', prompt: 'consent select_account', // incremental auth: a plain reconnect keeps the calendar scope already granted
+    include_granted_scopes: 'true', state: token, code_challenge: challenge, code_challenge_method: 'S256', ...(opts.loginHint ? { login_hint: opts.loginHint } : {}) })}`;
 }
 
 export async function finishGmailOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
@@ -32,10 +36,14 @@ export async function finishGmailOAuth(state: AadOSState, code: string, returned
   await discoverGmailFolders(state, account);
   account.id = accountId('gmail', account.email);
   const existing = state.accounts.find((item) => item.id === account.id);
+  // Calendar access exists only if Google actually granted the scope.
+  account.calendar = String(tokens.scope || '').split(' ').includes(CALENDAR_SCOPE);
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Google did not return a refresh token. Remove AadOS from your Google account permissions and try again.');
   else state.accounts.push(account);
 }
+
+export async function gmailAccessToken(state: AadOSState, account: MailAccount) { return token(state, account); }
 
 async function token(state: AadOSState, account: MailAccount) {
   if (account.accessToken && account.expiresAt > Date.now() + 60_000) return account.accessToken;

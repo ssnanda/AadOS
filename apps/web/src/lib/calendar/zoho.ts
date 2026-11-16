@@ -38,3 +38,33 @@ export function mapZohoEvent(raw: Raw, calendar: CalendarInfo): CalEvent | null 
     ...(rrule.length ? { recurrence: rrule.map((r) => (/^RRULE:/i.test(r) ? r : `RRULE:${r}`)) } : {})
   };
 }
+
+// ---- fetch client (documented Zoho Calendar API v1; unverified against a live account) ----
+type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
+const calendarBase = (dc: string) => `https://calendar.zoho.${dc || 'com'}/api/v1`;
+
+async function getZoho(fetchImpl: Fetch, url: string, token: string): Promise<Raw> {
+  const res = await fetchImpl(url, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(String(body?.message || body?.error || `Zoho Calendar HTTP ${res.status}`));
+  return body;
+}
+
+export async function listZohoCalendars(fetchImpl: Fetch, dc: string, token: string, accountId: string): Promise<CalendarInfo[]> {
+  const body = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars`, token);
+  return (Array.isArray(body.calendars) ? body.calendars : []).filter((c: Raw) => c?.uid).map((c: Raw) => mapZohoCalendar(c, accountId));
+}
+
+const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+
+/** Events overlapping [from, to). Zoho limits a query range, so this walks 30-day windows. */
+export async function fetchZohoEvents(fetchImpl: Fetch, dc: string, token: string, calendar: CalendarInfo, from: Date, to: Date): Promise<CalEvent[]> {
+  const out = new Map<string, CalEvent>();
+  for (let start = from.getTime(); start < to.getTime(); start += 30 * 86_400_000) {
+    const end = Math.min(start + 30 * 86_400_000, to.getTime());
+    const range = encodeURIComponent(JSON.stringify({ start: stamp(new Date(start)), end: stamp(new Date(end)) }));
+    const body = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars/${encodeURIComponent(calendar.providerCalendarId)}/events?range=${range}`, token);
+    for (const raw of Array.isArray(body.events) ? body.events : []) { const ev = mapZohoEvent(raw, calendar); if (ev) out.set(ev.id, ev); }
+  }
+  return [...out.values()];
+}
