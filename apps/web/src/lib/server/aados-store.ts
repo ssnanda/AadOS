@@ -70,13 +70,15 @@ export type MailAccount = {
   /** Connection health, updated by syncs. */
   lastSync?: string;
   lastError?: string;
+  /** Gmail incremental-sync checkpoints (history cursor per label). */
+  historyIds?: Record<string, string>;
   /** Excluded from the scheduled sync (manual sync still works). */
   paused?: boolean;
 };
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[] };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string> };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -85,7 +87,10 @@ const emptyState = (): AadOSState => ({
   pipelines: [],
   items: [],
   dismissed: [],
-  tasks: []
+  tasks: [],
+  calendars: [],
+  events: [],
+  calendarSync: {}
 });
 
 /** A view's folders, each resolved to its own account and provider. */
@@ -97,6 +102,7 @@ export const hasAccount = (state: AadOSState, pipeline: Pipeline) => pipelineFol
 export { validOAuthState } from './oauth-state.ts';
 import { mergeSync } from './sync-merge.ts';
 import type { PendingFlows } from './oauth-state.ts';
+import type { CalEvent, CalendarInfo } from '../calendar/model.ts';
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
 
@@ -137,6 +143,9 @@ function decrypt(value: string): AadOSState {
     accounts,
     dismissed: saved.dismissed || [],
     tasks: saved.tasks || [],
+    calendars: saved.calendars || [],
+    events: saved.events || [],
+    calendarSync: saved.calendarSync || {},
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }

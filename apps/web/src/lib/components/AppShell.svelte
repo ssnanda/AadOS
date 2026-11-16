@@ -25,6 +25,7 @@
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
     <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails</a>
     <a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a>
+    <a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>
     {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
     <small class="ver">v{__APP_VERSION__}</small>
   </aside>

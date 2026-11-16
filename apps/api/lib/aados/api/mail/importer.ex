@@ -48,12 +48,18 @@ defmodule AadOS.Api.Mail.Importer do
         {row, [{{account_id, message_id}, views} | acc]}
       end)
 
-    %{accounts: account_rows, messages: message_rows, memberships: Map.new(memberships)}
+    task_rows =
+      for t <- Map.get(export, "tasks", []), is_binary(t["id"]), is_binary(t["title"]) do
+        %{id: t["id"], title: t["title"], due: parse_date(t["due"]), priority: if(t["priority"] in ["high", "low"], do: t["priority"], else: "normal"),
+          done: t["done"] == true, completed_at: parse_time(t["completedAt"]), email_key: blank_to_nil(t["emailKey"]), inserted_at: now, updated_at: now}
+      end
+
+    %{accounts: account_rows, messages: message_rows, memberships: Map.new(memberships), tasks: task_rows}
   end
 
   @doc "Import inside one transaction. Returns `{:ok, counts}`; counts can be compared with `state-tool verify`."
   def import_export(export) do
-    %{accounts: accounts, messages: messages, memberships: memberships} = rows(export)
+    %{accounts: accounts, messages: messages, memberships: memberships, tasks: tasks} = rows(export)
 
     Repo.transaction(fn ->
       Enum.each(Enum.chunk_every(accounts, @batch), fn chunk ->
@@ -76,6 +82,13 @@ defmodule AadOS.Api.Mail.Importer do
         Repo.insert_all("mail_message_views", chunk, on_conflict: :nothing)
       end)
 
+      Enum.each(Enum.chunk_every(tasks, @batch), fn chunk ->
+        Repo.insert_all("mail_tasks", chunk, on_conflict: {:replace, [:title, :due, :priority, :done, :completed_at, :email_key, :updated_at]}, conflict_target: [:id])
+      end)
+
+      # Only present when the export was made with --with-credentials; encrypted by the Vault before storage.
+      for {scope, payload} <- Map.get(export, "credentials", %{}), is_map(payload), do: :ok = AadOS.Api.Mail.Credentials.put(scope, payload)
+
       counts()
     end)
   end
@@ -84,7 +97,9 @@ defmodule AadOS.Api.Mail.Importer do
     %{
       accounts: Repo.aggregate("mail_accounts", :count),
       messages: Repo.aggregate("mail_messages", :count),
-      view_memberships: Repo.aggregate("mail_message_views", :count)
+      view_memberships: Repo.aggregate("mail_message_views", :count),
+      tasks: Repo.aggregate("mail_tasks", :count),
+      credentials: Repo.aggregate("mail_credentials", :count)
     }
   end
 
@@ -96,6 +111,15 @@ defmodule AadOS.Api.Mail.Importer do
   end
 
   defp parse_time(_), do: nil
+
+  defp parse_date(value) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_date(_), do: nil
   defp blank_to_nil(value) when value in [nil, ""], do: nil
   defp blank_to_nil(value), do: value
 end

@@ -5,6 +5,19 @@ defmodule AadOS.Api.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :service_auth do
+    plug AadOS.Api.Plugs.ServiceAuth
+  end
+
+  # Service-to-service (web app -> API). Bearer token required; no user-facing access.
+  scope "/internal/v1", AadOS.Api.Controllers do
+    pipe_through [:api, :service_auth]
+
+    get "/summary", InternalController, :summary
+    get "/accounts", InternalController, :accounts
+    get "/messages", InternalController, :messages
+  end
+
   scope "/api", AadOS.Api.Controllers do
     pipe_through :api
 

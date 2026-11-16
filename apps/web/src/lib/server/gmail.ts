@@ -3,6 +3,7 @@ import { fetchRetry, needsReconnect } from './retry';
 import { addFlow, consumeFlow } from './oauth-state';
 import { accountId, applyUnread, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
+import { foldHistory } from './gmail-history';
 
 async function json(response: Response) {
   const body = await response.json().catch(() => ({}));
@@ -85,7 +86,7 @@ async function gmailItem(headers: Record<string, string>, pipeline: Pipeline, me
   const summary = clean(message.snippet);
   const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
   const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
-  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: Array.isArray(message.labelIds) && message.labelIds.includes('UNREAD'), facts: parsed.facts };
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: Array.isArray(message.labelIds) && message.labelIds.includes('UNREAD'), threadId: message.threadId ? String(message.threadId) : undefined, facts: parsed.facts };
 }
 
 /** Fetch one page of a label (cursor '0' = first page, else Gmail's pageToken) and store unknown messages. */
@@ -124,8 +125,53 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
   }
 }
 
-// Incremental: walk from the newest page and stop at the first page that is already known.
+/** Mailbox-wide history cursor (users.getProfile.historyId). */
+async function currentHistoryId(headers: Record<string, string>): Promise<string> {
+  const profile = await json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', { headers }));
+  return String(profile.historyId || '');
+}
+
+/**
+ * Supported incremental path (users.history.list from the stored historyId). Returns null when there is no usable
+ * checkpoint (never synced, or Gmail answered 404 because the history is too old) so the caller falls back to a scan.
+ */
+async function syncGmailHistory(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+  const checkpoint = account.historyIds?.[folderId];
+  if (!checkpoint) return null;
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const pages: Record<string, unknown>[] = [];
+  let pageToken = '';
+  do {
+    const query = new URLSearchParams({ startHistoryId: checkpoint, labelId: folderId, maxResults: '500' });
+    for (const type of ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved']) query.append('historyTypes', type);
+    if (pageToken) query.set('pageToken', pageToken);
+    const response = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/history?${query}`, { headers });
+    if (response.status === 404) { delete account.historyIds![folderId]; return null; }
+    const page = await json(response);
+    pages.push(page); pageToken = String(page.nextPageToken || '');
+  } while (pageToken);
+  const delta = foldHistory(pages as Record<string, any>[]);
+  const known = knownMessageIds(state, pipeline.id);
+  const fresh = delta.added.filter((id) => !known.has(id));
+  const batch = fresh.slice(0, SYNC_BATCH);
+  for (let i = 0; i < batch.length; i += CONCURRENCY) {
+    const items = await Promise.all(batch.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
+    for (const item of items) item.accountId = account.id;
+    state.items.push(...items);
+  }
+  // Read/unread changes made in Gmail since the checkpoint.
+  for (const item of state.items) if ((item.accountId || pipeline.accountId) === account.id && item.messageId in delta.unread) item.unread = delta.unread[item.messageId];
+  // Only advance when everything new was ingested; otherwise the next run continues from the same point.
+  if (fresh.length <= SYNC_BATCH && delta.historyId) account.historyIds![folderId] = delta.historyId;
+  return { scanned: delta.added.length, added: batch.length };
+}
+
+// Incremental: history API when a checkpoint exists, else walk from the newest page and stop at the first page that is already known.
 async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+  const viaHistory = await syncGmailHistory(state, account, pipeline, folderId);
+  if (viaHistory) return viaHistory;
+  // Capture the cursor BEFORE scanning so changes made during the scan are replayed by the next history call.
+  const startId = await currentHistoryId({ Authorization: `Bearer ${await token(state, account)}` }).catch(() => '');
   let cursor = '0', scanned = 0, added = 0;
   for (let n = 0; cursor && n < MAX_PAGES && added < SYNC_BATCH; n++) {
     const result = await syncGmailPage(state, account, pipeline, folderId, cursor, SYNC_BATCH - added);
@@ -134,6 +180,7 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
     cursor = result.next;
   }
   await reconcileGmailUnread(state, account, pipeline, folderId);
+  if (startId) (account.historyIds ||= {})[folderId] = startId;
   return { scanned, added };
 }
 

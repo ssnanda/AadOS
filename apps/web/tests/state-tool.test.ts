@@ -38,3 +38,16 @@ test('export strips tokens and secrets, refuses to overwrite, wrong secret fails
   const bad = spawnSync(process.execPath, ['scripts/state-tool.mjs', 'verify'], { env: { ...process.env, AADOS_DATA_DIR: dir, AADOS_SESSION_SECRET: 'y'.repeat(64) }, encoding: 'utf8' });
   assert.notEqual(bad.status, 0);
 });
+
+test('--with-credentials includes tokens only when asked, still 0600', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aados-'));
+  writeFileSync(join(dir, 'state.enc'), encrypt({ ...state, gmail: { clientId: 'CID', clientSecret: 'GSECRET' }, tasks: [{ id: 't', title: 'x' }] }));
+  const plain = join(dir, 'plain.json'), full = join(dir, 'full.json');
+  assert.equal(tool(dir, 'export', plain).status, 0);
+  assert.ok(!readFileSync(plain, 'utf8').includes('REFRESH') && !JSON.parse(readFileSync(plain, 'utf8')).credentials);
+  assert.equal(JSON.parse(readFileSync(plain, 'utf8')).tasks.length, 1);
+  assert.equal(tool(dir, 'export', full, '--with-credentials').status, 0);
+  const c = JSON.parse(readFileSync(full, 'utf8')).credentials;
+  assert.equal(c['account:gmail-a'].refreshToken, 'REFRESH'); assert.equal(c['app:gmail'].clientSecret, 'GSECRET');
+  assert.equal(statSync(full).mode & 0o777, 0o600);
+});

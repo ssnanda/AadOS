@@ -2,7 +2,10 @@
 // Safe, read-only tooling for the encrypted AadOS state file (never modifies state.enc).
 //   node scripts/state-tool.mjs backup            copy state.enc to a timestamped 0600 backup and verify it decrypts
 //   node scripts/state-tool.mjs verify            decrypt and print record counts only (no contents)
-//   node scripts/state-tool.mjs export <out.json> write accounts/views/messages WITHOUT tokens or OAuth secrets (0600)
+//   node scripts/state-tool.mjs export <out.json> [--with-credentials]
+//                                                 write accounts/views/messages/tasks (0600). Tokens and OAuth app secrets are
+//                                                 included ONLY with --with-credentials; the importer encrypts them (AES-256-GCM)
+//                                                 before storage. Move that file to the Trash after importing.
 // Env: AADOS_SESSION_SECRET (>= 64 chars, same as the app), AADOS_DATA_DIR (default ./.data, /data/aados in prod).
 import { createDecipheriv, createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,18 +29,24 @@ function load() {
 
 const counts = (s) => ({ accounts: (s.accounts || []).length, views: (s.pipelines || []).filter((p) => !p.system).length, inboxFeeds: (s.pipelines || []).filter((p) => p.system).length, messages: (s.items || []).length, dismissed: (s.dismissed || []).length });
 
-export function redact(state) {
+export function redact(state, withCredentials = false) {
   const owner = (item) => item.accountId || (state.pipelines || []).find((p) => p.id === item.pipelineId)?.accountId || '';
   return {
     version: 1,
     accounts: (state.accounts || []).map(({ id, provider, email, remoteId, folders, lastSync, lastError, paused }) => ({ id, provider, email, remoteId, folders, lastSync, lastError, paused })),
     pipelines: (state.pipelines || []).map(({ id, name, accountId, parser, enabled, system, folders }) => ({ id, name, accountId, parser, enabled, system: Boolean(system), folders })),
     items: (state.items || []).map((item) => ({ ...item, accountId: owner(item) })),
-    dismissed: state.dismissed || []
+    tasks: state.tasks || [],
+    dismissed: state.dismissed || [],
+    ...(withCredentials ? { credentials: {
+      ...Object.fromEntries((state.accounts || []).map((a) => [`account:${a.id}`, { accessToken: a.accessToken || '', refreshToken: a.refreshToken || '', expiresAt: a.expiresAt || 0 }])),
+      'app:gmail': { clientId: state.gmail?.clientId || '', clientSecret: state.gmail?.clientSecret || '' },
+      'app:zoho': { clientId: state.zoho?.clientId || '', clientSecret: state.zoho?.clientSecret || '', dataCenter: state.zoho?.dataCenter || 'com' }
+    } } : {})
   };
 }
 
-const [command, target] = process.argv.slice(2);
+const [command, target, flag] = process.argv.slice(2);
 if (import.meta.url === `file://${process.argv[1]}`) {
   if (command === 'backup') {
     const state = load();
@@ -48,8 +57,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(JSON.stringify(counts(load())));
   } else if (command === 'export' && target) {
     if (existsSync(target)) fail(`${target} already exists; refusing to overwrite`);
-    const out = redact(load());
+    const out = redact(load(), flag === '--with-credentials');
     writeFileSync(target, JSON.stringify(out), { mode: 0o600 });
-    console.log(`exported ${target}\n${JSON.stringify({ accounts: out.accounts.length, messages: out.items.length })}`);
+    console.log(`exported ${target}${out.credentials ? ' (CONTAINS CREDENTIALS: import, then move to Trash)' : ''}\n${JSON.stringify({ accounts: out.accounts.length, messages: out.items.length, tasks: out.tasks.length })}`);
   } else fail('usage: state-tool.mjs backup | verify | export <out.json>');
 }
