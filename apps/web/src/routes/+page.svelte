@@ -3,6 +3,7 @@
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
+  const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   const when = (value: string) => value ? new Date(value).toLocaleString() : 'never';
 </script>
 <svelte:head><title>Dashboard · AadOS</title></svelte:head>
@@ -10,7 +11,7 @@
   <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.total}</b> emails synced</span><span><b>{data.accounts}</b> accounts</span></div>
   <div class="tiles">
     {#each data.tiles as t (t.id)}
-      <a class="tile" href={`/pipelines/${t.id}`}>
+      <a class="tile {tone(t.parser)}" href={`/pipelines/${t.id}`}>
         <div class="top"><span class="icon">{icon(t.parser)}</span><div><h2>{t.name}</h2><small>{t.account || t.source}</small></div><span class="count">{t.count}</span></div>
         {#if t.kinds.length}<div class="kinds">{#each t.kinds as [kind, n]}<span>{kind} {n}</span>{/each}</div>{/if}
         <ul>{#each t.latest as m (m.id)}<li>{m.subject || '(no subject)'}</li>{/each}{#if !t.latest.length}<li class="muted">Nothing synced yet</li>{/if}</ul>
@@ -21,6 +22,10 @@
   </div>
 </AppShell>
 <style>
+  .tile{--c:#2f6fe4;--bg:#e8f1ff}.tile.tile{border-top:4px solid var(--c)}.pink{--c:#d6477f;--bg:#ffedf4}.teal{--c:#139488;--bg:#e3f6f3}
+  .icon{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:var(--bg)}
+  .count{color:var(--c)!important}.kinds span{background:var(--bg)!important;color:var(--c)!important}
+  .summary span:nth-child(1) b{color:#7c4dde}.summary span:nth-child(2) b{color:#139488}.summary span:nth-child(3) b{color:#d6477f}
   .summary{display:flex;gap:22px;color:#8a95a8;font-size:13px;margin-bottom:20px}.summary b{color:#29344c;font-size:20px;margin-right:4px}
   .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
   .tile{display:flex;flex-direction:column;gap:12px;background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:18px;color:#29344c;text-decoration:none;box-shadow:0 3px 20px #33447d06}
