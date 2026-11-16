@@ -30,6 +30,12 @@ export type PipelineItem = {
   summary: string;
   kind: string;
   stage: 'new' | 'reviewed' | 'ignored';
+  /** Mailbox read state at last sync; undefined = not recorded yet (counts as unread). */
+  unread?: boolean;
+  /** Opened in AadOS — local only (mailbox access is read-only), so a later sync can't flip it back. */
+  seen?: boolean;
+  /** Zoho folder holding the message (needed to fetch its body). */
+  folderId?: string;
   facts: Record<string, string | number | boolean>;
 };
 // Shared OAuth app credentials per provider; one OAuth client serves many accounts.

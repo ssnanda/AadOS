@@ -75,7 +75,16 @@ export function parseMessage(parser: PipelineParser, raw: Input): { kind: string
   }
   if (parser === 'health') {
     const all = `${text}\n${input.sender}`;
-    const kind = /appointment|scheduled|visit/i.test(all) ? 'appointment' : /claim|EOB|explanation of benefits/i.test(all) ? 'claim' : /prescription|pharmacy|medication/i.test(all) ? 'prescription' : /invoice|bill|balance|payment/i.test(all) ? 'bill' : 'message';
+    const head = `${input.subject} ${input.summary}`;
+    // Subject/snippet decide the kind, not the whole body: footers and boilerplate ("scheduled
+    // payments", "your prescription") used to turn balance notices and ads into appointments.
+    const kind =
+      /contact lens(es)?|open enrollment|annual enrollment|enrollment period|medicare (advantage|supplement|plan|part)|\bmedicare\b.{0,40}\benroll/i.test(head) ? 'promo'
+      : /\b(appointment|visit|telehealth)\b/i.test(input.subject) || /\b(appointment|visit)\b.{0,30}\b(scheduled|reminder|confirm\w*|tomorrow)\b/i.test(head) ? 'appointment'
+      : /\b(claim|EOB|explanation of benefits)\b/i.test(head) ? 'claim'
+      : /\b(prescription|refill|pharmacy|rx)\b/i.test(input.subject) || /\b(prescription|refill)\b.{0,40}\b(ready|filled|shipped|pick ?up)\b/i.test(head) ? 'prescription'
+      : /\b(balance|statement|bill|invoice|payment|amount due)\b/i.test(input.subject) ? 'bill'
+      : 'message';
     return { kind, facts: { provider: input.sender, amount: money(all), date: date(all) } };
   }
   return { kind: 'message', facts: { date: date(text), amount: money(text) } };

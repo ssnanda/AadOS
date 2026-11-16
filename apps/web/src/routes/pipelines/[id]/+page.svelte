@@ -4,8 +4,9 @@
   let { data, form }: { data: PageData; form: ActionData } = $props();
 
   const meta = kindMeta;
-  const href = (kind: string, store: string, withQuery = true) => {
+  const href = (kind: string, store: string, withQuery = true, view = data.view) => {
     const q = new URLSearchParams();
+    if (view === 'all') q.set('view', 'all');
     if (kind) q.set('kind', kind);
     if (store) q.set('store', store);
     if (withQuery && data.q) q.set('q', data.q);
@@ -23,7 +24,8 @@
   {#if form && 'reparsed' in form}<div class="ok">Re-parsed {data.total} emails · {form.reparsed} changed category.</div>{/if}
 
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
-  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
+  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'all'}<input type="hidden" name="view" value="all">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
+  <div class="views"><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a></div>
   <div class="tiles">
     <a class="tile all" class:on={!data.kind && !data.store} href={href('', '')}><span class="ico">▦</span><b>{data.searched}</b><small>All</small></a>
     {#each data.kinds as [kind, n] (kind)}{@const m = meta(kind)}<a class="tile {m.tone}" class:on={data.kind === kind} href={href(kind, data.store)}><span class="ico">{m.icon}</span><b>{n}</b><small>{m.label}</small></a>{/each}
@@ -32,12 +34,13 @@
     <div class="stores"><span class="lbl">Stores</span>{#each data.stores as [name, n] (name)}<a class="chip" class:on={data.store === name} href={href(data.kind, data.store === name ? '' : name)}>{name}<i>{n}</i></a>{/each}</div>
   {/if}
 
-  <section>{#if data.items.length === 0}<div class="empty">{data.total ? 'No emails match this filter.' : 'No messages synced from this folder yet.'}</div>{/if}
-    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q }} /></section>
+  <section>{#if data.items.length === 0}<div class="empty">{data.total ? (data.view === 'unread' ? 'No unread emails match this filter.' : 'No emails match this filter.') : 'No messages synced from this folder yet.'}</div>{/if}
+    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q, unread: data.view === 'unread' }} /></section>
 </main>
 </AppShell>
 <style>
-  .shell{max-width:1000px;margin:auto}
+  .shell{max-width:none}
+  .views{display:inline-flex;gap:0;margin-bottom:12px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;overflow:hidden}.seg{display:inline-flex;gap:8px;align-items:center;padding:7px 16px;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.seg i{font-style:normal;background:#f0f2f7;border-radius:99px;padding:1px 8px;font-size:11px;color:#8a95a8}.seg.on{background:#3157de;color:#fff}.seg.on i{background:#ffffff33;color:#fff}
   header{display:flex;gap:25px;align-items:flex-start;margin-bottom:16px}header>div{flex:1}h1{margin:3px 0}header p,header small{color:#8994a8;margin:0}
   header button{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer}header form{margin:0}header .full{border:1px solid #f1e1bd;background:#fff4df;color:#a1752a;border-radius:9px;padding:8px 13px;font-weight:700;cursor:pointer}
   .alert,.ok{padding:10px 14px;border-radius:9px;margin-bottom:12px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.ok{background:#e3f6f3;color:#0f7f74}

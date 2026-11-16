@@ -54,7 +54,7 @@
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
   .full{background:#fff4df;color:#a1752a}.full:hover{background:#f6e0b0}
   .spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-  .content{max-width:1200px;margin:auto;padding:32px}
+  .content{max-width:2200px;margin:auto;padding:32px}
   .menu{display:none;border:0;background:transparent;color:#4b5e86;font-size:19px}
   @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.menu{display:inline-block}.topbar{padding:0 16px}.content{padding:20px 14px}.topbar strong{display:none}.search{margin:0}}
 </style>

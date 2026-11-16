@@ -2,7 +2,7 @@ import { error, fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { readState, updateState } from '$lib/server/aados-store';
 import { clean, parseMessage } from '$lib/server/pipeline-parser';
-import { filterItems } from '$lib/server/search';
+import { filterItems, isUnread } from '$lib/server/search';
 
 const count = (values: string[]) => {
   const map = new Map<string, number>();
@@ -18,8 +18,13 @@ export const load: PageServerLoad = async ({ params, url }) => {
   const kind = url.searchParams.get('kind') || '';
   const store = url.searchParams.get('store') || '';
   const q = (url.searchParams.get('q') || '').trim();
-  // Tiles and store chips count what matches the search, so they narrow as you type.
-  const searched = filterItems(all, { q });
+  // Unread-only by default; ?view=all shows everything.
+  const view = url.searchParams.get('view') === 'all' ? 'all' : 'unread';
+  const unread = view === 'unread';
+  const matching = filterItems(all, { q });
+  const unreadCount = matching.filter(isUnread).length;
+  // Tiles and store chips count what matches the search + read filter, so they narrow as you type.
+  const searched = filterItems(matching, { unread });
   const shown = filterItems(searched, { kind, store }).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
   return {
     pipeline,
@@ -27,7 +32,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
     searched: searched.length,
     kinds: count(searched.map((item) => item.kind)),
     stores: count(searched.map((item) => String(item.facts.store || ''))).slice(0, 14),
-    kind, store, q,
+    kind, store, q, view, unreadCount, allCount: matching.length,
     matched: shown.length,
     items: shown.slice(0, 250)
   };
@@ -64,7 +69,7 @@ export const actions: Actions = {
         const mine = state.items.filter((item) => item.pipelineId === pipeline.id);
         const wanted = new Set(form.getAll('ids').map(String));
         const victims = form.get('all') === '1'
-          ? filterItems(mine, { kind: String(form.get('kind') || ''), store: String(form.get('store') || ''), q: String(form.get('q') || '') })
+          ? filterItems(mine, { kind: String(form.get('kind') || ''), store: String(form.get('store') || ''), q: String(form.get('q') || ''), unread: form.get('unread') === '1' })
           : mine.filter((item) => wanted.has(item.id));
         const gone = new Set(victims.map((item) => item.id));
         state.items = state.items.filter((item) => !gone.has(item.id));

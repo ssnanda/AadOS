@@ -7,6 +7,7 @@ export const KINDS: Record<string, { label: string; icon: string; tone: string }
   claim: { label: 'Claims', icon: '📄', tone: 'blue' },
   prescription: { label: 'Prescriptions', icon: '💊', tone: 'pink' },
   bill: { label: 'Bills', icon: '💲', tone: 'amber' },
+  promo: { label: 'Promos & notices', icon: '📣', tone: 'gray' },
   other: { label: 'Other', icon: '✉', tone: 'gray' },
   message: { label: 'Messages', icon: '✉', tone: 'gray' }
 };

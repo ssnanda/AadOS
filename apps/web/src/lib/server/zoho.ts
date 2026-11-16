@@ -109,7 +109,7 @@ async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipel
   const parsed = parseMessage(pipeline.parser, { subject, sender, summary, body });
   const rawReceived = Number(row.receivedTime || row.receivedDate || Date.now());
   const receivedAt = new Date(Number.isFinite(rawReceived) ? rawReceived : Date.now()).toISOString();
-  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: String(row.status) === '0', folderId, facts: parsed.facts };
 }
 
 /** Fetch one page of a folder (cursor = page number, newest first) and store unknown messages. */
@@ -120,6 +120,14 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
   const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
   const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
   const unknownRows = rows.filter((row) => { const id = String(row.messageId || ''); return id && !known.has(id); });
+  // Refresh read state (and folder) of mail we already have, so reading it in the mailbox clears it here too.
+  const mine = new Map(state.items.filter((item) => item.pipelineId === pipeline.id).map((item) => [item.messageId, item]));
+  for (const row of rows) {
+    const item = mine.get(String(row.messageId || ''));
+    if (!item) continue;
+    item.unread = String(row.status) === '0';
+    item.folderId ||= folderId;
+  }
   const fresh = unknownRows.slice(0, maxAdd);
   for (let i = 0; i < fresh.length; i += CONCURRENCY) {
     const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((row) => zohoItem(state, account, pipeline, folderId, row)));
@@ -138,4 +146,19 @@ async function syncFolder(state: AadOSState, account: MailAccount, pipeline: Pip
     cursor = result.next;
   }
   return { scanned, added };
+}
+
+/** Fetch one message body (HTML or text) on demand. Tries the stored folder, then the view's folders. */
+export async function fetchZohoBody(state: AadOSState, account: MailAccount, pipeline: Pipeline, item: PipelineItem): Promise<{ html: string; text: string }> {
+  const folders = [item.folderId, ...(pipeline.folders?.length ? pipeline.folders.map((f) => f.id) : [pipeline.folderId])].filter((id, i, all): id is string => Boolean(id) && all.indexOf(id) === i);
+  let last: unknown = new Error('Message not found');
+  for (const folderId of folders) {
+    try {
+      const content = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(item.messageId)}/content`);
+      const raw = String(content.data?.content ?? content.data?.htmlContent ?? '');
+      item.folderId = folderId;
+      return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '' } : { html: '', text: raw };
+    } catch (cause) { last = cause; }
+  }
+  throw last;
 }

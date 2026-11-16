@@ -73,7 +73,7 @@ async function gmailItem(headers: Record<string, string>, pipeline: Pipeline, me
   const summary = clean(message.snippet);
   const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
   const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
-  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', facts: parsed.facts };
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: Array.isArray(message.labelIds) && message.labelIds.includes('UNREAD'), facts: parsed.facts };
 }
 
 /** Fetch one page of a label (cursor '0' = first page, else Gmail's pageToken) and store unknown messages. */
@@ -103,4 +103,19 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
     cursor = result.next;
   }
   return { scanned, added };
+}
+
+/** Fetch one message body on demand (prefers HTML, falls back to plain text). */
+export async function fetchGmailBody(state: AadOSState, account: MailAccount, item: PipelineItem): Promise<{ html: string; text: string }> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const message = await json(await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}?format=full`, { headers, signal: AbortSignal.timeout(20000) }));
+  const found: Record<string, string> = {};
+  const walk = (part: Record<string, any> | undefined) => {
+    if (!part) return;
+    const type = String(part.mimeType || '');
+    if (part.body?.data && (type === 'text/html' || type === 'text/plain') && !found[type]) found[type] = Buffer.from(String(part.body.data), 'base64url').toString('utf8');
+    for (const child of part.parts || []) walk(child);
+  };
+  walk(message.payload);
+  return { html: found['text/html'] || '', text: found['text/plain'] || '' };
 }
