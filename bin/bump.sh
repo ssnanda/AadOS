@@ -96,6 +96,8 @@ if git diff --cached --name-only | grep -E '(^|/)(\.env($|\.[^/]+$)|id_rsa|id_ed
 fi
 message="chore: update AadOS"
 if [[ "$choice" != 5 ]]; then message="chore(release): v$new"; fi
+# oc-deploy.sh sets AADOS_SKIP_CI=1 so its push does not start GitHub Actions.
+if [[ "${AADOS_SKIP_CI:-}" == 1 ]]; then message="$message [skip ci]"; fi
 git commit -m "$message"
 if [[ "$choice" != 5 ]]; then
   git tag "v$new"

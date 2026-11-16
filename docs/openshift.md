@@ -6,7 +6,7 @@ AadOS follows the AJOPS `oc-deploy.sh` approach: OpenShift `ImageStream` + binar
 
 1. On your Mac, check `oc whoami` and `oc get nodes`.
 2. Run `./bin/pull-latest.sh` in a clean checkout to get the current code.
-3. Run `./bin/oc-deploy.sh` from the AadOS repository. This runs `./bin/bump.sh --if-dirty` first if any local changes need committing and pushing to GitHub, then waits for the matching GitHub Actions CI run to pass before changing OpenShift. A clean-tree deployment dispatches a fresh CI run. The first deploy creates a random login and prints the password once.
+3. Run `./bin/oc-deploy.sh` from the AadOS repository. If there are local changes it first runs `./bin/bump.sh --if-dirty` to commit and push them to GitHub, then builds the current source in OpenShift. The commit carries `[skip ci]`, so it does not start GitHub Actions. The first deploy creates a random login and prints the password once.
 4. The script creates `aados` only if it does not exist and generates the `aados-api-secrets` development secret only when absent. It processes `openshift/build.yaml`, builds both Dockerfiles in OpenShift from `apps/api` and `apps/web`, processes `openshift/app.yaml`, and verifies both rollouts.
 5. Visit `https://os.aadnanda.com`. For local access, run `oc port-forward -n aados svc/aados-web 3000:3000`, then visit `http://127.0.0.1:3000`.
 
@@ -28,4 +28,4 @@ Normal deploys keep the existing username and password hash. Run `./bin/oc-deplo
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.
 - `bin/dev-local.sh` uses Docker Compose for optional local-only testing, not for OpenShift.
-- `gh` must be authenticated. A missing/failed GitHub Actions run stops the deployment before OpenShift builds or rollouts begin.
+- Pending local changes are committed and pushed via `bin/bump.sh` before deploying. The deploy commit carries `[skip ci]`; run `./bin/bump.sh` directly if you want CI.
