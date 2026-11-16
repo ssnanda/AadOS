@@ -8,11 +8,11 @@
 </script>
 <svelte:head><title>Dashboard · AadOS</title></svelte:head>
 <AppShell title="Dashboard">
-  <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.total}</b> emails synced</span><span><b>{data.accounts}</b> accounts</span><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
+  <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
   <div class="tiles">
     {#each data.tiles as t (t.id)}
       <a class="tile {tone(t.parser)}" href={`/pipelines/${t.id}`}>
-        <div class="top"><span class="icon">{icon(t.parser)}</span><div><h2>{t.name}</h2><small>{t.account || t.source}</small></div><span class="count">{t.count}</span></div>
+        <div class="top"><span class="icon">{icon(t.parser)}</span><div><h2>{t.name}</h2><small>{t.account || t.source}</small></div><span class="count" title={`${t.count} unread email${t.count === 1 ? '' : 's'}`}>{t.count}</span></div>
         {#if t.kinds.length}<div class="kinds">{#each t.kinds as [kind, n]}<span>{kind} {n}</span>{/each}</div>{/if}
         <ul>{#each t.latest as m (m.id)}<li>{m.subject || '(no subject)'}</li>{/each}{#if !t.latest.length}<li class="muted">Nothing synced yet</li>{/if}</ul>
         <div class="foot"><span>Synced {when(t.lastSync)}</span>{#if !t.enabled}<em>paused</em>{/if}{#if t.lastError}<em class="err">{t.lastError}</em>{/if}</div>

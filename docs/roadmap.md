@@ -20,7 +20,8 @@
 - [ ] CloudNativePG deployment and Ecto migrations, Row-Level Security
 - [ ] Oban incremental sync, dedupe, cursor/checkpoint and retry safety
 - [ ] Unified inbox, search, sender/account/thread grouping and pagination
-- [ ] Show unread, actionable, and account connection errors accurately
+- [x] Show unread dashboard counts accurately
+- [ ] Show actionable and account connection errors accurately
 
 ## M2 — AI email triage
 - [ ] Newsletter/promotion/receipt/bill/appointment/travel classification beyond initial Shop and Health rules

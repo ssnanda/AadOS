@@ -42,6 +42,29 @@ export const actions: Actions = {
   },
   saveZoho: async ({ request }) => { const f=await request.formData(), id=String(f.get('clientId')||'').trim(), secret=String(f.get('clientSecret')||'').trim(); if(!id)return fail(400,{error:'Zoho Client ID is required.'}); await updateState((s)=>{s.zoho.clientId=id;if(secret)s.zoho.clientSecret=secret;s.zoho.dataCenter=String(f.get('dataCenter')||'com');}); return {saved:'zoho'}; },
   connectZoho: async ({ url }) => { let target=''; await updateState((s)=>{if(!s.zoho.clientId||!s.zoho.clientSecret)throw new Error('Save Zoho credentials first.');target=beginZoho(s,`${url.origin}/oauth/zoho/callback`);}); throw redirect(303,target); },
+  saveGmail: async ({ request }) => {
+    const form = await request.formData();
+    const clientId = String(form.get('clientId') || '').trim();
+    const clientSecret = String(form.get('clientSecret') || '').trim();
+    if (!clientId) return fail(400, { error: 'Gmail Client ID is required.' });
+    await updateState((state) => {
+      state.gmail.clientId = clientId;
+      if (clientSecret) state.gmail.clientSecret = clientSecret;
+    });
+    return { saved: 'gmail' };
+  },
+  connectGmail: async ({ url }) => {
+    let target = '';
+    try {
+      await updateState((state) => {
+        if (!state.gmail.clientId || !state.gmail.clientSecret) throw new Error('Save Gmail credentials first.');
+        target = beginGmailOAuth(state, `${url.origin}/oauth/gmail/callback`);
+      });
+    } catch (cause) {
+      return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start Gmail connection.' });
+    }
+    throw redirect(303, target);
+  },
   refreshAccount: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
     try { await updateState(async (s)=>{ const account=s.accounts.find((item)=>item.id===id); if(!account)throw new Error('Account not found.'); if(account.provider==='zoho')await discoverAccountAndFolders(s,account); else await discoverGmailFolders(s,account); }); return {refreshed:id}; }
