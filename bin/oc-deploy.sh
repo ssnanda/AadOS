@@ -6,8 +6,27 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
-command -v git >/dev/null 2>&1 || fail 'git CLI missing.'
-command -v oc >/dev/null 2>&1 || fail 'oc CLI missing.'
+usage() {
+  cat <<'USAGE'
+AadOS OpenShift deployment:
+  ./bin/oc-deploy.sh [--reset-user]
+
+  --reset-user  Generate a new username and password, invalidating all sessions
+USAGE
+}
+
+RESET_USER=false
+for arg in "$@"; do
+  case "$arg" in
+    --reset-user) RESET_USER=true ;;
+    --help|-h) usage; exit 0 ;;
+    *) fail "Unknown option: $arg" ;;
+  esac
+done
+
+for binary in git node oc openssl; do
+  command -v "$binary" >/dev/null 2>&1 || fail "$binary CLI missing."
+done
 
 # Keep the deployed source in GitHub first, as with AJOPS.
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
@@ -32,7 +51,7 @@ USER="$(oc whoami)"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 
 if [[ "$AADOS_ENV" == prod ]]; then
-  echo 'WARNING: AadOS does not yet have user authentication or email OAuth. Never expose this release publicly.'
+  echo 'WARNING: AadOS has a single-user password gate but no email OAuth or per-account authorization. Do not ingest personal email yet.'
   printf 'Deploy version %s to PRODUCTION namespace %s on cluster %s? Type DEPLOY-PROD: ' "$VERSION" "$NAMESPACE" "$CLUSTER"
   read -r CONFIRMATION
   [[ "$CONFIRMATION" == DEPLOY-PROD ]] || fail 'Production deployment cancelled.'
@@ -60,6 +79,32 @@ if ! oc get secret aados-api-secrets -n "$NAMESPACE" >/dev/null 2>&1; then
   openssl rand -hex 48 | tr -d '\n' | oc create secret generic aados-api-secrets --from-file=secret_key_base=/dev/stdin -n "$NAMESPACE" >/dev/null
 fi
 [[ -n "$(oc get secret aados-api-secrets -n "$NAMESPACE" -o jsonpath='{.data.secret_key_base}')" ]] || fail 'OpenShift secret aados-api-secrets lacks key secret_key_base.'
+
+secret_field() {
+  oc get secret aados-api-secrets -n "$NAMESPACE" -o "go-template={{index .data \"$1\"}}" 2>/dev/null || true
+}
+b64() { printf %s "$1" | base64 | tr -d '\n'; }
+unb64() { printf %s "$1" | node -e "let s=''; process.stdin.on('data', d => s += d).on('end', () => process.stdout.write(Buffer.from(s, 'base64').toString()))"; }
+
+# The password is shown once. Only its scrypt hash is stored in OpenShift.
+USER_B64="$(secret_field aados-user)"
+PASSWORD_HASH_B64="$(secret_field aados-password-hash)"
+if [[ "$RESET_USER" == true || -z "$USER_B64" || "$USER_B64" == '<no value>' || -z "$PASSWORD_HASH_B64" || "$PASSWORD_HASH_B64" == '<no value>' ]]; then
+  AADOS_LOGIN_USER="${AADOS_LOGIN_USER:-u-$(node -e "process.stdout.write(require('crypto').randomBytes(6).toString('hex'))")}"
+  [[ "$AADOS_LOGIN_USER" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$ ]] || fail 'AADOS_LOGIN_USER must be 3-64 letters, numbers, dots, underscores or hyphens.'
+  AADOS_LOGIN_PASSWORD="$(node --input-type=module -e "import { generatePassword } from './apps/web/src/lib/server/password.js'; process.stdout.write(generatePassword())")"
+  AADOS_LOGIN_HASH="$(AADOS_PASSWORD="$AADOS_LOGIN_PASSWORD" node --input-type=module -e "import { hashPassword } from './apps/web/src/lib/server/password.js'; process.stdout.write(await hashPassword(process.env.AADOS_PASSWORD))")"
+  oc patch secret aados-api-secrets -n "$NAMESPACE" --type=merge \
+    -p "{\"data\":{\"aados-user\":\"$(b64 "$AADOS_LOGIN_USER")\",\"aados-password-hash\":\"$(b64 "$AADOS_LOGIN_HASH")\"}}" >/dev/null
+  echo ''
+  echo "  AadOS login: https://$HOSTNAME/login"
+  echo "  User:        $AADOS_LOGIN_USER"
+  echo "  Password:    $AADOS_LOGIN_PASSWORD   (shown once - save it now)"
+  echo ''
+else
+  AADOS_LOGIN_USER="$(unb64 "$USER_B64")"
+  echo 'Keeping the existing AadOS login. Use --reset-user to replace it.'
+fi
 
 LOGDIR="${AADOS_DEPLOY_LOG_DIR:-$ROOT/build/deploy}"
 mkdir -p "$LOGDIR"
@@ -121,6 +166,8 @@ done
 oc get deployment "$APP_NAME-api" "$APP_NAME-web" -n "$NAMESPACE"
 echo "Deployed AadOS v$VERSION successfully."
 echo "Public URL: https://$HOSTNAME"
+echo "User: $AADOS_LOGIN_USER"
+echo "Reset login: ./bin/oc-deploy.sh --reset-user"
 echo "Route: oc get routes -n '$NAMESPACE'"
 echo "TLS: oc get certificate '$APP_NAME-tls' -n '$NAMESPACE'"
 echo "Local access: oc port-forward -n $NAMESPACE svc/$APP_NAME-web 3000:3000"

@@ -8,7 +8,7 @@ AadOS is an independent, self-hosted personal AI operating system. **Email is th
 - API: Elixir/Phoenix health and email overview/messages endpoints.
 - Web: SvelteKit 2 / Svelte 5 / Tailwind CSS 4 dashboard.
 - Future: secure identity, Gmail and Outlook read-only OAuth, CloudNativePG/Postgres, AI triage and SwiftUI app.
-- No public Route/Ingress until authentication, authorization, encrypted token storage and security checks are implemented.
+- Password-protected HTTPS workspace; live provider data remains disabled until OAuth, encrypted token storage and authorization checks are implemented.
 
 ## Scripts
 
@@ -31,15 +31,15 @@ From a clean AadOS Git checkout on your Mac:
 ./bin/oc-deploy.sh
 ```
 
-This targets `aados-dev` by default. It creates the development project if needed, generates a development Phoenix secret (only if missing), builds both images inside OpenShift from source, and applies two private services and deployments. **Neither Helm nor Docker is needed on your Mac for OpenShift deployment.** The OpenShift cluster must support BuildConfigs and the internal image registry.
+This targets `aados` by default. It creates the project if needed, generates the application secrets and first login when missing, builds both images inside OpenShift from source, and applies the services, deployments, and HTTPS Ingress. **Neither Helm nor Docker is needed on your Mac for OpenShift deployment.** The OpenShift cluster must support BuildConfigs and the internal image registry.
 
-Access the UI securely through your existing `oc` login:
+Open `https://os.aadnanda.com` and use the login printed on the first deployment. To rotate it later:
 
 ```sh
-oc port-forward -n aados-dev svc/aados-web 3000:3000
+./bin/oc-deploy.sh --reset-user
 ```
 
-Open http://127.0.0.1:3000. To select an existing namespace, set `AADOS_NAMESPACE`. Production requires `AADOS_ENV=prod` and explicit `DEPLOY-PROD` confirmation; do not deploy this unauthenticated bootstrap publicly. See [OpenShift instructions](docs/openshift.md).
+For local cluster access, run `oc port-forward -n aados svc/aados-web 3000:3000` and open http://127.0.0.1:3000. To select another namespace, set `AADOS_NAMESPACE`. Production requires `AADOS_ENV=prod` and explicit `DEPLOY-PROD` confirmation. See [OpenShift instructions](docs/openshift.md).
 
 ## Optional local development
 
@@ -56,4 +56,4 @@ For native development without Docker, use Elixir >= 1.17 / Node >= 22, run `mix
 - `bin`: Git, local development, OpenShift and iOS scripts.
 - `docs`: [Architecture](docs/architecture.md), [Roadmap](docs/roadmap.md), [Security](docs/security.md).
 
-**Security:** No public exposure or live email ingestion until login, OAuth, RLS/authorization and encrypted credentials are implemented.
+**Security:** The public workspace is password protected. Do not enable live email ingestion until OAuth, RLS/authorization and encrypted credentials are implemented.

@@ -6,6 +6,7 @@
 - [x] Dashboard showing account connection state and basic inbox layout
 - [x] Safe Git workflows and OpenShift/iOS entrypoint scripts
 - [x] OpenShift deployment with HTTPS route for `os.aadnanda.com` and baseline CI
+- [x] Password-protected owner login with explicit credential reset
 - [ ] Install dependencies and run full build on a connected runner
 
 ## M1 — Secure Gmail + Outlook read-only connections
