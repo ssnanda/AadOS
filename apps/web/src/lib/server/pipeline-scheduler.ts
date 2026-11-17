@@ -1,6 +1,5 @@
 import os from 'node:os';
-import { ensureInboxPipelines, hasAccount, updateState, updateStateDetached } from './aados-store';
-import { syncView } from './pipeline-sync';
+import { ensureInboxPipelines, updateState, updateStateDetached } from './aados-store';
 import { syncCalendars } from './calendar-sync';
 import { syncJob } from './sync-job';
 
@@ -26,6 +25,8 @@ export function busyReason(): string {
   return '';
 }
 
+// Mail is no longer synced here: open folders sync themselves (see /sync/live), so a background walk of
+// every view only competes with the page. This pass keeps calendars current.
 async function pass() {
   if (globalThis.__aadosSyncRunning || syncJob().running) return;
   const busy = busyReason();
@@ -33,20 +34,8 @@ async function pass() {
   globalThis.__aadosSyncRunning = true;
   try {
     await updateState((state) => { ensureInboxPipelines(state); });
-    // Runs on a snapshot, so mailbox network calls never block other writes.
-    await updateStateDetached(async (state) => {
-      for (const pipeline of state.pipelines.filter((item) => item.enabled)) {
-        // Re-check between views so a long sync backs off when the machine gets busy.
-        const stop = busyReason();
-        if (stop) { console.log(`[aados] scheduled sync paused: ${stop}`); return; }
-        try {
-          if (!hasAccount(state, pipeline)) continue;
-          await syncView(state, pipeline, { scheduled: true });
-        }
-        catch (cause) { pipeline.lastError = cause instanceof Error ? cause.message : 'Sync failed'; }
-      }
-      await syncCalendars(state); // read-only; per-account errors are recorded on the account
-    });
+    // Runs on a snapshot, so provider network calls never block other writes.
+    await updateStateDetached(async (state) => { await syncCalendars(state); }); // read-only; per-account errors are recorded on the account
   } finally { globalThis.__aadosSyncRunning = false; }
 }
 

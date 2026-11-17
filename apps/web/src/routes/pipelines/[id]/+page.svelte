@@ -1,7 +1,9 @@
 <script lang="ts">
-  import AppShell from '$lib/components/AppShell.svelte'; import { startFullSync } from '$lib/sync'; import ItemList from '$lib/components/ItemList.svelte'; import { kindMeta } from '$lib/kinds';
+  import AppShell from '$lib/components/AppShell.svelte'; import { startAutoSync } from '$lib/sync'; import { invalidateAll } from '$app/navigation'; import { onMount } from 'svelte'; import ItemList from '$lib/components/ItemList.svelte'; import { kindMeta } from '$lib/kinds';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
+  // Auto sync of this view's folders (newest mail): on open, every 2 minutes while visible.
+  onMount(() => { const auto = startAutoSync(() => ({ pipeline: data.pipeline.id }), () => invalidateAll()); void auto.run(); return () => auto.stop(); });
 
   const meta = kindMeta;
   const href = (kind: string, store: string, withQuery = true, view = data.view) => {
@@ -18,7 +20,7 @@
 <main class="shell">
   <header>
     <div><small>{data.pipeline.folderName}</small><h1>{data.pipeline.name}</h1><p>{data.pipeline.parser} parser · Last sync {data.pipeline.lastSync ? new Date(data.pipeline.lastSync).toLocaleString() : 'never'}</p></div>
-    <button type="button" class="full" onclick={() => startFullSync([data.pipeline.id])} title="Fetch every email in this folder, in the background">⇩ Sync all emails</button><form method="POST" action="?/reparse"><button title="Re-run the parser on stored emails">↻ Re-parse</button></form>
+<form method="POST" action="?/reparse"><button title="Re-run the parser on stored emails">↻ Re-parse</button></form>
   </header>
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if form && 'reparsed' in form}<div class="ok">Re-parsed {data.total} emails · {form.reparsed} changed category.</div>{/if}

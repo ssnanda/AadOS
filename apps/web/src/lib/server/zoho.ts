@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { accountId, applyUnread, pipelineFolders, knownMessageIds, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
+import { accountId, applyUnread, pipelineFolders, knownMessageIds, pruneFolderWindow, type AadOSState, type MailAccount, type PageResult, type Pipeline, type PipelineItem, type ZohoFolder } from './aados-store';
 import { clean, parseMessage } from './pipeline-parser';
 import { fetchRetry, needsReconnect } from './retry';
 import { addFlow, consumeFlow } from './oauth-state';
@@ -148,7 +148,14 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
     for (const item of items) item.accountId = account.id;
     state.items.push(...items);
   }
-  return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1) };
+  return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1), ids: rows.map((row) => String(row.messageId || '')).filter(Boolean) };
+}
+
+/** Live sync of one open folder: the newest page only (new mail, read state, anything that left the folder). */
+export async function liveZohoFolder(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+  const page = await syncZohoPage(state, account, pipeline, folderId, '0');
+  const removed = pruneFolderWindow(state, pipeline, folderId, account.id, page.ids || [], !page.next);
+  return { scanned: page.scanned, added: page.added, removed };
 }
 
 /**

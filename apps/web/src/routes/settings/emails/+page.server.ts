@@ -1,9 +1,8 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { ensureInboxPipelines, updateStateDetached, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { updateStateDetached, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
-import { syncView } from '$lib/server/pipeline-sync';
 import { clearCalendarData, syncCalendars } from '$lib/server/calendar-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -32,11 +31,6 @@ export const actions: Actions = {
       state.pipelines.push({ id, name: name || defaultName, source: first.source, accountId: first.accountId, folderId: first.id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
     }); return { created: true }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not create workflow.' }); }
-  },
-  sync: async ({ request }) => {
-    const id = String((await request.formData()).get('id') || '');
-    try { let result = { scanned: 0, added: 0 }; await updateStateDetached(async (state) => { const pipeline = state.pipelines.find((item) => item.id === id); if (!pipeline) throw new Error('Email workflow not found.'); result = await syncView(state, pipeline); }); return { synced: id, ...result }; }
-    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
   },
   toggle: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
@@ -75,17 +69,6 @@ export const actions: Actions = {
     catch(c){return fail(400,{error:c instanceof Error?c.message:'Refresh failed.'});}
   },
   // Sync every view/inbox feed that reads this account (only this account's folders).
-  syncAccount: async ({ request }) => {
-    const id = String((await request.formData()).get('id') || '');
-    try {
-      let added = 0;
-      await updateState((s) => { if (!s.accounts.some((item) => item.id === id)) throw new Error('Account not found.'); ensureInboxPipelines(s); });
-      await updateStateDetached(async (s) => {
-        for (const p of s.pipelines.filter((item) => item.enabled && pipelineFolders(item).some((f) => f.accountId === id))) added += (await syncView(s, p, { accountId: id })).added;
-      });
-      return { synced: id, added };
-    } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Sync failed.' }); }
-  },
   // Re-consent with the read-only calendar scope for an existing account (Google: incremental auth, same login).
   enableCalendar: async ({ request, url }) => {
     const id = String((await request.formData()).get('id') || '');

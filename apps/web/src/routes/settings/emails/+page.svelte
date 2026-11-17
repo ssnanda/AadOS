@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { startFullSync } from '$lib/sync';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let error = $derived(form && 'error' in form ? form.error : data.error);
@@ -18,9 +17,8 @@
   <div class="acts">
     {#if !full}<form method="POST" action="?/allowChanges"><input type="hidden" name="id" value={a.id}><button class="primary" title="One-time approval at {a.provider === 'gmail' ? 'Google' : 'Zoho'}: delete to Trash, mark read/unread, send what you write{a.provider === 'gmail' ? ', Gmail filters' : ''}">Allow changes</button></form>{/if}
     {#if a.lastError}<form method="POST" action="?/allowChanges"><input type="hidden" name="id" value={a.id}><button class="primary">Reconnect</button></form>{/if}
-    <form method="POST" action="?/syncAccount"><input type="hidden" name="id" value={a.id}><button>Sync</button></form>
     <form method="POST" action="?/refreshAccount"><input type="hidden" name="id" value={a.id}><button title="Reload folders/labels">Refresh</button></form>
-    <form method="POST" action="?/toggleAccountSync"><input type="hidden" name="id" value={a.id}><button title="Automatic sync every 15 min">{a.paused ? 'Resume auto sync' : 'Pause auto sync'}</button></form>
+    <form method="POST" action="?/toggleAccountSync"><input type="hidden" name="id" value={a.id}><button title="Automatic sync of open folders">{a.paused ? 'Resume auto sync' : 'Pause auto sync'}</button></form>
     {#if a.calendar}<form method="POST" action="?/syncCalendarAccount"><input type="hidden" name="id" value={a.id}><button>Sync calendar</button></form>{:else}<form method="POST" action="?/enableCalendar"><input type="hidden" name="id" value={a.id}><button title="Read-only calendar access">Enable calendar</button></form>{/if}
     <span class="sp"></span>
     {#if a.calendar}<form method="POST" action="?/clearCalendar" onsubmit={(e) => { if (!confirm('Remove this account\'s synced calendar data from AadOS?')) e.preventDefault(); }}><input type="hidden" name="id" value={a.id}><button class="quiet danger">Clear calendar</button></form>{/if}
@@ -58,7 +56,7 @@
     <label>View type<select name="parser" required><option value="shop">Shopping</option><option value="health">Health</option><option value="generic">Custom</option></select></label>
     <label>Name<input name="name" placeholder="Use folder or label name" /></label><button disabled={data.accounts.length === 0}>Add view</button>
   </form></details>
-  {#if data.pipelines.length === 0}<p class="hint">No views yet.</p>{/if}<div class="views">{#each data.pipelines as workflow (workflow.id)}<article><div class="vicon">{workflow.parser === 'shop' ? '🛍' : workflow.parser === 'health' ? '♡' : '✉'}</div><div><small>{#each workflow.folders as f, n}{n ? ' + ' : ''}{folderLabel(f, workflow)}{/each}</small><h3><a href={`/pipelines/${workflow.id}`}>{workflow.name}</a></h3><p>{data.itemCounts[workflow.id] || 0} items · {workflow.enabled ? 'auto sync · 15 min' : 'paused'}{workflow.lastError ? ` · ${workflow.lastError}` : ''}</p></div><div class="actions"><button type="button" onclick={() => startFullSync([workflow.id])} title="Fetch every email in this folder, in the background">Sync all</button><form method="POST" action="?/sync"><input type="hidden" name="id" value={workflow.id}><button>Sync new</button></form><form method="POST" action="?/toggle"><input type="hidden" name="id" value={workflow.id}><button>{workflow.enabled ? 'Pause' : 'Enable'}</button></form></div></article>{/each}</div></section>
+  {#if data.pipelines.length === 0}<p class="hint">No views yet.</p>{/if}<div class="views">{#each data.pipelines as workflow (workflow.id)}<article><div class="vicon">{workflow.parser === 'shop' ? '🛍' : workflow.parser === 'health' ? '♡' : '✉'}</div><div><small>{#each workflow.folders as f, n}{n ? ' + ' : ''}{folderLabel(f, workflow)}{/each}</small><h3><a href={`/pipelines/${workflow.id}`}>{workflow.name}</a></h3><p>{data.itemCounts[workflow.id] || 0} items · {workflow.enabled ? 'auto sync · 15 min' : 'paused'}{workflow.lastError ? ` · ${workflow.lastError}` : ''}</p></div><div class="actions"><form method="POST" action="?/toggle"><input type="hidden" name="id" value={workflow.id}><button>{workflow.enabled ? 'Pause' : 'Enable'}</button></form></div></article>{/each}</div></section>
 </main>
 <style>
   .outer>summary{list-style:none;cursor:pointer}.outer>summary::-webkit-details-marker{display:none}.outer>summary .provider{margin:0}.outer[open]>summary .provider{margin-bottom:17px}

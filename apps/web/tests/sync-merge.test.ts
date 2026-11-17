@@ -53,3 +53,14 @@ test('merging twice is idempotent', () => {
   mergeSync(latest, before, working); mergeSync(latest, before, working);
   assert.equal(latest.items.length, 2);
 });
+
+test('copies the sync removed (left the folder in the mailbox) are removed from the latest state', () => {
+  const before = base();
+  before.items.push({ id: 'p:2', pipelineId: 'p', messageId: '2' });
+  const working = structuredClone(before);
+  working.items = working.items.filter((i: any) => i.id !== 'p:1');
+  const latest = structuredClone(before);
+  latest.items.push({ id: 'p:3', pipelineId: 'p', messageId: '3' }); // added meanwhile: kept
+  mergeSync(latest, before, working);
+  assert.deepEqual(latest.items.map((i: any) => i.id), ['p:2', 'p:3']);
+});

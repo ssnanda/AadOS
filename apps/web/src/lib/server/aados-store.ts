@@ -93,7 +93,7 @@ export type MailAccount = {
   paused?: boolean;
 };
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
-export type PageResult = { scanned: number; added: number; unknown: number; next: string };
+export type PageResult = { scanned: number; added: number; unknown: number; next: string; ids?: string[] };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
 export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
 
@@ -309,6 +309,35 @@ export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: str
     if (unreadIds.has(item.messageId)) { item.unread = true; item.folderId ||= folderId; }
     else if (item.folderId === folderId || (!item.folderId && single)) item.unread = false;
   }
+}
+
+/** Stored copies of one view's folder (same folder rule as `applyUnread`). */
+const folderItems = (state: AadOSState, pipeline: Pipeline, folderId: string, account: string) => {
+  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1;
+  return state.items.filter((item) => item.pipelineId === pipeline.id && (item.accountId || pipeline.accountId) === account && (item.folderId === folderId || (!item.folderId && single)));
+};
+
+/** Drop stored copies that left the folder in the mailbox (deleted, trashed or moved, e.g. on the phone). */
+export function removeFromFolder(state: AadOSState, pipeline: Pipeline, folderId: string, messageIds: Set<string>, account: string): number {
+  if (!messageIds.size) return 0;
+  const gone = new Set(folderItems(state, pipeline, folderId, account).filter((item) => messageIds.has(item.messageId)).map((item) => item.id));
+  if (gone.size) state.items = state.items.filter((item) => !gone.has(item.id));
+  return gone.size;
+}
+
+/**
+ * `listedIds` is the folder's newest page as the mailbox lists it now. Stored copies newer than the
+ * oldest listed one that are missing from it have left the folder. `complete` = the page is the whole
+ * folder. An empty listing never removes anything (an API hiccup must not wipe a folder).
+ */
+export function pruneFolderWindow(state: AadOSState, pipeline: Pipeline, folderId: string, account: string, listedIds: string[], complete: boolean): number {
+  if (!listedIds.length) return 0;
+  const listed = new Set(listedIds);
+  const mine = folderItems(state, pipeline, folderId, account);
+  const boundary = complete ? '' : mine.filter((item) => listed.has(item.messageId)).map((item) => item.receivedAt).sort()[0];
+  if (!complete && !boundary) return 0;
+  const gone = new Set(mine.filter((item) => !listed.has(item.messageId) && (complete || item.receivedAt > boundary!)).map((item) => item.messageId));
+  return removeFromFolder(state, pipeline, folderId, gone, account);
 }
 
 /** Inbox folder of an account (Gmail INBOX label, Zoho Inbox folder), if discovered. */

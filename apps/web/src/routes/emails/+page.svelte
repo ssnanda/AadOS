@@ -1,9 +1,10 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import { onMount, untrack } from 'svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import EmailViewer from '$lib/components/EmailViewer.svelte';
-  import { startFullSync } from '$lib/sync';
+  import { startAutoSync } from '$lib/sync';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let viewing = $state<PageData['rows'][number] | null>(null);
@@ -11,6 +12,20 @@
   let selected = $state<string[]>([]);
   let acting = $state(false);
   let notice = $state('');
+  // Deleted rows disappear at once; the mailbox call and the data reload finish in the background.
+  let hidden = $state<string[]>([]);
+  const rows = $derived(data.rows.filter((row) => !hidden.includes(row.key)));
+
+  // Auto sync of the open folder/inbox: on open, on folder change, every 2 minutes while visible.
+  let auto: ReturnType<typeof startAutoSync> | undefined;
+  onMount(() => {
+    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline }), () => (acting ? undefined : invalidateAll()));
+    void auto.run();
+    return () => auto?.stop();
+  });
+  $effect(() => { void [data.query.account, data.query.folder, data.query.pipeline]; untrack(() => void auto?.run()); });
+  // While reading, load the next email's body ahead of time (not marked seen), so ↓ opens instantly.
+  $effect(() => { const next = viewing ? rows[viewingIndex + 1] : undefined; if (next) untrack(() => void fetch(`/pipelines/${next.pipelineId}/message/${encodeURIComponent(next.messageId)}?prefetch=1`).catch(() => undefined)); });
 
   // Unread, Recent (newest 10), smart views (hidden when empty), All mail.
   const TABS = [['unread', 'Unread', 'Unread mail'], ['recent', 'Recent', 'The newest 10 messages'], ['attention', 'Needs attention', 'Important, replies, payments and appointments from the last 14 days that you have not reviewed'], ['people', 'People', 'Mail from real people, not newsletters or notifications'], ['bills', 'Bills & renewals', 'Bills, payments, renewals and subscriptions (last 45 days or still due)'], ['bulk', 'Bulk', 'Newsletters, promotions and notifications — good for cleaning up'], ['all', 'All mail', 'Everything']] as const;
@@ -30,34 +45,38 @@
   const ago = (iso: string) => { const d = new Date(iso); return Date.now() - d.getTime() < 86_400_000 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };
   const name = (s: string) => s.replace(/<[^>]*>/g, '').replace(/["']/g, '').trim() || s;
   const bad = $derived(data.accounts.filter((a) => a.lastError));
-  const allShown = $derived(data.rows.length > 0 && selected.length === data.rows.length);
-  const viewingIndex = $derived(viewing ? data.rows.findIndex((r) => r.key === viewing?.key) : -1);
+  const allShown = $derived(rows.length > 0 && selected.length === rows.length);
+  const viewingIndex = $derived(viewing ? rows.findIndex((r) => r.key === viewing?.key) : -1);
   const toggle = (key: string, checked: boolean) => selected = checked ? [...new Set([...selected, key])] : selected.filter((x) => x !== key);
-  const toggleAll = (checked: boolean) => selected = checked ? data.rows.map((r) => r.key) : [];
-  $effect(() => { const visibleKeys = data.rows.map((row) => row.key); selected = visibleKeys.filter(() => false); });
+  const toggleAll = (checked: boolean) => selected = checked ? rows.map((r) => r.key) : [];
+  $effect(() => { const visibleKeys = rows.map((row) => row.key); selected = visibleKeys.filter(() => false); });
   async function act(op: string, keys = selected) {
-    if (!keys.length || acting) return false;
+    const deleting = op === 'delete';
+    // Deletes never wait for each other (the row is already gone); other actions run one at a time.
+    if (!keys.length || (acting && !deleting)) return false;
     // A single delete is recoverable from the provider's Trash, so only bulk deletes ask first.
-    if (op === 'delete' && keys.length > 1 && !confirm(`Move ${keys.length} emails to Trash in Gmail/Zoho?`)) return false;
-    acting = true;
+    if (deleting && keys.length > 1 && !confirm(`Move ${keys.length} emails to Trash in Gmail/Zoho?`)) return false;
+    if (deleting) { hidden = [...hidden, ...keys]; selected = selected.filter((key) => !keys.includes(key)); }
+    else acting = true;
     const body = new FormData(); for (const key of keys) body.append('keys', key); body.set('op', op);
-    const res = await fetch('?/mark', { method: 'POST', body, headers: { accept: 'application/json' } });
-    acting = false;
-    const out = await res.json().catch(() => ({}));
+    const res = await fetch('?/mark', { method: 'POST', body, headers: { accept: 'application/json' } }).catch(() => null);
+    if (!deleting) acting = false;
+    const out = res ? await res.json().catch(() => ({})) : { type: 'error' };
     // SvelteKit actions answer {type, data}; data is devalue-encoded: pull the readable message out of it.
     const message = (() => { try { const d = JSON.parse(out.data || '[]'); const o = d[0] || {}; const pick = (k: string) => (k in o ? d[o[k]] : ''); return String(pick('error') || pick('warning') || ''); } catch { return ''; } })();
-    notice = message;
-    if (out.type !== 'success') return false;
+    notice = message || (res ? '' : 'Could not reach AadOS.');
+    if (out.type !== 'success') { if (deleting) hidden = hidden.filter((key) => !keys.includes(key)); return false; }
     selected = selected.filter((key) => !keys.includes(key));
-    await invalidateAll();
+    if (deleting) void invalidateAll(); else await invalidateAll();
     return true;
   }
-  function move(offset: number) { const row = data.rows[viewingIndex + offset]; if (row) viewing = row; }
+  function move(offset: number) { const row = rows[viewingIndex + offset]; if (row) viewing = row; }
   async function deleteViewing() {
     if (!viewing) return;
     const current = viewing;
-    const replacement = data.rows[viewingIndex + 1] ?? data.rows[viewingIndex - 1] ?? null;
-    if (await act('delete', [current.key])) viewing = replacement;
+    const replacement = rows[viewingIndex + 1] ?? rows[viewingIndex - 1] ?? null;
+    viewing = replacement;
+    if (!(await act('delete', [current.key]))) viewing = current;
   }
 </script>
 <svelte:head><title>Emails · AadOS</title></svelte:head>
@@ -65,7 +84,6 @@
 <main class:previewing={Boolean(viewing)}>
   <header>
     <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply</p></div>
-    {#if data.inboxIds.length}<button type="button" class="btn" onclick={() => startFullSync(data.inboxIds)} title="Fetch every email in all inboxes, in the background">⇩ Sync all inboxes</button>{/if}
   </header>
   {#if data.accounts.length === 0}<div class="empty">No accounts connected. <a href="/settings/emails">Connect Gmail or Zoho in Settings → Emails</a>.</div>{:else}
   {#each bad as a (a.id)}<div class="alert">{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}: {a.lastError} · <a href={`/settings/emails#acct-${a.id}`}>Fix in Settings</a></div>{/each}
@@ -94,9 +112,9 @@
 
   <div class="split">
   <section class="listcol">
-  {#if data.rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button></div>{/if}</div>{/if}
-  {#if data.rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages synced yet. Use “Sync all inboxes”.' : 'No messages match.'}</div>{/if}
-  <ul class="list">{#each data.rows as r (r.key)}
+  {#if rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button></div>{/if}</div>{/if}
+  {#if rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages yet.' : 'No messages match.'}</div>{/if}
+  <ul class="list">{#each rows as r (r.key)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
     <li class:unread={r.unread} class:selected={selected.includes(r.key)} class:active={viewing?.key === r.key} onclick={(e) => { if (!(e.target as HTMLElement).closest('input,button,a,select,label,form')) viewing = r; }}>
       <div class="email-line"><button type="button" class="ic" title={r.unread ? 'Mark read' : 'Mark unread'} aria-label={r.unread ? 'Mark read' : 'Mark unread'} onclick={() => act(r.unread ? 'mark-read' : 'mark-unread', [r.key])}>{r.unread ? '✉' : '📭'}</button><button type="button" class="ic" title="Move to Trash" aria-label="Delete" onclick={() => act('delete', [r.key])}>🗑</button><input class="pick" type="checkbox" checked={selected.includes(r.key)} aria-label={`Select ${r.subject || 'email'}`} onchange={(e) => toggle(r.key, e.currentTarget.checked)}>
@@ -119,7 +137,7 @@
         </form>
       </div>
     </li>{/each}</ul></section>
-  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(data.rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < data.rows.length - 1} /></div>{/if}
+  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
   </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}

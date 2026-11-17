@@ -62,3 +62,13 @@ Keep scope small: deliver useful inbox access before extending to household task
 - [ ] Live AJMCP tenant for AadOS (owner creates the site/token) and live RustFS bucket/credentials
 - [ ] OCR for scanned PDFs/images; Web Push (VAPID) while the browser is closed
 - [ ] Move sync/triage/extraction to Oban; normalise calendar/tasks/reminders into relational tables
+
+## Mail speed — live sync like a mail client (in progress)
+
+1. [x] Auto sync of the open folder/inbox: on open, on folder change, every 2 min while visible (`/sync/live`); newest page only
+2. [x] Phone deletes/moves leave AadOS (Gmail history removals + newest-page check, Gmail and Zoho)
+3. [x] No sync buttons; Purge is separate and purge-only (open folders refill themselves)
+4. [x] 15-min scheduler syncs calendars only (no background walk of every view)
+5. [x] Preview: mailbox call outside the state lock; body cache; next email prefetched
+6. [x] Delete: row disappears at once; 1 read + 1 write; parallel provider calls
+7. [ ] One row per email in PostgreSQL instead of the single `app_state` blob (needs migration + backup; owner approval)

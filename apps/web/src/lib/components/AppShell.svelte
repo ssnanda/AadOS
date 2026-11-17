@@ -3,18 +3,10 @@
   import { invalidateAll } from '$app/navigation';
   import SyncProgress from './SyncProgress.svelte';
   import ReminderNotifier from './ReminderNotifier.svelte';
-  import { purgeAndSync, startFullSync } from '$lib/sync';
+  import { purgeEmails } from '$lib/sync';
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
-  let syncing = $state(false);
-  let syncNote = $state('');
-  async function syncAll() {
-    syncing = true; syncNote = '';
-    try { const r = await fetch('/sync', { method: 'POST' }); const d = await r.json(); syncNote = r.ok ? `+${d.added}${d.failed ? ` · ${d.failed} failed` : ''}` : 'Sync failed'; await invalidateAll(); }
-    catch { syncNote = 'Sync failed'; }
-    syncing = false;
-  }
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number; total: number }[]);
   let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number; folders: { id: string; name: string; total: number; unread: number }[] }[]);
@@ -55,7 +47,7 @@
     <a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if syncNote}<small>{syncNote}</small>{/if}<button class="btn full" onclick={() => startFullSync()} title="Fetch every email in every view, in the background">⇩ Sync all emails</button><button class="btn purge" onclick={async () => { if (await purgeAndSync()) await invalidateAll(); }} title="Delete all stored emails, then re-sync everything">⌫ Purge &amp; sync</button><button class="btn sync" onclick={syncAll} disabled={syncing}><span class:spin={syncing}>⟳</span>{syncing ? 'Syncing…' : 'Sync'}</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small><button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Delete all emails stored in AadOS (mailboxes unchanged); open folders re-sync automatically">⌫ Purge</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
 <SyncProgress />
@@ -85,12 +77,9 @@
   .topbar{height:62px;background:#fff;border-bottom:1px solid #e9ecf4;display:flex;align-items:center;gap:12px;padding:0 32px}
   .topbar strong{color:#3e4860}.search{display:flex;align-items:center;gap:8px;flex:1;max-width:420px;background:#f4f6fb;border:1px solid #e6eaf3;border-radius:10px;padding:0 12px;margin:0 12px}.search:focus-within{border-color:#8da2f0;background:#fff}.search span{color:#8a95a8;font-size:18px}.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;padding:9px 0;font-size:13px;color:#29344c;font-family:inherit}.actions{margin-left:auto;display:flex;align-items:center;gap:8px}.actions form{margin:0}.actions small{color:#139488;font-weight:700;font-size:12px}
   .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
-  .sync{background:#e3f6f3;color:#0f7f74}.sync:hover{background:#cdeee9}.sync:disabled{opacity:.7;cursor:wait}
   .cfg{background:#f1ebff;color:#6a3fd1}.cfg:hover,.cfg.on{background:#6a3fd1;color:#fff}
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
   .purge{background:#fff0f1;color:#c24457}.purge:hover{background:#c24457;color:#fff}
-  .full{background:#fff4df;color:#a1752a}.full:hover{background:#f6e0b0}
-  .spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   .content{max-width:2200px;margin:auto;padding:32px}
   .menu{display:none;border:0;background:transparent;color:#4b5e86;font-size:19px}
   @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.menu{display:inline-block}.topbar{padding:0 16px}.content{padding:20px 14px}.topbar strong{display:none}.search{margin:0}}

@@ -134,4 +134,4 @@ Tasks (edit, priority, today/overdue/upcoming/no-date/done filters, sort), daily
 ## Known issues
 - `updateState` still serialises writers; only sync network I/O moved off the lock. OAuth callbacks and per-page full sync still run inside the lock.
 - Sessions are stateless apart from the `validAfter` cut-off; whole state file is decrypted per request.
-- Gmail history checkpoint is set after a possibly truncated first scan (older mail is picked up by "Sync all").
+- Mail syncs live per open folder (newest page + Gmail history); older mail is never walked automatically. Every read/write still loads/rewrites the whole `app_state` blob (roadmap: one row per email).

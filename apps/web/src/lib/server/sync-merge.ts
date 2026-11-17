@@ -15,6 +15,10 @@ export function mergeSync(latest: AadOSState, before: AadOSState, after: AadOSSt
   const beforeById = new Map(before.items.map((item) => [item.id, item]));
   const latestById = new Map(latest.items.map((item) => [item.id, item]));
   const dismissed = new Set(latest.dismissed);
+  // Copies the sync removed (they left the folder in the mailbox) are removed from the latest state too.
+  const afterIds = new Set(after.items.map((item) => item.id));
+  const removed = new Set(before.items.filter((item) => !afterIds.has(item.id)).map((item) => item.id));
+  if (removed.size) { latest.items = latest.items.filter((item) => !removed.has(item.id)); for (const id of removed) latestById.delete(id); }
   for (const item of after.items) {
     if (!beforeIds.has(item.id)) {
       if (!latestById.has(item.id) && !dismissed.has(item.id)) { latest.items.push(item); latestById.set(item.id, item); }

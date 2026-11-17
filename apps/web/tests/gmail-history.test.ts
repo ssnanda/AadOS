@@ -14,3 +14,21 @@ test('folds additions, unread label changes and deletions across pages', () => {
 test('empty history keeps the last historyId', () => {
   assert.equal(foldHistory([{ historyId: '5' }, {}]).historyId, '5');
 });
+test('with a label: gaining it adds, losing it / trash / spam / delete removes; last event wins', () => {
+  const d = foldHistory([{ historyId: '20', history: [
+    { labelsRemoved: [{ message: { id: 'moved' }, labelIds: ['INBOX'] }] },
+    { labelsAdded: [{ message: { id: 'trashed' }, labelIds: ['TRASH'] }] },
+    { labelsAdded: [{ message: { id: 'spam' }, labelIds: ['SPAM'] }] },
+    { messagesDeleted: [{ message: { id: 'gone' } }] },
+    { labelsAdded: [{ message: { id: 'back' }, labelIds: ['INBOX'] }] },
+    { labelsRemoved: [{ message: { id: 'flip' }, labelIds: ['INBOX'] }] },
+    { labelsAdded: [{ message: { id: 'flip' }, labelIds: ['INBOX'] }] }
+  ] }], 'INBOX');
+  assert.deepEqual(d.added.sort(), ['back', 'flip']);
+  assert.deepEqual(d.removed.sort(), ['gone', 'moved', 'spam', 'trashed']);
+});
+test('without a label only real deletions are removals', () => {
+  const d = foldHistory([{ history: [{ labelsRemoved: [{ message: { id: 'x' }, labelIds: ['INBOX'] }] }, { messagesDeleted: [{ message: { id: 'y' } }] }] }]);
+  assert.deepEqual(d.added, []);
+  assert.deepEqual(d.removed, ['y']);
+});

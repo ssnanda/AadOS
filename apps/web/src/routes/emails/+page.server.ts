@@ -34,7 +34,6 @@ export const load: PageServerLoad = async ({ url }) => {
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),
     views: visiblePipelines(state).map((v) => ({ id: v.id, name: v.name, parser: v.parser, total: state.items.filter((i) => i.pipelineId === v.id).length, unread: state.items.filter((i) => i.pipelineId === v.id && isUnread(i)).length })),
-    inboxIds: state.pipelines.filter((v) => v.system).map((v) => v.id)
   };
 };
 
@@ -50,14 +49,17 @@ export const actions: Actions = {
     // Delete and read state are changed in Gmail/Zoho first; AadOS follows only where that worked.
     let errors: string[] = [];
     let applyKeys = keys;
+    let tokens: Awaited<ReturnType<typeof applyToMailbox>>['tokens'] = [];
     if (op === 'delete' || op === 'mark-read' || op === 'mark-unread') {
       if (!keys.length) return fail(400, { error: 'Choose at least one email.' });
       const r = await applyToMailbox(op, keys);
-      errors = r.errors; applyKeys = r.done;
+      errors = r.errors; applyKeys = r.done; tokens = r.tokens;
       if (!applyKeys.length) return fail(400, { error: errors.join(' ') || 'Nothing was changed.' });
     }
     try {
+      // One save: the change itself plus any token refreshed during the mailbox calls.
       await updateState((state) => {
+        for (const t of tokens) { const a = state.accounts.find((x) => x.id === t.id); if (a) { a.accessToken = t.accessToken; a.expiresAt = t.expiresAt; } }
         const wanted = new Set(applyKeys);
         const copies = state.items.filter((item) => wanted.has(`${account(state, item)}:${item.messageId}`));
         if (!keys.length || !copies.length) throw new Error('Choose at least one email.');
@@ -69,7 +71,7 @@ export const actions: Actions = {
         }
         for (const item of copies) {
           if (op === 'mark-read') { item.seen = true; item.unread = false; }
-          else if (op === 'mark-unread') { item.seen = false; item.unread = true; }
+          else if (op === 'mark-unread') { item.seen = false; item.unread = true; globalThis.__aadosSeen?.delete(`${item.pipelineId}\u0000${item.messageId}`); }
           else if (op === 'actionable' || op === 'dismissed' || op === 'reviewed') item.actionState = op;
           else if (op === 'clear-action') delete item.actionState;
           else if (op === 'follow-up') item.followUp = item.followUp || new Date().toISOString();
