@@ -13,7 +13,7 @@ async function jsonResponse(response: Response) {
   return body;
 }
 
-export const ZOHO_MAIL_SCOPE = 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ';
+export const ZOHO_MAIL_SCOPE = 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ,ZohoMail.messages.UPDATE,ZohoMail.messages.DELETE,ZohoMail.messages.CREATE';
 export const ZOHO_CALENDAR_SCOPE = 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ';
 
 export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean } = {}) {
@@ -41,6 +41,8 @@ export async function finishOAuth(state: AadOSState, code: string, returnedState
   account.id = accountId('zoho', account.email || account.remoteId);
   const existing = state.accounts.find((item) => item.id === account.id);
   account.calendar = String(tokens.scope || '').includes('ZohoCalendar');
+  account.canSend = /messages\.(ALL|CREATE)/.test(String(tokens.scope || ''));
+  account.canModify = /messages\.(ALL|UPDATE)/.test(String(tokens.scope || '')) && /messages\.(ALL|DELETE)/.test(String(tokens.scope || ''));
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Zoho did not return a refresh token. Remove AadOS from Zoho connected apps and try again.');
   else state.accounts.push(account);
@@ -205,4 +207,44 @@ export async function fetchZohoAttachment(state: AadOSState, account: MailAccoun
   const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/octet-stream' } });
   if (!res.ok) throw new Error(`Zoho attachment HTTP ${res.status}`);
   return new Uint8Array(await res.arrayBuffer());
+}
+
+/** Documented: DELETE .../folders/{folderId}/messages/{messageId} (expunge=false) moves the email to Trash. */
+export async function trashZohoMessage(state: AadOSState, account: MailAccount, folderId: string, messageId: string): Promise<void> {
+  if (!folderId) throw new Error('Zoho folder unknown for this email; sync it again first');
+  const token = await accessToken(state, account);
+  const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}?expunge=false`, { method: 'DELETE', headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json' } });
+  await jsonResponse(res);
+}
+/** Documented: PUT .../updatemessage {mode: markAsRead|markAsUnread, messageId: [long]}. IDs exceed 2^53, so they are written as raw digits. */
+export async function setZohoUnread(state: AadOSState, account: MailAccount, messageIds: string[], unread: boolean): Promise<void> {
+  const ids = messageIds.filter((id) => /^\d{1,20}$/.test(id));
+  if (!ids.length) return;
+  const token = await accessToken(state, account);
+  const body = `{"mode":"${unread ? 'markAsUnread' : 'markAsRead'}","messageId":[${ids.join(',')}]}`;
+  const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api/accounts/${encodeURIComponent(account.remoteId)}/updatemessage`, { method: 'PUT', headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' }, body });
+  await jsonResponse(res);
+}
+
+/** Documented: GET .../messages/{id}/header?raw=false -> data.headerContent {Name: [values]}. Names lower-cased here. */
+export async function zohoHeaders(state: AadOSState, account: MailAccount, folderId: string, messageId: string): Promise<Record<string, string>> {
+  if (!folderId) return {};
+  const r = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/header?raw=false`);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(r.data?.headerContent || {})) out[k.toLowerCase()] = Array.isArray(v) ? v.map(String).join(', ') : String(v ?? '');
+  return out;
+}
+type ZohoOutgoing = { from: string; to: string[]; cc: string[]; bcc: string[]; subject: string; text: string };
+const zohoBody = (m: ZohoOutgoing) => ({ fromAddress: m.from, toAddress: m.to.join(','), ...(m.cc.length ? { ccAddress: m.cc.join(',') } : {}), ...(m.bcc.length ? { bccAddress: m.bcc.join(',') } : {}), subject: m.subject, content: m.text, mailFormat: 'plaintext' });
+async function zohoPost(state: AadOSState, account: MailAccount, path: string, body: unknown) {
+  const token = await accessToken(state, account);
+  const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api${path}`, { method: 'POST', headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, { attempts: 1 });
+  return jsonResponse(res);
+}
+/** Documented: POST /accounts/{id}/messages (new message, used for forwards). */
+export async function sendZoho(state: AadOSState, account: MailAccount, m: ZohoOutgoing): Promise<void> { await zohoPost(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages`, zohoBody(m)); }
+/** Documented: POST /accounts/{id}/messages/{messageId} with action "Reply" (reply-all = reply with the other recipients in To/Cc). */
+export async function replyZoho(state: AadOSState, account: MailAccount, messageId: string, m: ZohoOutgoing): Promise<void> {
+  if (!/^\d{1,20}$/.test(messageId)) throw new Error('Unexpected Zoho message id');
+  await zohoPost(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/${messageId}`, { ...zohoBody(m), action: 'Reply' });
 }

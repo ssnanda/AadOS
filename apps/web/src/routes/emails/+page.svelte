@@ -10,9 +10,12 @@
   let showFilters = $state(false);
   let selected = $state<string[]>([]);
   let acting = $state(false);
+  let notice = $state('');
 
-  const TABS = [['unread', 'Unread'], ['important', 'Important'], ['needs-reply', 'Needs Reply'], ['recent', 'Recent'], ['inbox', 'Combined inbox'], ['all', 'All mail'], ['read', 'Read']] as const;
-  const tabCount = (v: string) => ({ inbox: data.counts.inbox, all: data.counts.all, unread: data.counts.unread, important: data.counts.important, 'needs-reply': data.counts.needsReply, recent: data.counts.recent, read: data.counts.read } as Record<string, number>)[v];
+  // Unread, Recent (newest 10), smart views (hidden when empty), All mail.
+  const TABS = [['unread', 'Unread', 'Unread mail'], ['recent', 'Recent', 'The newest 10 messages'], ['attention', 'Needs attention', 'Important, replies, payments and appointments from the last 14 days that you have not reviewed'], ['people', 'People', 'Mail from real people, not newsletters or notifications'], ['bills', 'Bills & renewals', 'Bills, payments, renewals and subscriptions (last 45 days or still due)'], ['bulk', 'Bulk', 'Newsletters, promotions and notifications — good for cleaning up'], ['all', 'All mail', 'Everything']] as const;
+  const tabCount = (v: string) => ({ all: data.counts.all, unread: data.counts.unread, recent: data.counts.recent, attention: data.counts.attention, people: data.counts.people, bills: data.counts.bills, bulk: data.counts.bulk } as Record<string, number>)[v] ?? 0;
+  const tabs = $derived(TABS.filter(([v]) => v === 'unread' || v === 'all' || v === data.query.view || tabCount(v) > 0));
   // Keeps every active filter when switching view/page, so "back" always lands on the same list.
   const href = (over: Record<string, string | number>) => {
     const q = new URLSearchParams();
@@ -34,12 +37,17 @@
   $effect(() => { const visibleKeys = data.rows.map((row) => row.key); selected = visibleKeys.filter(() => false); });
   async function act(op: string, keys = selected) {
     if (!keys.length || acting) return false;
-    if (op === 'delete' && !confirm(`Delete ${keys.length} email${keys.length === 1 ? '' : 's'} from AadOS?\n\nGmail and Zoho are not changed. Deleted emails will not sync back into AadOS.`)) return false;
+    // A single delete is recoverable from the provider's Trash, so only bulk deletes ask first.
+    if (op === 'delete' && keys.length > 1 && !confirm(`Move ${keys.length} emails to Trash in Gmail/Zoho?`)) return false;
     acting = true;
     const body = new FormData(); for (const key of keys) body.append('keys', key); body.set('op', op);
-    const res = await fetch('?/mark', { method: 'POST', body });
+    const res = await fetch('?/mark', { method: 'POST', body, headers: { accept: 'application/json' } });
     acting = false;
-    if (!res.ok) return false;
+    const out = await res.json().catch(() => ({}));
+    // SvelteKit actions answer {type, data}; data is devalue-encoded: pull the readable message out of it.
+    const message = (() => { try { const d = JSON.parse(out.data || '[]'); const o = d[0] || {}; const pick = (k: string) => (k in o ? d[o[k]] : ''); return String(pick('error') || pick('warning') || ''); } catch { return ''; } })();
+    notice = message;
+    if (out.type !== 'success') return false;
     selected = selected.filter((key) => !keys.includes(key));
     await invalidateAll();
     return true;
@@ -62,6 +70,7 @@
   {#if data.accounts.length === 0}<div class="empty">No accounts connected. <a href="/settings/emails">Connect Gmail or Zoho in Settings → Emails</a>.</div>{:else}
   {#each bad as a (a.id)}<div class="alert">{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}: {a.lastError} · <a href={`/settings/emails#acct-${a.id}`}>Fix in Settings</a></div>{/each}
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
+  {#if notice}<div class="alert">{notice}{#if /read-only access/.test(notice)} <a href="/settings/emails">Open Settings</a>{/if} <button class="link" onclick={() => notice = ''}>Dismiss</button></div>{/if}
 
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.query.q} placeholder="Search all accounts…" aria-label="Search all accounts">
     {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
@@ -80,7 +89,7 @@
 
   {#if data.query.account}{@const acc = data.accounts.find((a) => a.id === data.query.account)}<div class="scopebar"><span class="provider {acc?.provider}">{acc?.provider === 'gmail' ? 'G' : 'Z'}</span><strong>{acc?.email || data.query.account}</strong><a href={href({ account: '' })} aria-label="Show all inboxes">✕ All inboxes</a></div>{/if}
 
-  <nav class="tabs" aria-label="Message status">{#each TABS as [v, label] (v)}<a class:on={data.query.view === v} class:secondary={v === 'inbox' || v === 'all' || v === 'read'} href={viewHref(v)}>{label}<i>{tabCount(v)}</i></a>{/each}</nav>
+  <nav class="tabs" aria-label="Message status">{#each tabs as [v, label, hint] (v)}<a class:on={data.query.view === v} class:secondary={v === 'all'} title={hint} href={viewHref(v)}>{label}{#if v !== 'recent'}<i>{tabCount(v)}</i>{/if}</a>{/each}</nav>
   {#if data.query.view === 'all'}<details class="categories" open={Boolean(data.query.category)}><summary>Categories{data.query.category ? ` · ${data.query.category}` : ''}</summary><div class="chips">{#each data.categories.filter((c) => data.counts.categories[c]) as c (c)}<a class="chip" class:on={data.query.category === c} href={href({ category: data.query.category === c ? '' : c })}>{c}<i>{data.counts.categories[c]}</i></a>{/each}</div></details>{/if}
 
   <div class="split">
@@ -90,7 +99,7 @@
   <ul class="list">{#each data.rows as r (r.key)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
     <li class:unread={r.unread} class:selected={selected.includes(r.key)} class:active={viewing?.key === r.key} onclick={(e) => { if (!(e.target as HTMLElement).closest('input,button,a,select,label,form')) viewing = r; }}>
-      <div class="email-line"><input class="pick" type="checkbox" checked={selected.includes(r.key)} aria-label={`Select ${r.subject || 'email'}`} onchange={(e) => toggle(r.key, e.currentTarget.checked)}>
+      <div class="email-line"><button type="button" class="ic" title={r.unread ? 'Mark read' : 'Mark unread'} aria-label={r.unread ? 'Mark read' : 'Mark unread'} onclick={() => act(r.unread ? 'mark-read' : 'mark-unread', [r.key])}>{r.unread ? '✉' : '📭'}</button><button type="button" class="ic" title="Move to Trash" aria-label="Delete" onclick={() => act('delete', [r.key])}>🗑</button><input class="pick" type="checkbox" checked={selected.includes(r.key)} aria-label={`Select ${r.subject || 'email'}`} onchange={(e) => toggle(r.key, e.currentTarget.checked)}>
       <button type="button" class="row" onclick={() => viewing = r}>
         <span class="from">{#if r.importance === 'high'}<b class="star" title="Important">★</b>{/if}{name(r.sender)}</span>
         <span class="subj"><strong>{r.subject || '(no subject)'}</strong><em>{r.summary}</em></span>
@@ -110,7 +119,7 @@
         </form>
       </div>
     </li>{/each}</ul></section>
-  {#if viewing}<div class="pane"><EmailViewer embedded item={viewing} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < data.rows.length - 1} /></div>{/if}
+  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(data.rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < data.rows.length - 1} /></div>{/if}
   </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}
@@ -137,11 +146,11 @@
   .categories{margin-bottom:14px}.categories summary{cursor:pointer;color:#53607a;font-size:12px;font-weight:700}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
   .bulk{display:flex;align-items:center;gap:12px;min-height:34px;margin-bottom:7px;padding:7px 10px;border:1px solid #e4e9f2;border-radius:10px;background:#fff;color:#53607a;font-size:12px}.bulk label{display:flex;align-items:center;gap:7px;font-weight:700}.bulk strong{color:#3157de}.bulk-actions{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}.bulk button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:5px 9px;color:#43516c;font-size:11px;font-weight:700;cursor:pointer}.bulk button:hover{border-color:#8da2f0;color:#3157de}.bulk button:disabled{opacity:.5}.bulk button.danger{color:#b53c50}
   .list{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e4e9f2;border-radius:12px;overflow:hidden}
-  li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:20px minmax(0,1fr);gap:9px;align-items:center}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
+  li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:24px 24px 20px minmax(0,1fr);gap:7px;align-items:center}.ic{border:0;background:none;padding:2px;border-radius:6px;cursor:pointer;font-size:15px;line-height:1;color:#53607a;opacity:.75}.ic:hover{opacity:1;background:#eef1f8}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
   .row{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;gap:14px;align-items:baseline;width:100%;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:#29344c}
   .from{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}li.unread .from,li.unread .subj strong{font-weight:800}.star{color:#e0a21b;margin-right:4px}
   .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.subj strong{font-weight:600}.subj em{font-style:normal;color:#8a95a8;margin-left:8px;font-size:12px}time{font-size:11px;color:#8a95a8;text-align:right}
-  .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 0 29px}
+  .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 0 89px}
   .tag,.acct{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f0f2f7;color:#5b6a86;text-decoration:none}.acct{background:#eef1ff;color:#3157de;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acct.gmail{background:#fff0ee;color:#d94d43}
   .aitag{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f1ebff;color:#7c4dde;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tag.act{background:#fff4df;color:#a1752a}.tag.follow{background:#e3f6f3;color:#0f7f74}.tag.view{background:#f1ebff;color:#7c4dde}

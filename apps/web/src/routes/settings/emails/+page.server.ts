@@ -100,6 +100,19 @@ export const actions: Actions = {
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start calendar authorization.' }); }
     throw redirect(303, target);
   },
+  // Re-consent with change access (Gmail gmail.modify; Zoho messages UPDATE+DELETE): delete to Trash and mark read/unread.
+  allowChanges: async ({ request, url }) => {
+    const id = String((await request.formData()).get('id') || '');
+    let target = '';
+    try {
+      await updateState((s) => {
+        const a = s.accounts.find((item) => item.id === id);
+        if (!a) throw new Error('Account not found.');
+        target = a.provider === 'gmail' ? beginGmailOAuth(s, `${url.origin}/oauth/gmail/callback`, { calendar: Boolean(a.calendar), loginHint: a.email }) : beginZoho(s, `${url.origin}/oauth/zoho/callback`, { calendar: Boolean(a.calendar) });
+      });
+    } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start authorization.' }); }
+    throw redirect(303, target);
+  },
   syncCalendarAccount: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
     try { await updateStateDetached(async (s) => { await syncCalendars(s, id); }); return { calendarSynced: id }; }

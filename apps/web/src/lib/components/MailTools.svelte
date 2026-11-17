@@ -1,0 +1,170 @@
+<script lang="ts">
+  // Reader tools for one email. Nothing is sent unless the owner presses Send in the compose form.
+  type Item = { key: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; unread?: boolean };
+  let { item, accountId = '', aiAvailable = false, onfind, onopen }: { item: Item; accountId?: string; aiAvailable?: boolean; onfind?: (term: string) => void; onopen?: (item: Item) => void } = $props();
+
+  type Details = { from: string; to: string; cc: string; account: string; provider: string; unsubscribe: { url: string; mailto: string }; canSend: boolean; canFilter: boolean };
+  let info = $state<Details | null>(null);
+  let error = $state('');
+  let note = $state('');
+  let menu = $state(false);
+  let busy = $state('');
+  let compose = $state<{ mode: 'reply' | 'replyAll' | 'forward'; to: string; cc: string; bcc: string; subject: string; text: string; quoted: string; showQuoted: boolean; showBcc: boolean; attachments: boolean; provider: string } | null>(null);
+  let findOpen = $state(false);
+  let term = $state('');
+  let rulesOpen = $state(false);
+  let rulesData = $state<{ filters: { id: string; criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }[]; labels: { id: string; name: string }[] } | null>(null);
+  let rule = $state({ field: 'from' as 'from' | 'subject', text: '', labelId: '', markRead: false, archive: false });
+  let moreOpen = $state(false);
+  let scope = $state<'sender' | 'domain'>('sender');
+  let sameSubject = $state(false);
+  let more = $state<{ sender: string; domain: string; total: number; rows: Item[] } | null>(null);
+
+  async function call(op: string, payload: Record<string, unknown> = {}, path = '/emails/tools') {
+    const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op, key: item.key, ...payload }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+  async function run<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+    busy = label; error = '';
+    try { return await fn(); } catch (e) { error = e instanceof Error ? e.message : 'Failed.'; return null; } finally { busy = ''; }
+  }
+  $effect(() => {
+    const k = item.key;
+    info = null; compose = null; more = null; moreOpen = false; rulesOpen = false; note = ''; error = ''; term = ''; findOpen = false; onfind?.('');
+    call('details').then((d) => { if (k === item.key) info = d; }).catch(() => undefined);
+  });
+  const copy = async (text: string, label: string) => { await navigator.clipboard.writeText(text); note = `${label} copied.`; setTimeout(() => (note = ''), 1500); };
+
+  async function startCompose(mode: 'reply' | 'replyAll' | 'forward', withAi = false) {
+    menu = false;
+    const p = await run('compose', () => call('prepare', { mode }));
+    if (!p) return;
+    compose = { mode, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: '', quoted: p.quoted, showQuoted: false, showBcc: false, attachments: mode === 'forward', provider: p.provider };
+    if (withAi) await aiDraft();
+  }
+  async function aiDraft() {
+    if (!compose) return;
+    const r = await run('ai', () => call('draft', { tone: 'reply' }, '/emails/ai'));
+    if (r && compose) compose.text = r.draft.content;
+  }
+  async function sendNow() {
+    if (!compose) return;
+    const c = compose;
+    const r = await run('send', () => call('send', { mode: c.mode, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: `${c.text}${c.quoted}`, attachments: c.attachments }));
+    if (r) { compose = null; note = r.note ? `Sent. ${r.note}` : 'Sent.'; }
+  }
+  async function openRules() {
+    rulesOpen = !rulesOpen; menu = false;
+    if (!rulesOpen) return;
+    rule = { field: 'from', text: (info?.from.match(/[\w.+'-]+@[\w.-]+/) || [''])[0], labelId: '', markRead: false, archive: false };
+    rulesData = await run('rules', () => call('rules', { accountId }));
+  }
+  async function addRule() {
+    if (await run('rule', () => call('createRule', { accountId, ...rule }))) { note = 'Gmail filter created (applies to new mail).'; rulesData = await run('rules', () => call('rules', { accountId })); }
+  }
+  async function deleteRule(id: string) {
+    if (!confirm('Delete this Gmail filter?')) return;
+    if (await run('rule', () => call('deleteRule', { accountId, id }))) rulesData = await run('rules', () => call('rules', { accountId }));
+  }
+  async function loadMore() { more = await run('more', () => call('related', { scope, sameSubject })); }
+  const labelName = (id: string) => rulesData?.labels.find((l) => l.id === id)?.name || id;
+  const describe = (f: { criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }) =>
+    `${Object.entries(f.criteria).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;
+  const when = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+</script>
+
+<section class="tools">
+  {#if info}
+    <div class="who">
+      <span><b>From:</b> {info.from}<button class="cp" title="Copy" onclick={() => copy(info!.from, 'From')}>⧉</button></span>
+      {#if info.to}<span><b>To:</b> {info.to}<button class="cp" title="Copy" onclick={() => copy(info!.to, 'To')}>⧉</button></span>{/if}
+      {#if info.cc}<span><b>Cc:</b> {info.cc}</span>{/if}
+      {#if info.unsubscribe.url}<a class="unsub" href={info.unsubscribe.url} target="_blank" rel="noopener noreferrer">✉ Unsubscribe from this sender</a>{:else if info.unsubscribe.mailto}<a class="unsub" href={info.unsubscribe.mailto}>✉ Unsubscribe (email)</a>{/if}
+    </div>
+  {/if}
+  <div class="bar">
+    <div class="menuwrap">
+      <button onclick={() => (menu = !menu)} aria-haspopup="menu" aria-expanded={menu}>↩ Reply ▾</button>
+      {#if menu}<div class="menu" role="menu">
+        <button role="menuitem" onclick={() => startCompose('reply')}>Reply</button>
+        <button role="menuitem" onclick={() => startCompose('replyAll')}>Reply All</button>
+        <button role="menuitem" onclick={() => startCompose('forward')}>Forward</button>
+        {#if aiAvailable}<hr><button role="menuitem" onclick={() => startCompose('reply', true)}>Reply with AI</button><button role="menuitem" onclick={() => startCompose('replyAll', true)}>Reply All with AI</button>{/if}
+      </div>{/if}
+    </div>
+    {#if info?.provider === 'gmail'}<button onclick={openRules} class:on={rulesOpen}>☰ Rules</button>{/if}
+    <button onclick={() => { findOpen = !findOpen; if (!findOpen) { term = ''; onfind?.(''); } }} class:on={findOpen}>⌕ Find</button>
+    <button onclick={() => { moreOpen = !moreOpen; if (moreOpen && !more) loadMore(); }} class:on={moreOpen}>More from sender</button>
+    {#if busy}<span class="busy">{busy === 'send' ? 'Sending…' : 'Working…'}</span>{/if}
+    {#if note}<span class="ok">{note}</span>{/if}
+  </div>
+  {#if error}<p class="err">{error}{#if /Allow changes/.test(error)} <a href="/settings/emails">Open Settings</a>{/if}</p>{/if}
+
+  {#if findOpen}<div class="find"><input bind:value={term} placeholder="Find in this email" aria-label="Find in this email" oninput={() => onfind?.(term)}></div>{/if}
+
+  {#if compose}
+    <form class="compose" onsubmit={(e) => { e.preventDefault(); sendNow(); }}>
+      <div class="row"><label for="c-to">To</label><input id="c-to" bind:value={compose.to} placeholder="name@example.com, …">{#if !compose.showBcc}<button type="button" class="link" onclick={() => compose && (compose.showBcc = true)}>Bcc</button>{/if}</div>
+      <div class="row"><label for="c-cc">Cc</label><input id="c-cc" bind:value={compose.cc}></div>
+      {#if compose.showBcc}<div class="row"><label for="c-bcc">Bcc</label><input id="c-bcc" bind:value={compose.bcc}></div>{/if}
+      <div class="row"><label for="c-subj">Subject</label><input id="c-subj" bind:value={compose.subject}></div>
+      <textarea bind:value={compose.text} rows="7" placeholder="Write your message…" aria-label="Message"></textarea>
+      <button type="button" class="link" onclick={() => compose && (compose.showQuoted = !compose.showQuoted)}>{compose.showQuoted ? 'Hide' : 'Show'} {compose.mode === 'forward' ? 'forwarded message' : 'quoted text'}</button>
+      {#if compose.showQuoted}<pre class="quoted">{compose.quoted.trim()}</pre>{/if}
+      <div class="actions">
+        <button class="send" disabled={busy === 'send'}>Send</button>
+        {#if aiAvailable}<button type="button" onclick={aiDraft} disabled={!!busy}>✦ Draft with AI</button>{/if}
+        {#if compose.mode === 'forward'}<label class="chk"><input type="checkbox" bind:checked={compose.attachments}> Include attachments{compose.provider === 'zoho' ? ' (Gmail only)' : ''}</label>{/if}
+        <span class="sp"></span><small>From {info?.account}</small><button type="button" onclick={() => (compose = null)}>Discard</button>
+      </div>
+    </form>
+  {/if}
+
+  {#if rulesOpen}
+    <div class="panel">
+      <h4>Rules <small>Gmail filters for {info?.account} — applied by Gmail to new mail</small></h4>
+      <form class="rule" onsubmit={(e) => { e.preventDefault(); addRule(); }}>
+        <select bind:value={rule.field} aria-label="Match"><option value="from">From</option><option value="subject">Subject</option></select>
+        <input bind:value={rule.text} placeholder="contains…" aria-label="Match text">
+        <select bind:value={rule.labelId} aria-label="Label"><option value="">No label</option>{#each rulesData?.labels || [] as l (l.id)}<option value={l.id}>Label: {l.name}</option>{/each}</select>
+        <label class="chk"><input type="checkbox" bind:checked={rule.markRead}> Mark read</label>
+        <label class="chk"><input type="checkbox" bind:checked={rule.archive}> Skip inbox</label>
+        <button disabled={!!busy}>Create</button>
+      </form>
+      {#if rulesData}<ul>{#each rulesData.filters as f (f.id)}<li><span>{describe(f)}</span><button class="link x" onclick={() => deleteRule(f.id)}>Delete</button></li>{:else}<li class="muted">No Gmail filters yet.</li>{/each}</ul>{/if}
+    </div>
+  {/if}
+
+  {#if moreOpen}
+    <div class="panel">
+      <h4>More from {scope === 'domain' && more?.domain ? `@${more.domain}` : more?.sender || item.sender}
+        <span class="opts"><label class="chk"><input type="radio" name="scope" value="sender" bind:group={scope} onchange={loadMore}> Sender</label><label class="chk"><input type="radio" name="scope" value="domain" bind:group={scope} onchange={loadMore}> Domain</label><label class="chk"><input type="checkbox" bind:checked={sameSubject} onchange={loadMore}> Same subject only</label></span></h4>
+      {#if more}{#if !more.rows.length}<p class="muted">No other messages.</p>{/if}
+        <ul>{#each more.rows as r (r.key)}<li><button class="rel" class:unread={r.unread} onclick={() => onopen?.(r)}><span>{r.subject || '(no subject)'}</span><time>{when(r.receivedAt)}</time></button></li>{/each}</ul>
+        {#if more.total > more.rows.length}<small class="muted">Showing 50 of {more.total}</small>{/if}{/if}
+    </div>
+  {/if}
+</section>
+
+<style>
+  .tools{border-bottom:1px solid #e4e9f2;padding:8px 18px;font-size:12px;background:#fff}
+  .who{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:#53607a;margin-bottom:6px}.who b{color:#8a95a8;font-weight:700}.cp{border:0;background:none;color:#8a95a8;cursor:pointer;padding:0 0 0 4px;font-size:12px}.cp:hover{color:#3157de}
+  .unsub{color:#3157de;font-weight:700;text-decoration:none}
+  .bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}button.on{background:#eef1ff;border-color:#8da2f0;color:#3157de}
+  .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}
+  .busy{color:#8a95a8}.ok{color:#0f7f74}.err{color:#a5414d;margin:6px 0 0}.err a{color:#a5414d;font-weight:700}.muted{color:#8a95a8}
+  .link{border:0;background:none;padding:0;color:#3157de}.x{color:#a5414d}
+  .find{margin-top:6px}.find input{width:100%;box-sizing:border-box;border:1px solid #e4e9f2;border-radius:8px;padding:6px 9px;font-size:12px}
+  .compose{margin-top:8px;border:1px solid #e4e9f2;border-radius:10px;padding:10px;display:grid;gap:6px;background:#fbfcff}
+  .compose .row{display:grid;grid-template-columns:54px 1fr auto;gap:6px;align-items:center}.compose label{color:#8a95a8;font-weight:700}
+  .compose input,.compose textarea{border:1px solid #e4e9f2;border-radius:7px;padding:6px 8px;font:inherit;font-size:13px;min-width:0}.compose textarea{resize:vertical}
+  .quoted{white-space:pre-wrap;font:12px/1.45 system-ui,sans-serif;color:#6b7690;background:#fff;border:1px solid #eef0f5;border-radius:7px;padding:8px;max-height:220px;overflow:auto;margin:0}
+  .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.send{background:#3157de;border-color:#3157de;color:#fff}.send:hover{color:#fff}.sp{flex:1}.chk{display:inline-flex;gap:4px;align-items:center;color:#53607a;font-weight:600}
+  .panel{margin-top:8px;border:1px solid #e4e9f2;border-radius:10px;padding:9px 11px;max-height:260px;overflow:auto}.panel h4{margin:0 0 6px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.panel h4 small{font-weight:400;color:#8a95a8}.opts{display:flex;gap:10px;font-weight:400}
+  .rule{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.rule input,.rule select{border:1px solid #e4e9f2;border-radius:6px;padding:4px 6px;font-size:12px}
+  .panel ul{list-style:none;margin:0;padding:0;display:grid;gap:3px}.panel li{display:flex;gap:8px;justify-content:space-between;align-items:center}
+  .rel{border:0;background:none;width:100%;display:flex;gap:10px;justify-content:space-between;padding:4px 6px;border-radius:6px;text-align:left;font-weight:500}.rel:hover{background:#f4f6fb}.rel span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rel.unread span{font-weight:800}.rel time{color:#8a95a8;flex:none}
+</style>

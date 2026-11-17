@@ -1,4 +1,5 @@
 import { fail, type Actions } from '@sveltejs/kit';
+import { applyToMailbox } from '$lib/server/mail-actions';
 import type { PageServerLoad } from './$types';
 import { database, hasDatabase } from '$lib/server/aados-store';
 import { getInsights } from '$lib/server/ai/db';
@@ -7,7 +8,8 @@ import { buildRows, queryInbox, type InboxQuery, type InboxView } from '$lib/ser
 import { CATEGORIES } from '$lib/server/categories';
 import { isUnread } from '$lib/server/search';
 
-const VIEWS: InboxView[] = ['inbox', 'all', 'unread', 'important', 'needs-reply', 'recent', 'read'];
+// Tabs: unread, recent, smart views, all. Older views (important, needs-reply, inbox, read) still work for existing links.
+const VIEWS: InboxView[] = ['unread', 'recent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
 
 export const load: PageServerLoad = async ({ url }) => {
   let state = await readState();
@@ -44,9 +46,18 @@ export const actions: Actions = {
     const keys = [...form.getAll('key'), ...form.getAll('keys')].map(String).filter(Boolean);
     const op = String(form.get('op') || '');
     const value = String(form.get('value') || '');
+    // Delete and read state are changed in Gmail/Zoho first; AadOS follows only where that worked.
+    let errors: string[] = [];
+    let applyKeys = keys;
+    if (op === 'delete' || op === 'mark-read' || op === 'mark-unread') {
+      if (!keys.length) return fail(400, { error: 'Choose at least one email.' });
+      const r = await applyToMailbox(op, keys);
+      errors = r.errors; applyKeys = r.done;
+      if (!applyKeys.length) return fail(400, { error: errors.join(' ') || 'Nothing was changed.' });
+    }
     try {
       await updateState((state) => {
-        const wanted = new Set(keys);
+        const wanted = new Set(applyKeys);
         const copies = state.items.filter((item) => wanted.has(`${account(state, item)}:${item.messageId}`));
         if (!keys.length || !copies.length) throw new Error('Choose at least one email.');
         if (op === 'delete') {
@@ -56,7 +67,7 @@ export const actions: Actions = {
           return;
         }
         for (const item of copies) {
-          if (op === 'mark-read') item.seen = true;
+          if (op === 'mark-read') { item.seen = true; item.unread = false; }
           else if (op === 'mark-unread') { item.seen = false; item.unread = true; }
           else if (op === 'actionable' || op === 'dismissed' || op === 'reviewed') item.actionState = op;
           else if (op === 'clear-action') delete item.actionState;
@@ -69,6 +80,6 @@ export const actions: Actions = {
         }
       });
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Update failed.' }); }
-    return { marked: keys };
+    return errors.length ? { marked: applyKeys, warning: errors.join(' ') } : { marked: applyKeys };
   }
 };

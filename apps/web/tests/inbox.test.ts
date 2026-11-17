@@ -95,3 +95,23 @@ test('due-date extraction', () => {
   assert.equal(extractDue('nothing here', now), '');
   assert.equal(detectAction({ subject: 'Payment due Nov 30', sender: 'billing@bank.com', summary: '' }, { now })?.due, '2026-11-30');
 });
+
+test('smart views: recent = newest 10, people, needs attention, bills, bulk', () => {
+  const now = Date.UTC(2026, 10, 17, 12);
+  const at = (h: number) => new Date(now - h * 3600_000).toISOString();
+  const items = [
+    item('inbox-gmail-a', 'p1', { subject: 'Can you call me?', sender: 'Mom <mom@family.test>', receivedAt: at(1) }),
+    item('inbox-gmail-a', 'b1', { subject: 'Your statement is ready', sender: 'billing@bank.test', summary: 'Amount due by Nov 30', receivedAt: at(2) }),
+    item('inbox-gmail-a', 'n1', { subject: 'Weekly newsletter', sender: 'news@site.test', summary: 'unsubscribe', receivedAt: at(3) }),
+    item('inbox-gmail-a', 'old', { subject: 'Can you help?', sender: 'Old Friend <old@x.test>', receivedAt: at(24 * 40) }),
+    ...Array.from({ length: 12 }, (_, i) => item('inbox-gmail-a', `f${i}`, { subject: `Promo ${i} 50% off sale`, sender: 'deals@shop.test', receivedAt: at(100 + i) }))
+  ];
+  const rows = buildRows({ pipelines, accounts, items, now: new Date(now) });
+  const recent = queryInbox(rows, { view: 'recent' }, now);
+  assert.equal(recent.rows.length, 10); assert.equal(recent.rows[0].messageId, 'p1'); assert.equal(recent.pages, 1); assert.equal(recent.counts.recent, 10);
+  const ids = (view: any) => queryInbox(rows, { view, pageSize: 200 }, now).rows.map((r) => r.messageId);
+  assert.ok(ids('people').includes('p1')); assert.ok(!ids('people').includes('n1'));
+  assert.ok(ids('attention').includes('p1')); assert.ok(!ids('attention').includes('old')); // older than 14 days
+  assert.ok(ids('bills').includes('b1'));
+  assert.ok(ids('bulk').includes('n1')); assert.ok(ids('bulk').includes('f0')); assert.ok(!ids('bulk').includes('p1'));
+});

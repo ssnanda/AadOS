@@ -14,7 +14,12 @@ async function json(response: Response) {
 /** Gmail API fetch with bounded retry/backoff for rate limits and 5xx. */
 export const gmailFetch = (url: string, init: RequestInit) => fetchRetry(url, init);
 
-export const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+export const GMAIL_READ_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+/** Needed only to move mail to Trash and mark read/unread (never permanent delete, never send). */
+export const GMAIL_MODIFY_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+/** Create/delete Gmail filters (Rules). */
+export const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic';
+export const GMAIL_SCOPE = `${GMAIL_READ_SCOPE} ${GMAIL_MODIFY_SCOPE} ${GMAIL_SETTINGS_SCOPE}`;
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 
 export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; loginHint?: string } = {}) {
@@ -38,6 +43,10 @@ export async function finishGmailOAuth(state: AadOSState, code: string, returned
   const existing = state.accounts.find((item) => item.id === account.id);
   // Calendar access exists only if Google actually granted the scope.
   account.calendar = String(tokens.scope || '').split(' ').includes(CALENDAR_SCOPE);
+  const granted = String(tokens.scope || '').split(' ');
+  account.canModify = granted.includes(GMAIL_MODIFY_SCOPE);
+  account.canSend = granted.includes(GMAIL_MODIFY_SCOPE) || granted.includes('https://www.googleapis.com/auth/gmail.send');
+  account.canFilter = granted.includes(GMAIL_SETTINGS_SCOPE);
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Google did not return a refresh token. Remove AadOS from your Google account permissions and try again.');
   else state.accounts.push(account);
@@ -226,4 +235,51 @@ export async function fetchGmailAttachment(state: AadOSState, account: MailAccou
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
   const body = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, { headers }));
   return Buffer.from(String(body.data || ''), 'base64url');
+}
+
+/** Move a message to Gmail's Trash (users.messages.trash; recoverable for 30 days). Requires gmail.modify. */
+export async function trashGmailMessage(state: AadOSState, account: MailAccount, messageId: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/trash`, { method: 'POST', headers }));
+}
+/** Mark messages read/unread in Gmail (users.messages.batchModify on the UNREAD label). Requires gmail.modify. */
+export async function setGmailUnread(state: AadOSState, account: MailAccount, messageIds: string[], unread: boolean): Promise<void> {
+  if (!messageIds.length) return;
+  const headers = { Authorization: `Bearer ${await token(state, account)}`, 'Content-Type': 'application/json' };
+  for (let i = 0; i < messageIds.length; i += 1000) {
+    const body = JSON.stringify({ ids: messageIds.slice(i, i + 1000), ...(unread ? { addLabelIds: ['UNREAD'] } : { removeLabelIds: ['UNREAD'] }) });
+    const res = await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify', { method: 'POST', headers, body });
+    if (!res.ok) await json(res); // throws with Google's message
+  }
+}
+
+const HEADER_NAMES = ['From', 'To', 'Cc', 'Reply-To', 'Subject', 'Date', 'Message-ID', 'References', 'List-Unsubscribe'];
+/** Selected headers of one message (lower-case names). */
+export async function gmailHeaders(state: AadOSState, account: MailAccount, messageId: string): Promise<{ headers: Record<string, string>; threadId: string }> {
+  const auth = { Authorization: `Bearer ${await token(state, account)}` };
+  const q = new URLSearchParams({ format: 'metadata' });
+  for (const h of HEADER_NAMES) q.append('metadataHeaders', h);
+  const m = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?${q}`, { headers: auth }));
+  const headers: Record<string, string> = {};
+  for (const h of m.payload?.headers || []) headers[String(h.name).toLowerCase()] = String(h.value || '');
+  return { headers, threadId: String(m.threadId || '') };
+}
+/** Send a message the owner composed (users.messages.send). `threadId` keeps a reply in its conversation. */
+export async function sendGmail(state: AadOSState, account: MailAccount, rawMime: string, threadId = ''): Promise<string> {
+  const auth = { Authorization: `Bearer ${await token(state, account)}`, 'Content-Type': 'application/json' };
+  const r = await json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: auth, body: JSON.stringify({ raw: Buffer.from(rawMime, 'utf8').toString('base64url'), ...(threadId ? { threadId } : {}) }) }));
+  return String(r.id || '');
+}
+export type GmailFilter = { id: string; criteria: { from?: string; to?: string; subject?: string; query?: string }; action: { addLabelIds?: string[]; removeLabelIds?: string[] } };
+/** Gmail filters (Settings → Filters) — the server-side rules. Requires gmail.settings.basic. */
+export async function listGmailFilters(state: AadOSState, account: MailAccount): Promise<GmailFilter[]> {
+  const r = await json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/filters', { headers: { Authorization: `Bearer ${await token(state, account)}` } }));
+  return Array.isArray(r.filter) ? r.filter : [];
+}
+export async function createGmailFilter(state: AadOSState, account: MailAccount, f: Omit<GmailFilter, 'id'>): Promise<GmailFilter> {
+  return json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/filters', { method: 'POST', headers: { Authorization: `Bearer ${await token(state, account)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(f) }));
+}
+export async function deleteGmailFilter(state: AadOSState, account: MailAccount, id: string): Promise<void> {
+  const res = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/settings/filters/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${await token(state, account)}` } });
+  if (!res.ok && res.status !== 404) await json(res);
 }
