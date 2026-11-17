@@ -69,6 +69,6 @@ export const actions: Actions = {
         }
       });
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Update failed.' }); }
-    return { marked: key };
+    return { marked: keys };
   }
 };

@@ -16,9 +16,15 @@
       .finally(() => { loading = false; });
   });
   async function close() { onclose(); await invalidateAll(); }
+  function keyboard(event: KeyboardEvent) {
+    if (event.key === 'ArrowUp' && canPrevious) { event.preventDefault(); onprevious?.(); }
+    if (event.key === 'ArrowDown' && canNext) { event.preventDefault(); onnext?.(); }
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+  }
   const doc = (b: { html: string; text: string }, allowImages: boolean) =>
     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${allowImages ? 'https:' : ''}; style-src 'unsafe-inline'; font-src data:"><base target="_blank"><style>body{font:14px/1.5 system-ui,sans-serif;margin:16px;color:#29344c;word-break:break-word}img{max-width:100%;height:auto}</style>${b.html || `<pre style="white-space:pre-wrap;font:inherit">${esc(b.text)}</pre>`}`;
 </script>
+<svelte:window onkeydown={keyboard} />
 <aside class="viewer" aria-label="Email">
   <header><button type="button" class="close" onclick={close}>← Back</button><div><h3>{item.subject || '(no subject)'}</h3><p>{item.sender} · {new Date(item.receivedAt).toLocaleString()}</p></div>
     <nav aria-label="Email navigation"><button type="button" onclick={onprevious} disabled={!canPrevious} title="Previous email">↑</button><button type="button" onclick={onnext} disabled={!canNext} title="Next email">↓</button></nav>
