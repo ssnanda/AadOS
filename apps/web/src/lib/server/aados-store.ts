@@ -141,12 +141,19 @@ import type { PendingFlows } from './oauth-state.ts';
 import type { CalEvent, CalendarInfo } from '../calendar/model.ts';
 import type { Reminder } from './reminders.ts';
 /** AI is OFF until the owner enables it; nothing is sent to AJMCP before that. */
-export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean }; emailBodies: boolean };
+export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean; /** Finance facts — off until explicitly enabled */ finance: boolean }; emailBodies: boolean };
 export type AiStatus = { lastOk: string; lastError: string; lastErrorAt: string; provider: string; model: string; gatewayVersion: string; checkedAt: string };
 /** Integration settings edited in Settings. Stored with the other secrets (encrypted credential vault in PostgreSQL). */
-export type Integrations = { ajmcp: { url: string; token: string }; asana: { token: string; workspaceGid: string; workspaceName: string; userName: string }; bluebubbles: { url: string; password: string; hookSecret: string }; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
-export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, asana: { token: '', workspaceGid: '', workspaceName: '', userName: '' }, bluebubbles: { url: '', password: '', hookSecret: '' }, s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
-export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true }, emailBodies: false });
+export type Integrations = { ajmcp: { url: string; token: string }; asana: { token: string; workspaceGid: string; workspaceName: string; userName: string }; bluebubbles: { url: string; password: string; hookSecret: string }; etrade: EtradeConfig; plaid: PlaidConfig; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
+/** E*TRADE (read-only). Consumer key/secret per environment; OAuth 1.0a tokens expire at midnight US Eastern. */
+export type EtradeConfig = { sandbox: boolean; consumerKey: string; consumerSecret: string; accessToken: string; accessSecret: string; requestToken: string; requestSecret: string; connectedAt: string; lastError: string; lastSyncedAt: string };
+export const defaultEtrade = (): EtradeConfig => ({ sandbox: false, consumerKey: '', consumerSecret: '', accessToken: '', accessSecret: '', requestToken: '', requestSecret: '', connectedAt: '', lastError: '', lastSyncedAt: '' });
+/** Plaid (investments, read-only). Each linked institution is an item with its own access token. */
+export type PlaidItem = { id: string; itemId: string; accessToken: string; institutionId: string; institutionName: string; status: 'ok' | 'login_required'; lastError: string; lastSyncedAt: string; lastSyncSummary: string };
+export type PlaidConfig = { env: 'sandbox' | 'production'; clientId: string; secret: string; redirectUri: string; items: PlaidItem[] };
+export const defaultPlaid = (): PlaidConfig => ({ env: 'sandbox', clientId: '', secret: '', redirectUri: '', items: [] });
+export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, asana: { token: '', workspaceGid: '', workspaceName: '', userName: '' }, bluebubbles: { url: '', password: '', hookSecret: '' }, etrade: defaultEtrade(), plaid: defaultPlaid(), s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
+export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true, finance: false }, emailBodies: false });
 export const defaultAiStatus = (): AiStatus => ({ lastOk: '', lastError: '', lastErrorAt: '', provider: '', model: '', gatewayVersion: '', checkedAt: '' });
 export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
 
@@ -202,7 +209,7 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     ai: { ...defaultAiPrefs(), ...(saved.ai || {}), share: { ...defaultAiPrefs().share, ...(saved.ai?.share || {}) } },
     aiStatus: { ...defaultAiStatus(), ...(saved.aiStatus || {}) },
     notify: { browser: false, ...(saved.notify || {}) },
-    integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, asana: { ...defaultIntegrations().asana, ...(saved.integrations?.asana || {}) }, bluebubbles: { ...defaultIntegrations().bluebubbles, ...(saved.integrations?.bluebubbles || {}) }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
+    integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, asana: { ...defaultIntegrations().asana, ...(saved.integrations?.asana || {}) }, bluebubbles: { ...defaultIntegrations().bluebubbles, ...(saved.integrations?.bluebubbles || {}) }, etrade: { ...defaultEtrade(), ...(saved.integrations?.etrade || {}) }, plaid: { ...defaultPlaid(), ...(saved.integrations?.plaid || {}), items: saved.integrations?.plaid?.items || [] }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }

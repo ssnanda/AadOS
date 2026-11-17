@@ -7,10 +7,10 @@ import type { Reminder } from '../reminders.ts';
 import { agenda, type CalEvent } from '../../calendar/model.ts';
 import { addDays, rangeUtc, todayIn } from '../../calendar/view.ts';
 
-export type SourceKind = 'email' | 'event' | 'task' | 'reminder' | 'document';
+export type SourceKind = 'email' | 'event' | 'task' | 'reminder' | 'document' | 'finance';
 export type Source = { id: string; kind: SourceKind; ref: string; title: string; date: string; href: string; excerpt: string; meta: string };
 export type DocumentHit = { id: string; filename: string; date: string; excerpt: string; category: string };
-export type Share = { email: boolean; calendar: boolean; tasks: boolean; documents: boolean };
+export type Share = { email: boolean; calendar: boolean; tasks: boolean; documents: boolean; finance?: boolean };
 export type ContextInput = {
   question: string; tz: string; now?: number; share: Share;
   rows: InboxRow[]; events: CalEvent[]; disabledCalendars?: string[]; calendarNames?: Record<string, string>;

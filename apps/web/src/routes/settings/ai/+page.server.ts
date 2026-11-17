@@ -35,7 +35,7 @@ export const actions: Actions = {
   save: async ({ request }) => {
     const f = await request.formData();
     await updateState((s) => {
-      s.ai = { enabled: bool(f, 'enabled'), background: bool(f, 'background'), emailBodies: bool(f, 'emailBodies'), share: { email: bool(f, 'shareEmail'), calendar: bool(f, 'shareCalendar'), tasks: bool(f, 'shareTasks'), documents: bool(f, 'shareDocuments') } };
+      s.ai = { enabled: bool(f, 'enabled'), background: bool(f, 'background'), emailBodies: bool(f, 'emailBodies'), share: { email: bool(f, 'shareEmail'), calendar: bool(f, 'shareCalendar'), tasks: bool(f, 'shareTasks'), documents: bool(f, 'shareDocuments'), finance: bool(f, 'shareFinance') } };
     });
     return { saved: true };
   },

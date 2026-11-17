@@ -34,6 +34,7 @@
         <label><input type="checkbox" name="shareCalendar" checked={data.ai.share.calendar}> Calendar</label>
         <label><input type="checkbox" name="shareTasks" checked={data.ai.share.tasks}> Tasks &amp; reminders</label>
         <label><input type="checkbox" name="shareDocuments" checked={data.ai.share.documents}> Documents</label>
+        <label><input type="checkbox" name="shareFinance" checked={data.ai.share.finance}> Finance (net worth, holdings, real estate)</label>
       </div>
       <button>Save</button>
     </form>

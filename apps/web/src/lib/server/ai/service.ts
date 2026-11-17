@@ -1,3 +1,4 @@
+import { financeSources } from '../finance/ai';
 // Server-only glue: AJMCP client from env, owner AI preferences/status, rate limiting, and the assistant pipeline.
 import { env } from '$env/dynamic/private';
 import { ajmcpConfig } from '../integrations';
@@ -53,11 +54,14 @@ export async function gather(state: AadOSState, question: string): Promise<Retur
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
   const db = hasDatabase() ? await database().catch(() => null) : null;
   const docHits = db && state.ai.share.documents ? await searchDocumentPassages(db, tsTerms(question.split(/\s+/)).filter((t) => !/^(document|documents|file|files|find|uploaded|about|the|what|which|my)$/.test(t))).catch(() => []) : [];
-  return retrieve({
+  const base = retrieve({
     question, tz: tzOf(state), share: state.ai.share, rows, events: state.events, disabledCalendars: state.calendarDisabled,
     calendarNames: Object.fromEntries(state.calendars.map((c) => [c.id, c.name])), tasks: state.tasks, reminders: state.reminders,
     documents: () => docHits
   });
+  // Finance facts only with explicit consent (Settings → AI → Finance).
+  if (state.ai.share.finance) base.sources.push(...(await financeSources(question)));
+  return base;
 }
 
 export type AnswerResult = { conversationId: string; user: { id: number }; assistant: { id: number; content: string; sources: Source[]; provider: string; model: string; latencyMs: number | null; error: string } };

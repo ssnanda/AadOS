@@ -2,6 +2,8 @@ import os from 'node:os';
 import { ensureInboxPipelines, updateState, updateStateDetached } from './aados-store';
 import { syncCalendars } from './calendar-sync';
 import { syncJob } from './sync-job';
+import { hasDatabase } from './aados-store';
+import { financeTick } from './finance/refresh';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
 
@@ -36,6 +38,8 @@ async function pass() {
     await updateState((state) => { ensureInboxPipelines(state); });
     // Runs on a snapshot, so provider network calls never block other writes.
     await updateStateDetached(async (state) => { await syncCalendars(state); }); // read-only; per-account errors are recorded on the account
+    // Finance: prices every pass during market hours, otherwise twice a day; snapshots + alerts follow each refresh.
+    if (hasDatabase()) await financeTick().catch((e) => console.warn('[aados] finance refresh failed:', e instanceof Error ? e.message : e));
   } finally { globalThis.__aadosSyncRunning = false; }
 }
 
