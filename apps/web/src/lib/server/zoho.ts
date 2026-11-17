@@ -16,9 +16,9 @@ async function jsonResponse(response: Response) {
 export const ZOHO_MAIL_SCOPE = 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ,ZohoMail.messages.UPDATE,ZohoMail.messages.DELETE,ZohoMail.messages.CREATE';
 export const ZOHO_CALENDAR_SCOPE = 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ,ZohoCalendar.event.CREATE,ZohoCalendar.event.UPDATE,ZohoCalendar.event.DELETE';
 
-export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean } = {}) {
+export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; owner?: string } = {}) {
   const token = randomBytes(24).toString('base64url');
-  addFlow((state.zoho.pending ||= {}), token);
+  addFlow((state.zoho.pending ||= {}), token, undefined, Date.now(), opts.owner);
   const query = new URLSearchParams({
     client_id: state.zoho.clientId,
     response_type: 'code',
@@ -32,7 +32,8 @@ export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calen
 }
 
 export async function finishOAuth(state: AadOSState, code: string, returnedState: string, redirectUri: string) {
-  if (!consumeFlow((state.zoho.pending ||= {}), returnedState)) throw new Error('Zoho OAuth state is invalid or expired');
+  const flow = consumeFlow((state.zoho.pending ||= {}), returnedState);
+  if (!flow) throw new Error('Zoho OAuth state is invalid or expired');
   const form = new URLSearchParams({ code, grant_type: 'authorization_code', client_id: state.zoho.clientId, client_secret: state.zoho.clientSecret, redirect_uri: redirectUri });
   const tokens = await jsonResponse(await fetch(`${accountsHost(state.zoho.dataCenter)}/oauth/v2/token`, { method: 'POST', body: form, signal: AbortSignal.timeout(15000) }));
   // Identify the mailbox first, then add it or refresh the tokens of an existing one.
@@ -44,9 +45,12 @@ export async function finishOAuth(state: AadOSState, code: string, returnedState
   account.calendarWrite = /ZohoCalendar\.event\.(ALL|CREATE)/.test(String(tokens.scope || ''));
   account.canSend = /messages\.(ALL|CREATE)/.test(String(tokens.scope || ''));
   account.canModify = /messages\.(ALL|UPDATE)/.test(String(tokens.scope || '')) && /messages\.(ALL|DELETE)/.test(String(tokens.scope || ''));
+  if (existing && (existing.ownerId || '') !== (flow.owner || '')) throw new Error(`${account.email} is already connected in AadOS by someone else.`);
+  if (flow.owner) account.ownerId = flow.owner;
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Zoho did not return a refresh token. Remove AadOS from Zoho connected apps and try again.');
   else state.accounts.push(account);
+  return { owner: flow.owner || '', accountId: account.id };
 }
 
 export async function zohoAccessToken(state: AadOSState, account: MailAccount) { return accessToken(state, account); }

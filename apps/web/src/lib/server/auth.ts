@@ -33,8 +33,8 @@ export function createSession(member?: { id: string; ver: number }): string {
 }
 
 /** Who is signed in. The owner can do everything; a family member only what the owner allowed. */
-export type SessionUser = { id: string; name: string; owner: boolean; permissions: Permission[]; mailboxes: string[] | 'all' };
-const OWNER = (): SessionUser => ({ id: 'owner', name: env.AADOS_USER || 'Owner', owner: true, permissions: [...PERMISSIONS], mailboxes: 'all' });
+export type SessionUser = { id: string; name: string; owner: boolean; permissions: Permission[]; mailboxes: string[] | 'all'; ownAccounts: boolean };
+const OWNER = (): SessionUser => ({ id: 'owner', name: env.AADOS_USER || 'Owner', owner: true, permissions: [...PERMISSIONS], mailboxes: 'all', ownAccounts: false });
 
 export function sessionUser(token: string | undefined): SessionUser | null {
   if (!token) return null;
@@ -49,7 +49,7 @@ export function sessionUser(token: string | undefined): SessionUser | null {
     if (!parsed.uid) return OWNER();
     const m = security().member(String(parsed.uid));
     if (!m || m.disabled || m.ver !== parsed.ver) return null;
-    return { id: m.id, name: m.name, owner: false, permissions: m.permissions, mailboxes: m.mailboxes };
+    return { id: m.id, name: m.name, owner: false, permissions: m.permissions, mailboxes: m.mailboxes, ownAccounts: Boolean(m.ownAccounts) };
   } catch { return null; }
 }
 
@@ -61,12 +61,14 @@ export const canSeeAccount = (user: SessionUser | null | undefined, accountId: s
 export const can = (user: SessionUser | null | undefined, p: Permission) => Boolean(user && (user.owner || user.permissions.includes(p)));
 
 // Section of the app each path belongs to. Paths not listed are owner-only (Settings, OAuth, …).
-const SECTIONS: [string, Permission][] = [['/emails', 'emails'], ['/search', 'emails'], ['/pipelines', 'emails'], ['/sync', 'emails'], ['/calendar', 'calendar'], ['/tasks', 'tasks'], ['/reminders', 'reminders'], ['/asana', 'asana'], ['/documents', 'documents'], ['/assistant', 'assistant'], ['/briefing', 'assistant']];
+const SECTIONS: [string, Permission][] = [['/emails', 'emails'], ['/search', 'emails'], ['/pipelines', 'emails'], ['/sync', 'emails'], ['/messages', 'messages'], ['/calendar', 'calendar'], ['/tasks', 'tasks'], ['/reminders', 'reminders'], ['/asana', 'asana'], ['/documents', 'documents'], ['/assistant', 'assistant'], ['/briefing', 'assistant']];
 const OPEN = new Set(['/', '/logout', '/health', '/login', '/settings/timezone']);
 export function allowedPath(user: SessionUser, pathname: string): boolean {
   if (user.owner || OPEN.has(pathname) || pathname.startsWith('/_app/')) return true;
+  if (pathname === '/me/accounts' || pathname.startsWith('/me/accounts/')) return user.ownAccounts;
   const hit = SECTIONS.find(([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(`${prefix}?`));
-  return Boolean(hit && user.permissions.includes(hit[1]));
+  // Members who link their own accounts can always open Emails and Calendar (they see only what they may).
+  return Boolean(hit && (user.permissions.includes(hit[1]) || (user.ownAccounts && (hit[1] === 'emails' || hit[1] === 'calendar'))));
 }
 
 export function sameUsername(value: string): boolean {

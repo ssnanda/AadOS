@@ -12,7 +12,8 @@ export const load: PageServerLoad = async () => {
   const state = await readState();
   return {
     permissions: PERMISSIONS,
-    accounts: state.accounts.map((a) => ({ id: a.id, email: a.email || a.id, provider: a.provider })),
+    // Only the owner's accounts can be shared; members' own accounts stay theirs.
+    accounts: state.accounts.filter((a) => !a.ownerId).map((a) => ({ id: a.id, email: a.email || a.id, provider: a.provider })),
     members: security().members().map(({ passwordHash: _p, ...m }) => m)
   };
 };
@@ -32,7 +33,7 @@ export const actions: Actions = {
     const generated = !password;
     if (generated) password = generatePassword();
     if (password.length < 10) return fail(400, { error: 'Password: at least 10 characters (or leave it empty to generate one).' });
-    const member: Member = { id: randomBytes(9).toString('base64url'), name, username, passwordHash: await hashPassword(password), permissions: perms(f), mailboxes: mailboxes(f), ver: 1, createdAt: new Date().toISOString() };
+    const member: Member = { id: randomBytes(9).toString('base64url'), name, username, passwordHash: await hashPassword(password), permissions: perms(f), mailboxes: mailboxes(f), ownAccounts: f.get('ownAccounts') === 'on', ver: 1, createdAt: new Date().toISOString() };
     security().saveMember(member);
     return { created: name, shown: generated ? { username, password } : null };
   },
@@ -41,7 +42,10 @@ export const actions: Actions = {
     const m = security().member(String(f.get('id') || ''));
     if (!m) return fail(404, { error: 'Member not found.' });
     m.name = String(f.get('name') || m.name).trim().slice(0, 60) || m.name;
-    m.permissions = perms(f); m.mailboxes = mailboxes(f);
+    // Keep the member's own linked accounts visible to them whatever is ticked for the owner's mailboxes.
+    const ownIds = (await readState()).accounts.filter((a) => a.ownerId === m.id).map((a) => a.id);
+    const boxes = mailboxes(f);
+    m.permissions = perms(f); m.mailboxes = boxes === 'all' ? 'all' : [...new Set([...boxes, ...ownIds])]; m.ownAccounts = f.get('ownAccounts') === 'on';
     security().saveMember(m);
     return { saved: m.name };
   },

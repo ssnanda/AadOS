@@ -8,11 +8,11 @@ import { join } from 'node:path';
 type Data = { validAfter: number; failures: Record<string, number[]>; passwordHash?: string; passwordBase?: string; members?: Member[] };
 
 /** Sections a family member can be allowed into (Settings is always owner-only). */
-export const PERMISSIONS = ['emails', 'calendar', 'tasks', 'reminders', 'asana', 'documents', 'assistant'] as const;
+export const PERMISSIONS = ['emails', 'messages', 'calendar', 'tasks', 'reminders', 'asana', 'documents', 'assistant'] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 /** A family login. `mailboxes`: account ids they may read ('all' = every mailbox). `ver` bumps on password change/disable,
  *  ending that member's sessions. */
-export type Member = { id: string; name: string; username: string; passwordHash: string; permissions: Permission[]; mailboxes: string[] | 'all'; ver: number; disabled?: boolean; createdAt: string };
+export type Member = { id: string; name: string; username: string; passwordHash: string; permissions: Permission[]; mailboxes: string[] | 'all'; ver: number; disabled?: boolean; createdAt: string; /** May link their own email & calendar accounts (My accounts). */ ownAccounts?: boolean };
 
 export class SecurityStore {
   private dir: string;

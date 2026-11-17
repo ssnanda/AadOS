@@ -11,7 +11,7 @@
 <AppShell title={`Settings · ${current}`}>
 <div class="settings">
   <nav class="tabs" aria-label="Settings">{#each items as item (item.href)}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>{/each}</nav>
-  {#if active('/settings/emails')}<nav class="sub" aria-label="Email settings sections"><a href="/settings/emails#connections">Connections</a>{#each providers as p (p.key)}<span class="prov"><a href={`/settings/emails#${p.key}`}>{p.label}</a>{#each data.mailAccounts.filter((a) => a.provider === p.key) as a (a.id)}<a href={`/settings/emails#acct-${a.id}`} class="acct" title={a.email}>{a.email}</a>{/each}</span>{/each}<a href="/settings/emails#views">Views</a></nav>{/if}
+  {#if active('/settings/emails')}<nav class="sub" aria-label="Email settings sections"><a href="/settings/emails#connections">Connections</a>{#each providers as p (p.key)}<span class="prov"><a href={`/settings/emails#${p.key}`}>{p.label}</a>{#each data.mailAccounts.filter((a) => a.provider === p.key) as a (a.id)}<a href={`/settings/emails#acct-${a.id}`} class="acct" title={a.email}>{a.email}</a>{/each}</span>{/each}</nav>{/if}
   <div class="content">{@render children()}</div>
 </div>
 </AppShell>

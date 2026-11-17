@@ -13,7 +13,7 @@
 
   type View = 'my' | 'board' | 'calendar' | 'people' | 'recurring';
   type Timer = { name: string; startedAt: string; note: string };
-  const VIEWS: [View, string, string][] = [['my', 'My Tasks', '☰'], ['board', 'Board', '▥'], ['calendar', 'Calendar', '▦'], ['people', 'People & Teams', '👥'], ['recurring', 'Recurring', '⟳']];
+  const VIEWS: [View, string, string][] = [['my', 'My Tasks', '☰'], ['board', 'Board', '▥'], ['calendar', 'Calendar', '▦'], ['people', 'People & Teams', '◉'], ['recurring', 'Recurring', '⟳']];
   const initial = page.url.searchParams.get('view') as View;
   let view = $state<View>(VIEWS.some(([v]) => v === initial) ? initial : 'my');
   const setView = (v: View) => { view = v; const u = new URL(page.url); u.searchParams.set('view', v); replaceState(u, {}); };
@@ -276,12 +276,15 @@
   button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#43516c;cursor:pointer}button:disabled{opacity:.5;cursor:default}
   .primary{background:#3157de;border-color:#3157de;color:#fff}.ghost{background:#f2f3f6;border-color:#e4e7ee;color:#6b7690;font-weight:600}.link{border:0;background:none;color:#3157de;padding:0}.danger{color:#b53c50}
   .topline{display:flex;gap:8px;align-items:center;margin-bottom:6px}.chk{display:flex;gap:6px;align-items:center}.sp{flex:1}.muted{color:#8a95a8}.err{color:#a5414d}
-  .head{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.head h1{margin:0;font-size:26px;letter-spacing:-.5px}
-  .tabs{display:flex;gap:8px;flex-wrap:wrap}.tab{padding:9px 16px;font-size:14px;border-radius:12px;border-width:2px}
+  .head{display:flex;gap:12px 16px;align-items:center;flex-wrap:wrap}.head h1{margin:0;font-size:24px;letter-spacing:-.5px;white-space:nowrap}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tab,.newtask{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;height:40px;box-sizing:border-box;padding:0 15px;font-size:14px;line-height:1;border-radius:11px;border-width:2px;flex:none}
+  .tab span{font-size:14px;line-height:1;width:16px;text-align:center}
   .tab.my{border-color:#d9d2ff;color:#6a4fe0;background:#f6f3ff}.tab.board{border-color:#cfe0ff;color:#2f6fe4;background:#f2f7ff}.tab.calendar{border-color:#cfe6d6;color:#2a8a55;background:#f2faf5}.tab.people{border-color:#cdeef0;color:#239aa5;background:#f1fbfc}.tab.recurring{border-color:#ddd8ff;color:#5b52e0;background:#f5f4ff}
   .tab.on.my{background:#6a4fe0;border-color:#6a4fe0;color:#fff}.tab.on.board{background:#2f7cf6;border-color:#2f7cf6;color:#fff}.tab.on.calendar{background:#2a9d5c;border-color:#2a9d5c;color:#fff}.tab.on.people{background:#239aa5;border-color:#239aa5;color:#fff}.tab.on.recurring{background:#5b52e0;border-color:#5b52e0;color:#fff}
-  .newtask{background:#e95f63;border-color:#e95f63;color:#fff;padding:9px 18px;font-size:14px;border-radius:12px;box-shadow:0 4px 14px #e95f6355}
-  .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.act{border-radius:999px;padding:8px 16px;font-size:13px;border-width:2px}
+  .newtask{background:#e95f63;border-color:#e95f63;color:#fff;box-shadow:0 4px 14px #e95f6355}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;align-items:center}.act{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;height:36px;box-sizing:border-box;border-radius:999px;padding:0 15px;font-size:13px;border-width:2px;line-height:1}
+  .act:disabled{opacity:.45}
   .act.help{background:#f2f3f6;border-color:#f2f3f6;color:#8a95a8}.act.help:not(:disabled){color:#6a3fd6;background:#f3edff;border-color:#e3d6ff}.act.plan{background:#f2994a;border-color:#f2994a;color:#fff}.act.sum{background:#2f7cf6;border-color:#2f7cf6;color:#fff}
   .act.all{background:#f6ecfa;border-color:#e6cdf2;color:#a03fc9}.act.all.on{background:#a03fc9;color:#fff}.act.time{background:#eef8f0;border-color:#cfe6d6;color:#2a8a55}.act.ack{background:#6a4fe0;border-color:#6a4fe0;color:#fff}
   .relw{position:relative;display:inline-flex}.pop{position:absolute;top:calc(100% + 4px);left:0;z-index:30}.timepop{display:flex;gap:5px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:7px;box-shadow:0 8px 24px #151c2d22;white-space:nowrap}

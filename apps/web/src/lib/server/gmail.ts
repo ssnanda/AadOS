@@ -24,11 +24,11 @@ export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly
 /** Create/edit/delete events (requested with the read scope; calendarList itself needs the read scope). */
 export const CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
 
-export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; loginHint?: string } = {}) {
+export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; loginHint?: string; owner?: string } = {}) {
   // One entry per connect attempt, so parallel flows cannot overwrite each other. PKCE (S256): the verifier stays server-side.
   const token = randomBytes(24).toString('base64url');
   const verifier = randomBytes(48).toString('base64url');
-  addFlow((state.gmail.pending ||= {}), token, verifier);
+  addFlow((state.gmail.pending ||= {}), token, verifier, Date.now(), opts.owner);
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: opts.calendar ? `${GMAIL_SCOPE} ${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}` : GMAIL_SCOPE, access_type: 'offline', prompt: 'consent select_account', // incremental auth: a plain reconnect keeps the calendar scope already granted
     include_granted_scopes: 'true', state: token, code_challenge: challenge, code_challenge_method: 'S256', ...(opts.loginHint ? { login_hint: opts.loginHint } : {}) })}`;
@@ -50,9 +50,13 @@ export async function finishGmailOAuth(state: AadOSState, code: string, returned
   account.canModify = granted.includes(GMAIL_MODIFY_SCOPE);
   account.canSend = granted.includes(GMAIL_MODIFY_SCOPE) || granted.includes('https://www.googleapis.com/auth/gmail.send');
   account.canFilter = granted.includes(GMAIL_SETTINGS_SCOPE);
+  // An account belongs to whoever linked it first; nobody else can take it over by connecting it again.
+  if (existing && (existing.ownerId || '') !== (flow.owner || '')) throw new Error(`${account.email} is already connected in AadOS by someone else.`);
+  if (flow.owner) account.ownerId = flow.owner;
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
   else if (!account.refreshToken) throw new Error('Google did not return a refresh token. Remove AadOS from your Google account permissions and try again.');
   else state.accounts.push(account);
+  return { owner: flow.owner || '', accountId: account.id };
 }
 
 export async function gmailAccessToken(state: AadOSState, account: MailAccount) { return token(state, account); }

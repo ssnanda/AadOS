@@ -1,3 +1,4 @@
+import { security } from '$lib/server/auth';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
@@ -7,7 +8,7 @@ import { clearCalendarData } from '$lib/server/calendar-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-export const load: PageServerLoad = async ({ url }) => { const state = await readState(); return { ...publicState(state), calendars: state.calendars.map((c) => ({ id: c.id, name: c.name, accountId: c.accountId, color: c.color, enabled: !state.calendarDisabled.includes(c.id) })), zohoRedirect: `${url.origin}/oauth/zoho/callback`, gmailRedirect: `${url.origin}/oauth/gmail/callback`, error: url.searchParams.get('error') || '' }; };
+export const load: PageServerLoad = async ({ url }) => { const state = await readState(); return { ...publicState(state), memberNames: Object.fromEntries(security().members().map((m) => [m.id, m.name])), calendars: state.calendars.map((c) => ({ id: c.id, name: c.name, accountId: c.accountId, color: c.color, enabled: !state.calendarDisabled.includes(c.id) })), zohoRedirect: `${url.origin}/oauth/zoho/callback`, gmailRedirect: `${url.origin}/oauth/gmail/callback`, error: url.searchParams.get('error') || '' }; };
 export const actions: Actions = {
   create: async ({ request }) => {
     const form = await request.formData();
@@ -97,12 +98,14 @@ export const actions: Actions = {
     throw redirect(303, target);
   },
   // Per-calendar on/off: a disabled calendar stays listed but is not synced or shown.
+  // Checkbox (auto-saved): `on` sets the state explicitly, so a repeated submit never flips it back.
   toggleCalendar: async ({ request }) => {
-    const id = String((await request.formData()).get('id') || '');
+    const f = await request.formData();
+    const id = String(f.get('id') || ''), on = f.get('on') === 'true';
     await updateState((s) => {
       if (!s.calendars.some((c) => c.id === id)) return;
-      if (s.calendarDisabled.includes(id)) s.calendarDisabled = s.calendarDisabled.filter((x) => x !== id);
-      else { s.calendarDisabled.push(id); s.events = s.events.filter((e) => e.calendarId !== id); delete s.calendarSync[id]; }
+      if (on) s.calendarDisabled = s.calendarDisabled.filter((x) => x !== id);
+      else if (!s.calendarDisabled.includes(id)) { s.calendarDisabled.push(id); s.events = s.events.filter((e) => e.calendarId !== id); delete s.calendarSync[id]; }
     });
     return { calendarToggled: id };
   },
@@ -111,9 +114,16 @@ export const actions: Actions = {
     await updateState((s) => { clearCalendarData(s, id); });
     return { calendarCleared: id };
   },
-  toggleAccountSync: async ({ request }) => {
-    const id = String((await request.formData()).get('id') || '');
-    await updateState((s) => { const a = s.accounts.find((item) => item.id === id); if (a) a.paused = !a.paused; });
+  // Per-account checkboxes (auto-saved): Email = mail syncs and shows in AadOS (`paused` = off); Calendar = its calendars
+  // sync and show (`calendarOff`, keeping the grant). Turning Calendar on without a grant goes through enableCalendar.
+  setSync: async ({ request }) => {
+    const f = await request.formData();
+    const id = String(f.get('id') || ''), kind = String(f.get('kind') || ''), on = f.get('on') === 'true';
+    await updateState((s) => {
+      const a = s.accounts.find((item) => item.id === id); if (!a) return;
+      if (kind === 'mail') a.paused = !on;
+      if (kind === 'calendar') a.calendarOff = !on;
+    });
     return { toggled: id };
   },
   // Privacy: remove this account's synced copies from AadOS. The mailbox is untouched; a sync brings mail back.

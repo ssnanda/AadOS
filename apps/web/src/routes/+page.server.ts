@@ -10,7 +10,7 @@ import { todayIn } from '$lib/calendar/view';
 import { cachedBriefing } from '$lib/server/ai/briefing-service';
 import { aiConfigured } from '$lib/server/ai/service';
 import * as asanaApi from '$lib/server/asana';
-import { scopeState } from '$lib/server/scope';
+import { calendarAccounts as visibleCalendarAccounts, scopeState } from '$lib/server/scope';
 import { can } from '$lib/server/auth';
 import { dayIn, dueDay, dueShort, stageOf } from '$lib/asana-model';
 
@@ -18,7 +18,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Family members see only their mailboxes and the sections they were given.
   const user = locals.user;
   const full = scopeState(await readState(), user);
-  const state = { ...full, events: can(user, 'calendar') ? full.events : [], tasks: can(user, 'tasks') ? full.tasks : [], reminders: can(user, 'reminders') ? full.reminders : [], accounts: full.accounts.map((a) => (can(user, 'calendar') ? a : { ...a, calendar: false })) };
+  const state = { ...full, events: can(user, 'calendar') ? full.events : [], tasks: can(user, 'tasks') ? full.tasks : [], reminders: can(user, 'reminders') ? full.reminders : [], accounts: full.accounts.map((a) => (!a.calendarOff && (a.ownerId || can(user, 'calendar')) ? a : { ...a, calendar: false })) };
+  const visibleCal = visibleCalendarAccounts(full, user);
+  const calOff = new Set(full.accounts.filter((a) => a.calendarOff || !visibleCal.has(a.id)).map((a) => a.id));
+  // Only calendars this user may see: their own linked accounts, plus the owner's with the Calendar permission.
+  state.events = full.events.filter((e) => visibleCal.has(e.accountId) && !calOff.has(e.accountId));
   const tiles = visiblePipelines(state).map((p) => {
     const items = state.items.filter((i) => i.pipelineId === p.id).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
     const unread = items.filter(isUnread);

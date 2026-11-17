@@ -50,8 +50,8 @@ export async function syncCalendars(state: AadOSState, only?: string, now = Date
   const http = deps.http ?? ((url: string, init?: RequestInit) => fetchRetry(url, init));
   let tokens = deps.tokens;
   let accounts = 0, failed = 0;
-  // Bulk (scheduled) runs skip accounts paused for auto-sync; an explicit single-account run does not.
-  for (const account of state.accounts.filter((a) => a.calendar && (only ? a.id === only : !a.paused))) {
+  // Accounts whose Calendar checkbox is off are skipped (their mail setting does not matter).
+  for (const account of state.accounts.filter((a) => a.calendar && !a.calendarOff && (only ? a.id === only : true))) {
     accounts++;
     try {
       tokens ??= await realTokens();

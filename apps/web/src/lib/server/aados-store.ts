@@ -89,9 +89,13 @@ export type MailAccount = {
   calendar?: boolean;
   /** May create/edit/delete events (Google calendar.events / Zoho ZohoCalendar.event.CREATE+UPDATE+DELETE). */
   calendarWrite?: boolean;
+  /** Owner turned this account's calendars off (grant kept; nothing synced or shown). */
+  calendarOff?: boolean;
+  /** Family member who linked this account (only they see its mail and calendars); absent = the owner's. */
+  ownerId?: string;
   calendarLastSync?: string;
   calendarError?: string;
-  /** Excluded from the scheduled sync (manual sync still works). */
+  /** Email turned off for this account in Settings: its mail is not synced or shown (calendar is separate). */
   paused?: boolean;
 };
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
@@ -99,7 +103,7 @@ export type PageResult = { scanned: number; added: number; unknown: number; next
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
 /** Running Asana work timers by task gid (the time is logged to the task as a comment when stopped). */
 export type AsanaTimer = { name: string; startedAt: string; note: string };
-export type AadOSState = { asanaTimers?: Record<string, AsanaTimer>; zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
+export type AadOSState = { asanaTimers?: Record<string, AsanaTimer>; /** iMessage chat guid → when it was last opened in AadOS (ms), for unread. */ messagesRead?: Record<string, number>; zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -136,8 +140,8 @@ import type { Reminder } from './reminders.ts';
 export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean }; emailBodies: boolean };
 export type AiStatus = { lastOk: string; lastError: string; lastErrorAt: string; provider: string; model: string; gatewayVersion: string; checkedAt: string };
 /** Integration settings edited in Settings. Stored with the other secrets (encrypted credential vault in PostgreSQL). */
-export type Integrations = { ajmcp: { url: string; token: string }; asana: { token: string; workspaceGid: string; workspaceName: string; userName: string }; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
-export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, asana: { token: '', workspaceGid: '', workspaceName: '', userName: '' }, s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
+export type Integrations = { ajmcp: { url: string; token: string }; asana: { token: string; workspaceGid: string; workspaceName: string; userName: string }; bluebubbles: { url: string; password: string; hookSecret: string }; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
+export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, asana: { token: '', workspaceGid: '', workspaceName: '', userName: '' }, bluebubbles: { url: '', password: '', hookSecret: '' }, s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
 export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true }, emailBodies: false });
 export const defaultAiStatus = (): AiStatus => ({ lastOk: '', lastError: '', lastErrorAt: '', provider: '', model: '', gatewayVersion: '', checkedAt: '' });
 export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
@@ -194,7 +198,7 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     ai: { ...defaultAiPrefs(), ...(saved.ai || {}), share: { ...defaultAiPrefs().share, ...(saved.ai?.share || {}) } },
     aiStatus: { ...defaultAiStatus(), ...(saved.aiStatus || {}) },
     notify: { browser: false, ...(saved.notify || {}) },
-    integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, asana: { ...defaultIntegrations().asana, ...(saved.integrations?.asana || {}) }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
+    integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, asana: { ...defaultIntegrations().asana, ...(saved.integrations?.asana || {}) }, bluebubbles: { ...defaultIntegrations().bluebubbles, ...(saved.integrations?.bluebubbles || {}) }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }
@@ -375,7 +379,7 @@ export function publicState(state: AadOSState) {
     dataCenter: state.zoho.dataCenter,
     gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
     // Tokens never leave the server.
-    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarWrite: Boolean(account.calendarWrite), calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
+    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarWrite: Boolean(account.calendarWrite), calendarOff: Boolean(account.calendarOff), ownerId: account.ownerId || '', calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
     pipelines: visiblePipelines(state),
     itemCounts: Object.fromEntries(visiblePipelines(state).map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };

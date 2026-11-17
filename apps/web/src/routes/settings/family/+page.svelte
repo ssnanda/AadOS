@@ -2,15 +2,16 @@
   import { enhance } from '$app/forms';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
-  const LABELS: Record<string, string> = { emails: 'Emails', calendar: 'Calendar', tasks: 'Tasks', reminders: 'Reminders', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
+  const LABELS: Record<string, string> = { emails: 'Emails', messages: 'Messages', calendar: 'Calendar', tasks: 'Tasks', reminders: 'Reminders', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
   let adding = $state(false), editing = $state(''), resetting = $state('');
   let newAll = $state(false);
 </script>
 
-{#snippet access(perms: string[], boxes: string[] | 'all')}
+{#snippet access(perms: string[], boxes: string[] | 'all', ownAccounts = false)}
   <fieldset><legend>Sections</legend><div class="opts">{#each data.permissions as p (p)}<label><input type="checkbox" name="perm" value={p} checked={perms.includes(p)}> {LABELS[p]}</label>{/each}</div></fieldset>
-  <fieldset><legend>Mailboxes (with Emails)</legend><div class="opts">
-    <label><input type="checkbox" name="allMail" checked={boxes === 'all'}> All mailboxes</label>
+  <fieldset><legend>Email &amp; calendar accounts — share mine and/or let them link their own</legend><div class="opts">
+    <label class="own"><input type="checkbox" name="ownAccounts" checked={ownAccounts}> <b>Can link their own email &amp; calendar</b> (private to them)</label>
+    <label><input type="checkbox" name="allMail" checked={boxes === 'all'}> All of my mailboxes</label>
     {#each data.accounts as a (a.id)}<label><input type="checkbox" name="mailbox" value={a.id} checked={boxes !== 'all' && boxes.includes(a.id)}> {a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}</label>{/each}
   </div></fieldset>
 {/snippet}
@@ -35,13 +36,13 @@
   <ul class="members">{#each data.members as m (m.id)}
     <li class="card" class:off={m.disabled}>
       <div class="mhead"><span class="av">{m.name.slice(0, 1).toUpperCase()}</span><div><strong>{m.name}</strong><small>{m.username}{m.disabled ? ' · disabled' : ''}</small></div>
-        <span class="tags">{#each m.permissions as p (p)}<i>{LABELS[p]}</i>{:else}<i class="none">No access</i>{/each}{#if m.permissions.includes('emails')}<i class="mail">{m.mailboxes === 'all' ? 'All mail' : `${m.mailboxes.length} mailbox${m.mailboxes.length === 1 ? '' : 'es'}`}</i>{/if}</span>
+        <span class="tags">{#each m.permissions as p (p)}<i>{LABELS[p]}</i>{:else}<i class="none">No access</i>{/each}{#if m.ownAccounts}<i class="ownt">Own accounts</i>{/if}{#if m.permissions.includes('emails')}<i class="mail">{m.mailboxes === 'all' ? 'All mail' : `${m.mailboxes.length} mailbox${m.mailboxes.length === 1 ? '' : 'es'}`}</i>{/if}</span>
         <span class="sp"></span>
         <button onclick={() => (editing = editing === m.id ? '' : m.id)}>Access</button><button onclick={() => (resetting = resetting === m.id ? '' : m.id)}>Password</button>
         <form method="POST" action="?/toggle" use:enhance><input type="hidden" name="id" value={m.id}><button>{m.disabled ? 'Enable' : 'Disable'}</button></form>
         <form method="POST" action="?/remove" use:enhance={({ cancel }) => { if (!confirm(`Remove ${m.name}'s login?`)) cancel(); }}><input type="hidden" name="id" value={m.id}><button class="danger">Remove</button></form>
       </div>
-      {#if editing === m.id}<form method="POST" action="?/update" use:enhance={() => async ({ update }) => { await update({ reset: false }); editing = ''; }}><input type="hidden" name="id" value={m.id}><label class="nm">Name<input name="name" value={m.name}></label>{@render access(m.permissions, m.mailboxes)}<div class="row"><button class="primary">Save access</button></div></form>{/if}
+      {#if editing === m.id}<form method="POST" action="?/update" use:enhance={() => async ({ update }) => { await update({ reset: false }); editing = ''; }}><input type="hidden" name="id" value={m.id}><label class="nm">Name<input name="name" value={m.name}></label>{@render access(m.permissions, m.mailboxes, m.ownAccounts)}<div class="row"><button class="primary">Save access</button></div></form>{/if}
       {#if resetting === m.id}<form class="row" method="POST" action="?/password" use:enhance={() => async ({ update }) => { await update(); resetting = ''; }}><input type="hidden" name="id" value={m.id}><input name="password" type="password" autocomplete="new-password" placeholder="New password (empty = generate)"><button class="primary">Set password</button><small class="muted">Signs {m.name} out everywhere.</small></form>{/if}
     </li>{/each}</ul>
 </main>
@@ -57,7 +58,7 @@
   button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:7px 12px;font-weight:700;color:#43516c;cursor:pointer;font-size:12px}.primary{background:#3157de;border-color:#3157de;color:#fff}.danger{color:#b53c50}
   .members{list-style:none;margin:0;padding:0}.mhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.mhead form{margin:0}.mhead div{display:grid}.mhead small{color:#8a95a8}
   .av{width:34px;height:34px;border-radius:50%;background:#f1ebff;color:#6a3fd1;display:grid;place-items:center;font-weight:800}
-  .tags{display:flex;gap:4px;flex-wrap:wrap}.tags i{font-style:normal;font-size:11px;font-weight:700;background:#eef1ff;color:#3157de;border-radius:6px;padding:2px 7px}.tags .mail{background:#e9f7ef;color:#1e7a47}.tags .none{background:#f2f3f6;color:#8a95a8}
+  .tags{display:flex;gap:4px;flex-wrap:wrap}.tags i{font-style:normal;font-size:11px;font-weight:700;background:#eef1ff;color:#3157de;border-radius:6px;padding:2px 7px}.tags .mail{background:#e9f7ef;color:#1e7a47}.tags .none{background:#f2f3f6;color:#8a95a8}.tags .ownt{background:#fff1e3;color:#c26b1a}.opts .own{flex-basis:100%}
   .sp{flex:1}.nm{max-width:300px}
   .alert{background:#fff0f1;color:#a5414d;border-radius:8px;padding:10px}.ok{background:#e9f7ef;color:#1e7a47;border-radius:8px;padding:10px}.ok code{background:#fff;padding:2px 6px;border-radius:5px;font-size:13px}.muted{color:#8a95a8}
   @media(max-width:700px){.grid{grid-template-columns:1fr}}

@@ -6,7 +6,8 @@ import { startReminderScheduler } from '$lib/server/reminder-scheduler';
 import { startTriageWorker } from '$lib/server/ai/email-service';
 import { startExtractionWorker } from '$lib/server/documents/service';
 
-const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback']);
+// /messages/hook is BlueBubbles' webhook; it authenticates with its own secret token.
+const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback', '/messages/hook']);
 initStorage();
 startPipelineScheduler();
 startReminderScheduler();

@@ -5,12 +5,13 @@ import { zohoAccessToken } from '$lib/server/zoho';
 import { syncCalendars } from '$lib/server/calendar-sync';
 import { googleWrite, zohoWrite, normalize, type EventInput } from '$lib/calendar/write';
 import { validZone } from '$lib/calendar/model';
+import { calendarAccounts } from '$lib/server/scope';
 
 // Create / edit / delete one event at Google or Zoho, then re-sync that account so the calendar shows the change.
 // Needs the account's calendar edit grant (Settings → Emails → "Allow calendar editing").
 const s = (v: unknown, max = 5000) => String(v ?? '').slice(0, max);
 
-export const POST = async ({ request }) => {
+export const POST = async ({ request, locals }) => {
   const b = await request.json().catch(() => ({}));
   const op = s(b.op, 10) as 'create' | 'update' | 'delete';
   if (!['create', 'update', 'delete'].includes(op)) return json({ error: 'Unknown action.' }, { status: 400 });
@@ -20,6 +21,7 @@ export const POST = async ({ request }) => {
   if (op !== 'create' && !event) return json({ error: 'Event not found — it may have changed; reload the calendar.' }, { status: 404 });
   const calendar = state.calendars.find((c) => c.id === (event?.calendarId || s(b.calendarId, 300)));
   if (!calendar) return json({ error: 'Choose a calendar.' }, { status: 400 });
+  if (!calendarAccounts(state, locals.user).has(calendar.accountId)) return json({ error: 'Calendar not found.' }, { status: 404 });
   const account = state.accounts.find((a) => a.id === calendar.accountId);
   if (!account?.calendarWrite) return json({ error: `AadOS may not edit ${account?.email || 'this'} calendar yet. Settings → Emails → “Allow calendar editing”.` }, { status: 403 });
   const i = b.input || {};

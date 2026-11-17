@@ -29,8 +29,8 @@ type LiveTarget = { pipeline: Pipeline; accountId: string; folderId: string };
  * every view that holds that folder; an account → its inbox; nothing → every account's inbox.
  * Accounts paused for auto sync are skipped.
  */
-export function liveTargets(state: AadOSState, scope: LiveScope): LiveTarget[] {
-  const live = (id: string) => state.accounts.some((account) => account.id === id && !account.paused);
+export function liveTargets(state: AadOSState, scope: LiveScope, allowed?: Set<string>): LiveTarget[] {
+  const live = (id: string) => (!allowed || allowed.has(id)) && state.accounts.some((account) => account.id === id && !account.paused);
   const out = new Map<string, LiveTarget>();
   for (const pipeline of state.pipelines) {
     if (scope.pipeline ? pipeline.id !== scope.pipeline : !pipeline.enabled) continue;
@@ -46,9 +46,9 @@ export function liveTargets(state: AadOSState, scope: LiveScope): LiveTarget[] {
 }
 
 /** Live sync of the folders on screen (newest page + changes since last time). Records per-account health. */
-export async function syncLive(state: AadOSState, scope: LiveScope) {
+export async function syncLive(state: AadOSState, scope: LiveScope, allowed?: Set<string>) {
   let added = 0, removed = 0, failed = 0;
-  for (const target of liveTargets(state, scope)) {
+  for (const target of liveTargets(state, scope, allowed)) {
     const account = state.accounts.find((item) => item.id === target.accountId);
     if (!account) continue;
     try {
