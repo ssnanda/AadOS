@@ -1,5 +1,36 @@
 # Development handoff
 
+## Phase 3 — AI, documents, notifications (v0.1.32)
+**Verified locally (Docker):** `bin/dev-local.sh test` (Svelte check, all Node tests incl. real-Postgres, Elixir incl. real DB), `npm run build`, `bin/dev-local.sh rebuild` of the real stack (see "Final verification" below). End-to-end on a throwaway stack (`aados-e2e`) with a mock AJMCP and a fake S3: `node apps/web/scripts/e2e-phase3.mjs` — all checks passed.
+**Not live-verified:** a real AJMCP call (no AadOS tenant token yet), a real RustFS bucket (no credentials yet), real Gmail/Zoho attachment download, browser UI review, browser notification popups (permission is user-triggered).
+
+### Configuration the owner must provide (nothing is invented)
+- **AJMCP**: create a dedicated site/assistant for AadOS in AJMCP (its own system prompt, provider, limits) and a site token — never reuse a WordPress tenant token. Then: `bin/dev-local.sh config AADOS_AJMCP_URL` (e.g. `https://ajmcp.ncllcagents.com`), `bin/dev-local.sh config AADOS_AJMCP_TOKEN`, `bin/dev-local.sh refresh`, Settings → AI → Test connection → Enable AI. `/health/ready` of that host answered 200 during development.
+- **RustFS**: a private bucket (e.g. `aados`) and an access key limited to it. `bin/dev-local.sh config AADOS_S3_ENDPOINT` (https), `..._BUCKET`, `..._ACCESS_KEY`, `..._SECRET_KEY` (optional `..._REGION`, `..._FORCE_PATH_STYLE`, `..._PREFIX`), then `refresh`, Settings → Storage → Test connection.
+- OpenShift: same variables via Secrets (not yet added to `openshift/app.yaml`; production still uses file storage, where AI conversations/documents are unavailable).
+
+### AJMCP contract used (from ssnanda/ajmcp-server docs/API.md + src)
+`POST /v1/chat {messages:[{role:user|assistant,content}]}` -> `{reply, provider, model, usage, requestId}`; `GET /v1/capabilities`. Bearer site token. Limits 20 messages × 6000 chars, 32 KB JSON, per-identity rate limit 30/min, concurrency cap (503 `busy`). Callers cannot set system prompt/provider/model. Transcripts: in-memory activity log (last ~300 requests, transcripts ≤20k chars) visible to the AJMCP admin, cleared on restart. Client: `apps/web/src/lib/server/ai/ajmcp.ts` (HTTPS only; plain HTTP only for loopback or `AADOS_ALLOW_HTTP_HOSTS`, used by local mocks).
+
+### Modules
+- `lib/server/ai/`: `ajmcp.ts` (client), `context.ts` (retrieval, prompt, citations), `email-ai.ts` (insight/draft prompts + validation + fingerprints), `briefing.ts` (deterministic briefing data + conflicts), `triage.ts`, `db.ts` (SQL), `service.ts` / `email-service.ts` / `briefing-service.ts` (server glue, workers).
+- `lib/server/documents/`: `storage.ts` (RustFS/S3 via @aws-sdk/client-s3), `validate.ts` (magic-byte validation, safe names), `extract.ts` (TXT/DOCX/PDF via unpdf), `service.ts`.
+- Routes: `/assistant` (+ `/assistant/api`), `/emails/ai`, `/briefing`, `/documents` (+ `/documents/upload`, `/documents/[id]`, `/documents/[id]/download`), `/reminders/feed`, `/settings/ai`, `/settings/storage`. Components: `EmailAI.svelte`, `ReminderNotifier.svelte`.
+- Migration `20261118000001_ai_and_documents` (additive, reversible): `ai_conversations`, `ai_messages`, `ai_insights`, `ai_drafts`, `ai_briefings`, `documents` (+ generated tsvector/GIN).
+- State: `ai` (enabled/background/emailBodies/share), `aiStatus`, `notify.browser` in `app_state`.
+
+### Decisions
+- AI features and documents require PostgreSQL storage (relational tables); they show a clear message on file storage.
+- Background jobs stay in-process (idempotent, durable state) rather than Oban: provider and AI code is TypeScript in the web app; Oban would need a cross-service queue. Revisit when sync moves to the API.
+- Web Push evaluated and deferred: needs VAPID keys + a push service worker + subscription storage; in-tab browser notifications are implemented, in-app reminders unchanged.
+- OCR deferred (no existing implementation; scanned PDFs/images are stored, marked "not searchable").
+- `bin/dev-local.sh` never commits or pushes (owner's Phase 3 instruction, reversing the earlier auto-bump request); `oc-deploy.sh` still bumps pending changes first.
+
+### Next
+1. Owner: AJMCP site token + RustFS bucket/keys -> live verification of assistant, triage, briefing, documents.
+2. Browser review of the new pages (desktop + mobile).
+3. OCR, Web Push, Oban migration, relational calendar/tasks/reminders, OpenShift secrets for AI/S3 + PostgreSQL in production.
+
 ## Phase 2 - Calendar, Tasks, Reminders (v0.1.29 - v0.1.30)
 **Verified locally (Docker), then CI on the release commit:** `bin/dev-local.sh test` = Svelte check 0 errors, 82 Node tests (6 on real Postgres), 22 Elixir tests. Real stack: all pages 200, task/reminder flows written to Postgres, restart recovery (no lost or duplicated reminders). Throwaway stack with mock events (`apps/web/scripts/e2e-mock-calendar.mjs`): month/week/day/agenda, filters, detail data, dashboard, failed-sync-keeps-events, event reminders.
 **Not live-verified:** any Google/Zoho Calendar API call (owner has not granted calendar scope yet), and nothing was looked at in a real browser (HTML checked with curl only).
@@ -52,9 +83,9 @@ Not verified: UI in a browser, live Gmail/Zoho/Google Calendar/Zoho Calendar cal
 Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by the permission classifier), so Elixir changes are verified only by CI.
 
 ## Local workflow (no GitHub Actions needed)
-- `bin/dev-local.sh rebuild`: if the tree is dirty it runs `bump.sh` first (interactive version prompt, commit, tag, push with `[skip ci]`), then builds/starts the stack.
+- `bin/dev-local.sh rebuild` builds/starts the stack from the working tree and never commits, bumps or pushes.
 - `bin/dev-local.sh test` runs `npm ci`, `npm run check`, `npm test`, then the Elixir unit + Postgres integration tests in Docker (`apitest` + throwaway in-memory `testdb`, compose profile `test`). Same checks as CI.
-- `bin/bump.sh` is the only script that commits/pushes (`push.sh` was removed). Every commit carries `[skip ci]`, with no opt-out, and the script pushes the release tag itself. `dev-local.sh rebuild` and `oc-deploy.sh` run `bump.sh --if-dirty` first. CI runs only on manual dispatch or pushes/PRs to `main` made outside these scripts.
+- `bin/bump.sh` is the only script that commits/pushes (`push.sh` was removed). Every commit carries `[skip ci]`, with no opt-out, and the script pushes the release tag itself. `oc-deploy.sh` runs `bump.sh --if-dirty` first; `dev-local.sh` never does. CI runs only on manual dispatch or pushes/PRs to `main` made outside these scripts.
 - Not yet run on this machine: Docker commands were blocked by the permission classifier during development; `bin/dev-local.sh test` is syntax- and compose-validated only.
 
 ## Architecture

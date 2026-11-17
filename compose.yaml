@@ -55,6 +55,19 @@ services:
       AADOS_DATABASE_URL: postgres://aados:${POSTGRES_PASSWORD:?Set by bin/dev-local.sh}@db:5432/aados
       AADOS_CREDENTIAL_ENCRYPTION_KEY: ${AADOS_CREDENTIAL_ENCRYPTION_KEY:?Set by bin/dev-local.sh}
       AADOS_INTERNAL_API_TOKEN: ${AADOS_INTERNAL_API_TOKEN:?Set by bin/dev-local.sh}
+      # Optional integrations (set with `bin/dev-local.sh config <KEY>`; empty = feature shows "not configured").
+      AADOS_AJMCP_URL: ${AADOS_AJMCP_URL:-}
+      AADOS_AJMCP_TOKEN: ${AADOS_AJMCP_TOKEN:-}
+      AADOS_S3_ENDPOINT: ${AADOS_S3_ENDPOINT:-}
+      AADOS_S3_BUCKET: ${AADOS_S3_BUCKET:-}
+      AADOS_S3_REGION: ${AADOS_S3_REGION:-}
+      AADOS_S3_ACCESS_KEY: ${AADOS_S3_ACCESS_KEY:-}
+      AADOS_S3_SECRET_KEY: ${AADOS_S3_SECRET_KEY:-}
+      AADOS_S3_FORCE_PATH_STYLE: ${AADOS_S3_FORCE_PATH_STYLE:-true}
+      # Hosts allowed over plain HTTP (local mocks only; production integrations must use HTTPS).
+      AADOS_ALLOW_HTTP_HOSTS: ${AADOS_ALLOW_HTTP_HOSTS:-}
+      # Document uploads up to 25 MB (adapter-node default is 512 KB).
+      BODY_SIZE_LIMIT: '27M'
     volumes:
       - aados-data:/data/aados
     ports:

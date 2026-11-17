@@ -1,7 +1,8 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
+  import EmailAI from './EmailAI.svelte';
   // Read-only viewer: the body is fetched on demand and rendered in a sandboxed iframe.
-  let { item, onclose }: { item: { pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string }; onclose: () => void } = $props();
+  let { item, onclose, ai = false }: { item: { pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; key?: string }; onclose: () => void; ai?: boolean } = $props();
   let body = $state<{ html: string; text: string } | null>(null);
   let loadError = $state('');
   let loading = $state(true);
@@ -22,6 +23,7 @@
 <aside class="viewer" aria-label="Email">
   <header><div><h3>{item.subject || '(no subject)'}</h3><p>{item.sender} · {new Date(item.receivedAt).toLocaleString()}</p></div>
     {#if body?.html && !images}<button type="button" onclick={() => images = true}>Load images</button>{/if}<button type="button" onclick={close}>✕ Close</button></header>
+  {#if ai && item.key}<EmailAI messageKey={item.key} subject={item.subject} />{/if}
   {#if loading}<div class="msg">Loading…</div>
   {:else if loadError}<div class="msg err">{loadError}</div>
   {:else if body}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body, images)}></iframe>{/if}

@@ -206,3 +206,24 @@ export async function fetchGmailBody(state: AadOSState, account: MailAccount, it
   walk(message.payload);
   return { html: found['text/html'] || '', text: found['text/plain'] || '' };
 }
+
+export type AttachmentInfo = { id: string; name: string; size: number; mime: string };
+/** Read-only: list a message's real attachments (users.messages.get format=full; parts with a filename + attachmentId). */
+export async function listGmailAttachments(state: AadOSState, account: MailAccount, messageId: string): Promise<AttachmentInfo[]> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=full`, { headers }));
+  const out: AttachmentInfo[] = [];
+  const walk = (part: Record<string, any> | undefined) => {
+    if (!part) return;
+    if (part.filename && part.body?.attachmentId) out.push({ id: String(part.body.attachmentId), name: String(part.filename), size: Number(part.body.size) || 0, mime: String(part.mimeType || '') });
+    for (const child of part.parts || []) walk(child);
+  };
+  walk(message.payload);
+  return out;
+}
+/** Read-only: one attachment's bytes (users.messages.attachments.get; base64url data). */
+export async function fetchGmailAttachment(state: AadOSState, account: MailAccount, messageId: string, attachmentId: string): Promise<Uint8Array> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const body = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, { headers }));
+  return Buffer.from(String(body.data || ''), 'base64url');
+}

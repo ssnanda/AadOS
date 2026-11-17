@@ -89,7 +89,7 @@ export type MailAccount = {
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean } };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -104,7 +104,10 @@ const emptyState = (): AadOSState => ({
   calendarSync: {},
   calendarDisabled: [],
   reminders: [],
-  prefs: defaultPrefs()
+  prefs: defaultPrefs(),
+  ai: defaultAiPrefs(),
+  aiStatus: defaultAiStatus(),
+  notify: { browser: false }
 });
 
 /** A view's folders, each resolved to its own account and provider. */
@@ -118,6 +121,11 @@ import { mergeSync } from './sync-merge.ts';
 import type { PendingFlows } from './oauth-state.ts';
 import type { CalEvent, CalendarInfo } from '../calendar/model.ts';
 import type { Reminder } from './reminders.ts';
+/** AI is OFF until the owner enables it; nothing is sent to AJMCP before that. */
+export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean }; emailBodies: boolean };
+export type AiStatus = { lastOk: string; lastError: string; lastErrorAt: string; provider: string; model: string; gatewayVersion: string; checkedAt: string };
+export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true }, emailBodies: false });
+export const defaultAiStatus = (): AiStatus => ({ lastOk: '', lastError: '', lastErrorAt: '', provider: '', model: '', gatewayVersion: '', checkedAt: '' });
 export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
 
 export const accountId = (provider: string, email: string) => `${provider}-${email.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)}`;
@@ -169,6 +177,9 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     calendarDisabled: saved.calendarDisabled || [],
     reminders: saved.reminders || [],
     prefs: { ...defaultPrefs(), ...(saved.prefs || {}) },
+    ai: { ...defaultAiPrefs(), ...(saved.ai || {}), share: { ...defaultAiPrefs().share, ...(saved.ai?.share || {}) } },
+    aiStatus: { ...defaultAiStatus(), ...(saved.aiStatus || {}) },
+    notify: { browser: false, ...(saved.notify || {}) },
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }
@@ -178,12 +189,22 @@ let queue = Promise.resolve();
 // ---- storage backends: `file` (encrypted state.enc, default) or `postgres` (AADOS_STORAGE=postgres) ----
 const usePostgres = () => env.AADOS_STORAGE === 'postgres';
 let pgPromise: Promise<PgStorage> | undefined;
+let sharedPool: pg.Pool | undefined;
+/** The one PostgreSQL pool of this process (state, AI and documents share it). */
+function poolFor(url: string): pg.Pool { return (sharedPool ??= new pg.Pool({ connectionString: url, max: 8 })); }
+/** For relational features (AI assistant, documents). Requires AADOS_STORAGE=postgres; waits for migrations. */
+export async function database(): Promise<pg.Pool> {
+  if (!usePostgres() || !env.AADOS_DATABASE_URL) throw new Error('This feature needs PostgreSQL storage (AADOS_STORAGE=postgres).');
+  await postgres();
+  return poolFor(env.AADOS_DATABASE_URL);
+}
+export const hasDatabase = () => usePostgres() && Boolean(env.AADOS_DATABASE_URL);
 
 /** Connect, wait for the API's migrations, and import state.enc once (backup first, integrity-checked, original kept). */
 function postgres(): Promise<PgStorage> {
   pgPromise ??= (async () => {
     if (!env.AADOS_DATABASE_URL) throw new Error('AADOS_DATABASE_URL is required when AADOS_STORAGE=postgres');
-    const storage = new PgStorage(new pg.Pool({ connectionString: env.AADOS_DATABASE_URL, max: 5 }), keyringFromEnv(env), normalizeState);
+    const storage = new PgStorage(poolFor(env.AADOS_DATABASE_URL), keyringFromEnv(env), normalizeState);
     await storage.ready();
     await importLegacyFile(storage);
     return storage;

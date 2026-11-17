@@ -61,7 +61,7 @@
         <time>{ago(r.receivedAt)}</time>
       </button>
       <div class="meta">
-        <span class="acct {r.provider}" title={r.accountEmail}>{r.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {r.accountEmail}</span>
+        {#if data.insights[r.key]}{@const ai = data.insights[r.key]}<span class="aitag" title={`AI suggestion (${ai.confidence >= 0.8 ? 'high' : ai.confidence >= 0.5 ? 'medium' : 'low'} confidence): ${ai.summary}`}>✦ {ai.category}{ai.paymentDue ? ` · due ${ai.paymentDue}` : ''}</span>{/if}<span class="acct {r.provider}" title={r.accountEmail}>{r.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {r.accountEmail}</span>
         {#each r.categories.filter((c) => c !== 'Other' || r.categories.length === 1) as c (c)}<a class="tag" href={href({ category: c })}>{c}</a>{/each}
         {#if r.threadCount > 1}<a class="tag thread" href={href({ thread: r.threadId, view: 'all' })} title="Show conversation">💬 {r.threadCount}</a>{/if}
         {#each r.pipelines as p (p)}<span class="tag view">{p}</span>{/each}
@@ -77,7 +77,7 @@
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}
 </main>
-{#if viewing}<EmailViewer item={viewing} onclose={() => viewing = null} />{/if}
+{#if viewing}<EmailViewer item={viewing} ai={data.aiAvailable} onclose={() => viewing = null} />{/if}
 </AppShell>
 <style>
   main{max-width:1100px}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
@@ -97,6 +97,7 @@
   .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.subj strong{font-weight:600}.subj em{font-style:normal;color:#8a95a8;margin-left:8px;font-size:12px}time{font-size:11px;color:#8a95a8;text-align:right}
   .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
   .tag,.acct{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f0f2f7;color:#5b6a86;text-decoration:none}.acct{background:#eef1ff;color:#3157de;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acct.gmail{background:#fff0ee;color:#d94d43}
+  .aitag{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f1ebff;color:#7c4dde;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tag.act{background:#fff4df;color:#a1752a}.tag.follow{background:#e3f6f3;color:#0f7f74}.tag.view{background:#f1ebff;color:#7c4dde}
   .ops{display:flex;gap:4px;margin:0 0 0 auto}.ops button{border:1px solid #e4e9f2;background:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#53607a;cursor:pointer}.ops button:hover{border-color:#8da2f0;color:#3157de}
   .pager{display:flex;gap:16px;align-items:center;justify-content:center;margin:16px 0;font-size:12px;color:#8a95a8}.pager a{color:#3157de;font-weight:700;text-decoration:none}

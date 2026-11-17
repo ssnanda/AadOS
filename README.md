@@ -4,11 +4,14 @@ AadOS is an independent, self-hosted personal AI operating system. **Email is th
 
 ## Current status
 
-- Version: **0.1.1** (bootstrap, not a connected email MVP).
-- API: Elixir/Phoenix health and email overview/messages endpoints.
-- Web: SvelteKit 2 / Svelte 5 / Tailwind CSS 4 dashboard.
-- Future: secure identity, Gmail and Outlook read-only OAuth, CloudNativePG/Postgres, AI triage and SwiftUI app.
-- Password-protected HTTPS workspace; live provider data remains disabled until OAuth, encrypted token storage and authorization checks are implemented.
+- Version: see `VERSION` (development; local Docker stack, no production deployment).
+- Email: Gmail and Zoho Mail (read-only), unified inbox, categories, Needs Reply, search.
+- Calendar: Google and Zoho Calendar (read-only, owner consent pending), month/week/day/agenda.
+- Tasks, reminders with notification center and browser notifications, daily dashboard.
+- AI (Phase 3): assistant, email insights, reply drafts, daily briefing — via the owner's AJMCP gateway; off until enabled.
+- Documents (Phase 3): uploads to the owner's RustFS bucket, text extraction, full-text search, document questions.
+- Storage: PostgreSQL primary locally (`AADOS_STORAGE=postgres`); credentials encrypted with a dedicated key.
+- See `docs/architecture.md`, `docs/roadmap.md` and `docs/development-handoff.md`.
 
 ## Scripts
 
@@ -16,11 +19,11 @@ AadOS is an independent, self-hosted personal AI operating system. **Email is th
 | --- | --- |
 | `./bin/pull-latest.sh` | Safely fast-forward clean local checkout from GitHub |
 | `./bin/bump.sh` | Patch-default version bump, commit, tag and push (option 5 = no bump) |
-| `./bin/dev-local.sh` | Local Docker Compose rebuild (bumps pending changes first), refresh, logs, stop, shell or test |
+| `./bin/dev-local.sh` | Local Docker Compose rebuild, refresh, logs, stop, shell or test (never commits or pushes) |
 | `./bin/oc-deploy.sh` | Deploy to OpenShift using `oc`, binary BuildConfigs and internal registry; no Helm |
 | `./bin/build-ipa.sh` | Signed IPA build; requires a future native Xcode project |
 
-None of these scripts start GitHub Actions: every commit made by `bump.sh` carries `[skip ci]`. `dev-local.sh rebuild` and `oc-deploy.sh` run `bump.sh` first when there are pending changes.
+None of these scripts start GitHub Actions: every commit made by `bump.sh` carries `[skip ci]`. `oc-deploy.sh` runs `bump.sh` first when there are pending changes; `dev-local.sh` never commits or pushes.
 
 ## OpenShift — using your existing oc login
 

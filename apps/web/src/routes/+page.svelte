@@ -4,6 +4,18 @@
   let { data }: { data: PageData } = $props();
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
+  let briefing = $state<any>(null);
+  let briefBusy = $state(false);
+  let briefError = $state('');
+  let briefOpen = $state(false);
+  $effect(() => { briefing = data.briefing.cached ? { ...data.briefing.cached.content, generatedAt: data.briefing.cached.generatedAt, provider: data.briefing.cached.provider, model: data.briefing.cached.model } : null; });
+  async function refreshBriefing() {
+    briefBusy = true; briefError = '';
+    try { const res = await fetch('/briefing', { method: 'POST' }); const body = await res.json(); if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`); briefing = { ...body, generatedAt: new Date().toISOString() }; }
+    catch (e) { briefError = e instanceof Error ? e.message : 'Failed.'; } finally { briefBusy = false; }
+  }
+  const escB = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+  const renderB = (b: any) => escB(b.summary || '').replace(/\[(S\d+)\]/g, (m: string, id: string) => { const s = (b.sources || []).find((x: any) => x.id === id); return s ? `<a class="cite" href="${escB(s.href)}" title="${escB(s.title)}">${id}</a>` : ''; }).replace(/\n/g, '<br>');
   const time = (iso: string) => new Date(iso).toLocaleTimeString([], { timeZone: data.tz, hour: 'numeric', minute: '2-digit' });
   const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString([], { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
   const stamp = (iso: string) => new Date(iso).toLocaleString([], { timeZone: data.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -13,6 +25,15 @@
 <AppShell title="Dashboard">
   <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a href="/emails?view=needs-reply"><b>{data.inbox.needsReply}</b> need reply</a><a href="/emails?view=important"><b>{data.inbox.important}</b> important</a><a href="/emails?category=Bills"><b>{data.inbox.bills}</b> bills</a><a href="/emails?category=Renewals"><b>{data.inbox.renewals}</b> renewals</a><a href="/emails?category=Receipts"><b>{data.inbox.receipts}</b> receipts</a><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
   <div class="quick"><a href="/calendar">▣ Open Calendar</a><a href="/tasks">☑ Add Task</a><a href="/reminders">◔ Create Reminder</a><a href="/emails">✉ Open Inbox</a>{#if data.calendar.enabled}<form method="POST" action="/calendar?/sync"><button>⇩ Sync Calendars</button></form>{/if}</div>
+  {#if data.briefing.configured}<div class="ai-brief">
+    <div class="bh2"><b>✦ AI briefing</b>{#if briefing?.generatedAt}<small>Generated {new Date(briefing.generatedAt).toLocaleString()}{briefing.day && briefing.day !== data.calendar.today ? ' · out of date' : ''}</small>{/if}
+      {#if data.briefing.aiEnabled}<button onclick={refreshBriefing} disabled={briefBusy}>{briefBusy ? 'Generating…' : briefing ? 'Refresh' : 'Generate'}</button>{:else}<a href="/settings/ai">Enable AI</a>{/if}</div>
+    {#if briefError}<p class="err">{briefError}</p>{/if}
+    {#if briefing}<div class="sum">{@html renderB(briefing)}</div>
+      {#if briefing.sources?.length}<button class="link" onclick={() => briefOpen = !briefOpen}>{briefOpen ? 'Hide' : 'Show'} sources ({briefing.sources.length})</button>{#if briefOpen}<ul class="srcs">{#each briefing.sources as s (s.id)}<li><a href={s.href}><b>{s.id}</b> {s.title}{s.date ? ` · ${s.date}` : ''}</a></li>{/each}</ul>{/if}{/if}
+      <small class="lbl2">AI summary of the data below · {[briefing.provider, briefing.model].filter(Boolean).join(' · ')}</small>
+    {:else if !briefBusy}<p class="muted">{data.briefing.aiEnabled ? 'No briefing yet today.' : 'AI is off; the cards below show your data.'}</p>{/if}
+  </div>{/if}
   {#each data.calendar.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails#acct-{e.id}">Fix in Settings</a></div>{/each}
   {#each data.brief.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails">Fix in Settings</a></div>{/each}
   {#if data.accounts > 0}<div class="brief">
@@ -44,6 +65,8 @@
   </div>
 </AppShell>
 <style>
+  .ai-brief{background:#fff;border:1px solid #e4e9f2;border-left:3px solid #7c4dde;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px}.bh2{display:flex;gap:10px;align-items:center}.bh2 b{color:#7c4dde}.bh2 small{color:#8a95a8;font-size:11px;flex:1}.bh2 button,.bh2 a{margin-left:auto;border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:5px 11px;font-size:12px;font-weight:700;color:#43516c;cursor:pointer;text-decoration:none}.bh2 button:disabled{opacity:.6}
+  .sum{margin:8px 0;line-height:1.55;color:#29344c}.sum :global(.cite){background:#eef1ff;color:#3157de;border-radius:5px;padding:0 5px;font-size:11px;font-weight:800;text-decoration:none}.ai-brief .link{border:0;background:none;color:#3157de;font-weight:700;font-size:12px;cursor:pointer;padding:0}.srcs{list-style:none;padding:0;margin:6px 0;display:grid;gap:3px;font-size:12px}.srcs a{color:#53607a;text-decoration:none}.srcs b{color:#3157de;font-size:10px}.lbl2{display:block;color:#8a95a8;font-size:10px;margin-top:6px}.ai-brief .err{color:#a5414d;margin:6px 0 0}
   .quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.quick a,.quick button{background:#fff;border:1px solid #e4e9f2;border-radius:9px;padding:7px 12px;font:inherit;font-size:12px;font-weight:700;color:#43516c;text-decoration:none;cursor:pointer}.quick a:hover,.quick button:hover{border-color:#8da2f0;color:#3157de}.quick form{margin:0}
   .next{margin:0 0 6px;font-size:12px;color:#53607a}.bc .muted a,.wk a{color:#3157de;text-decoration:none;font-weight:700}.wk a{font-weight:600;color:#53607a}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:12px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}

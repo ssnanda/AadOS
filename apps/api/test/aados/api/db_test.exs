@@ -46,7 +46,7 @@ defmodule AadOS.Api.DbTest do
   end
 
   test "migrations are applied (tables exist)" do
-    for table <- ~w(mail_accounts mail_messages mail_message_views mail_sync_checkpoints mail_credentials mail_tasks) do
+    for table <- ~w(mail_accounts mail_messages mail_message_views mail_sync_checkpoints mail_credentials mail_tasks app_state ai_conversations ai_messages ai_insights ai_drafts ai_briefings documents) do
       assert Repo.query!("SELECT to_regclass($1)::text", [table]).rows == [[table]]
     end
   end

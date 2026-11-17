@@ -44,7 +44,17 @@ Keep scope small: deliver useful inbox access before extending to household task
 - [ ] Live Google/Zoho calendar verification and browser review
 - [ ] Relational tables + Oban jobs for calendar/tasks/reminders
 
-## Phase 3 — AI and documents
-- [ ] AJMCP integration (triage, summaries, draft suggestions with human review)
-- [ ] RustFS (S3) integration for attachments and documents
-- [ ] Push/browser notifications for reminders
+## Phase 3 — AI, documents and notifications (v0.1.32)
+- [x] AJMCP client (auth, limits, timeouts, bounded retries, error classes, capabilities) + Settings → AI (privacy controls, test connection, status)
+- [x] AI Assistant: persistent conversations (PostgreSQL), search/rename/delete, cancel/retry, grounded answers with source links
+- [x] Permission-aware retrieval (email, calendar, tasks, reminders, documents) with prompt-injection defences
+- [x] Email insights (summary, category, importance, reply, deadlines/payments/renewals/appointments, suggested task) with fingerprint caching and opt-in background triage
+- [x] AI reply drafts (generate/shorten/formal/friendly/regenerate, edit, save, copy) — never sent
+- [x] AI daily briefing on the dashboard (cached, owner-triggered, conflicts detection)
+- [x] RustFS adapter + Settings → Storage; Documents module (upload with progress, folders, filters, rename, delete, authenticated download)
+- [x] Text extraction (TXT, DOCX, native PDF) + PostgreSQL full-text search; document questions/compare with citations
+- [x] Save selected Gmail/Zoho attachments to Documents (deduplicated)
+- [x] Browser notifications for due reminders (opt-in, deduplicated)
+- [ ] Live AJMCP tenant for AadOS (owner creates the site/token) and live RustFS bucket/credentials
+- [ ] OCR for scanned PDFs/images; Web Push (VAPID) while the browser is closed
+- [ ] Move sync/triage/extraction to Oban; normalise calendar/tasks/reminders into relational tables

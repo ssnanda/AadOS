@@ -1,5 +1,7 @@
 import { fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+import { database, hasDatabase } from '$lib/server/aados-store';
+import { getInsights } from '$lib/server/ai/db';
 import { ensureInboxPipelines, missingInboxPipelines, readState, updateState, visiblePipelines } from '$lib/server/aados-store';
 import { buildRows, queryInbox, type InboxQuery, type InboxView } from '$lib/server/inbox';
 import { CATEGORIES } from '$lib/server/categories';
@@ -18,7 +20,11 @@ export const load: PageServerLoad = async ({ url }) => {
     pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize: 50
   };
   const result = queryInbox(buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items }), query);
+  // Cached AI insights for the visible rows only (never computed here).
+  const insights: Record<string, { summary: string; category: string; confidence: number; needsReply: boolean; paymentDue: string | null }> = {};
+  if (hasDatabase()) for (const [k, v] of await getInsights(await database(), result.rows.map((r) => r.key)).catch(() => new Map())) if (v.status === 'done' && v.insight) insights[k] = { summary: v.insight.summary, category: v.insight.category, confidence: v.insight.confidence, needsReply: v.insight.needsReply, paymentDue: v.insight.paymentDue };
   return {
+    insights, aiAvailable: hasDatabase(),
     query, ...result,
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '' })),

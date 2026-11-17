@@ -193,3 +193,16 @@ export async function fetchZohoBody(state: AadOSState, account: MailAccount, pip
   }
   throw last;
 }
+
+/** Read-only (documented): GET .../messages/{messageId}/attachmentinfo -> data.attachments[{attachmentId, attachmentName, attachmentSize}]. */
+export async function listZohoAttachments(state: AadOSState, account: MailAccount, folderId: string, messageId: string): Promise<{ id: string; name: string; size: number; mime: string }[]> {
+  const r = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/attachmentinfo`);
+  return (Array.isArray(r.data?.attachments) ? r.data.attachments : []).map((a: Record<string, unknown>) => ({ id: String(a.attachmentId || ''), name: String(a.attachmentName || 'attachment'), size: Number(a.attachmentSize) || 0, mime: '' })).filter((a: { id: string }) => a.id);
+}
+/** Read-only (documented): GET .../attachments/{attachmentId} returns the raw bytes. */
+export async function fetchZohoAttachment(state: AadOSState, account: MailAccount, folderId: string, messageId: string, attachmentId: string): Promise<Uint8Array> {
+  const token = await accessToken(state, account);
+  const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/octet-stream' } });
+  if (!res.ok) throw new Error(`Zoho attachment HTTP ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}

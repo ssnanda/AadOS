@@ -2,6 +2,7 @@
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import SyncProgress from './SyncProgress.svelte';
+  import ReminderNotifier from './ReminderNotifier.svelte';
   import { purgeAndSync, startFullSync } from '$lib/sync';
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
@@ -27,6 +28,7 @@
   const here = (path: string) => path === '/' ? page.url.pathname === '/' : page.url.pathname === path;
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
 </script>
+<ReminderNotifier enabled={Boolean(page.data.shell?.notifyBrowser)} />
 <div class="workspace">
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
@@ -34,6 +36,8 @@
     <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails</a>
     <a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a>
     <a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>
+    <a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>
+    <a class="nav teal" class:active={page.url.pathname.startsWith('/documents')} href="/documents"><span>▤</span>Documents</a>
     <a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>
     {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
     <small class="ver">v{__APP_VERSION__}</small>

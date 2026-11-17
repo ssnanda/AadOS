@@ -9,13 +9,25 @@
   // <input type=date/time> values in the owner's zone.
   const parts = (iso: string) => { const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: data.tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).map((x) => [x.type, x.value])); return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` }; };
   const icon = (s: string) => s === 'task' ? '☑' : s === 'event' ? '▣' : '◔';
+  let permission = $state(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
+  let notifyOn = $state(false);
+  $effect(() => { notifyOn = data.notifyBrowser; });
+  // Asked only when the owner clicks; denied or unsupported browsers keep using in-app reminders.
+  async function toggleNotify() {
+    if (typeof Notification === 'undefined') { permission = 'unsupported'; return; }
+    let want = !notifyOn;
+    if (want && Notification.permission !== 'granted') { permission = await Notification.requestPermission(); want = permission === 'granted'; }
+    await fetch('/reminders/feed', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ browser: want }) });
+    notifyOn = want; location.reload();
+  }
   const SNOOZE = [[10, '10 min'], [60, '1 hour'], [180, '3 hours'], [1440, 'Tomorrow']] as const;
 </script>
 <svelte:head><title>Reminders · AadOS</title></svelte:head>
 <AppShell title="Reminders">
 <main>
   <header><div><h1>Reminders</h1><p>{data.active.length} waiting · {data.unread} unread · {data.upcoming.length} upcoming · times in {data.tz}</p></div>
-    {#if data.unread}<form method="POST" action="?/readAll" use:enhance><button class="btn">Mark all read</button></form>{/if}</header>
+    {#if data.unread}<form method="POST" action="?/readAll" use:enhance><button class="btn">Mark all read</button></form>{/if}
+    <button class="btn" type="button" onclick={toggleNotify} disabled={permission === 'unsupported'} title={permission === 'denied' ? 'Notifications are blocked in this browser; allow them in the site settings' : ''}>{permission === 'unsupported' ? 'Browser notifications unsupported' : notifyOn && permission === 'granted' ? '🔔 Browser notifications on' : permission === 'denied' ? 'Notifications blocked' : '🔕 Enable browser notifications'}</button></header>
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   <form method="POST" action="?/create" use:enhance class="add"><input name="title" placeholder="Remind me to…" required maxlength="200" aria-label="Reminder"><input type="date" name="date" required aria-label="Date"><input type="time" name="time" required aria-label="Time"><button class="btn">Add</button></form>
 

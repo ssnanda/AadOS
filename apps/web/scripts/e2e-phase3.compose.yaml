@@ -1,0 +1,23 @@
+# Overlay for the THROWAWAY e2e stack only:
+#   docker compose -p aados-e2e --env-file apps/web/scripts/e2e-mock.env -f compose.yaml -f apps/web/scripts/e2e-phase3.compose.yaml up -d --build --wait
+# Adds local test doubles (mock AJMCP + fake S3) and points the web app at them. Never used for the real stack.
+services:
+  mocks:
+    image: node:22-alpine
+    command: ['node', '/mocks/e2e-mocks.mjs']
+    volumes:
+      - ./apps/web/scripts/e2e-mocks.mjs:/mocks/e2e-mocks.mjs:ro
+    ports:
+      - '127.0.0.1:9997:9999'
+  web:
+    environment:
+      AADOS_AJMCP_URL: http://mocks:9999
+      AADOS_AJMCP_TOKEN: e2e-ajmcp-token
+      AADOS_S3_ENDPOINT: http://mocks:9998
+      AADOS_S3_BUCKET: aados-e2e
+      AADOS_S3_ACCESS_KEY: e2eak
+      AADOS_S3_SECRET_KEY: e2esk
+      AADOS_ALLOW_HTTP_HOSTS: mocks
+    depends_on:
+      mocks:
+        condition: service_started

@@ -12,7 +12,7 @@ export const load: PageServerLoad = async () => {
   const tz = validZone(state.prefs.timeZone) ? state.prefs.timeZone : 'UTC';
   const slim = (r: (typeof state.reminders)[number]) => ({ id: r.id, title: r.title, at: effectiveAt(r), original: r.at, snoozed: Boolean(r.snoozedUntil), status: r.status, source: r.source.type, note: r.note || '', unread: r.status === 'fired' && !r.readAt, closedAt: r.closedAt || '', auto: Boolean(r.dedupeKey),
     link: r.source.type === 'task' ? '/tasks' : r.source.type === 'event' ? `/calendar?view=day&date=${r.source.occurrenceStart.slice(0, 10)}` : '' });
-  return { active: lists.active.map(slim), upcoming: lists.upcoming.slice(0, 100).map(slim), history: lists.history.slice(0, 100).map(slim), unread: lists.unread, overdue: lists.overdue, tz, prefs: state.prefs };
+  return { notifyBrowser: state.notify.browser, active: lists.active.map(slim), upcoming: lists.upcoming.slice(0, 100).map(slim), history: lists.history.slice(0, 100).map(slim), unread: lists.unread, overdue: lists.overdue, tz, prefs: state.prefs };
 };
 
 /** Date + time typed by the owner (their zone) -> instant. */

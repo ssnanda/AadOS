@@ -6,7 +6,9 @@
   const items = [
     { href: '/settings', label: 'General', icon: '⚙' },
     { href: '/settings/family', label: 'Family', icon: '👪' },
-    { href: '/settings/emails', label: 'Emails', icon: '✉' }
+    { href: '/settings/emails', label: 'Emails', icon: '✉' },
+    { href: '/settings/ai', label: 'AI', icon: '✦' },
+    { href: '/settings/storage', label: 'Storage', icon: '▤' }
   ];
   const active = (href: string) => href === '/settings' ? page.url.pathname === href : page.url.pathname.startsWith(href);
 </script>
