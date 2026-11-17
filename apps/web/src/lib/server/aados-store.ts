@@ -87,6 +87,8 @@ export type MailAccount = {
   canFilter?: boolean;
   /** Read-only calendar access was granted for this account (Google calendar.readonly / Zoho Calendar READ). */
   calendar?: boolean;
+  /** May create/edit/delete events (Google calendar.events / Zoho ZohoCalendar.event.CREATE+UPDATE+DELETE). */
+  calendarWrite?: boolean;
   calendarLastSync?: string;
   calendarError?: string;
   /** Excluded from the scheduled sync (manual sync still works). */
@@ -373,7 +375,7 @@ export function publicState(state: AadOSState) {
     dataCenter: state.zoho.dataCenter,
     gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
     // Tokens never leave the server.
-    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
+    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarWrite: Boolean(account.calendarWrite), calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
     pipelines: visiblePipelines(state),
     itemCounts: Object.fromEntries(visiblePipelines(state).map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };

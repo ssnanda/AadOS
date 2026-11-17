@@ -2,12 +2,15 @@
   import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import { startAutoSync } from '$lib/sync';
+  import EventForm from '$lib/components/EventForm.svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
   // Calendars sync automatically (on open, every 2 minutes while visible), like email.
   onMount(() => { if (!data.enabled) return; const auto = startAutoSync(() => ({}), () => invalidateAll(), '/calendar/live'); void auto.run(); return () => auto.stop(); });
   let openRef = $state('');
+  // Event form: null = closed; `existing` = editing that event.
+  let eventForm = $state<{ date: string; existing?: NonNullable<typeof detail> } | null>(null);
   const detail = $derived(openRef ? data.details[openRef] : null);
 
   // Every link keeps the other filters, so navigation never loses the current view.
@@ -37,8 +40,9 @@
 <AppShell title="Calendar">
 <main>
   <header>
-    <div><h1>{title}</h1><p>{data.total} event{data.total === 1 ? '' : 's'} · read-only · {data.tz}{#if data.lastSync} · synced {new Date(data.lastSync).toLocaleString()}{/if}</p></div>
+    <div><h1>{title}</h1><p>{data.total} event{data.total === 1 ? '' : 's'}{data.canEditAny ? '' : ' · read-only'} · {data.tz}{#if data.lastSync} · synced {new Date(data.lastSync).toLocaleString()}{/if}</p></div>
   </header>
+  {#if data.canEditAny}<button type="button" class="btn newev" onclick={() => (eventForm = { date: data.date })}>＋ New event</button>{:else if data.enabled}<a class="btn" href="/settings/emails" title="Grant AadOS permission to add and edit events">Allow calendar editing</a>{/if}
   {#each data.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails#acct-{e.id}">Settings</a></div>{/each}
 
   <div class="bar">
@@ -52,14 +56,14 @@
     <a class="manage" href="/settings/emails">Manage calendars</a>
   </div>{/if}
 
-  {#if data.enabled === 0}<div class="empty">No calendar access yet. <a href="/settings/emails">Enable calendar</a> on a Google or Zoho account in Settings; AadOS asks for read-only permission and never changes your calendar.</div>
+  {#if data.enabled === 0}<div class="empty">No calendar access yet. <a href="/settings/emails">Enable calendar</a> on a Google or Zoho account in Settings to see and edit your events here.</div>
   {:else if data.calendars.length === 0}<div class="empty">Calendar access is on. Your events load automatically.</div>
   {:else if data.view === 'month'}
     <div class="month" role="grid" aria-label={title}>
       {#each weekdays as w (w)}<div class="wd">{w}</div>{/each}
       {#each data.days as d (d.date)}
         <div class="cell" class:out={!d.inMonth} class:today={d.isToday}>
-          <a class="num" href={href({ view: 'day', date: d.date })} aria-label={fmtDay(d.date, { weekday: 'long', month: 'long', day: 'numeric' })}>{Number(d.date.slice(8))}</a>
+          <a class="num" href={href({ view: 'day', date: d.date })} aria-label={fmtDay(d.date, { weekday: 'long', month: 'long', day: 'numeric' })}>{Number(d.date.slice(8))}</a>{#if data.canEditAny}<button type="button" class="add" title="New event on this day" aria-label="New event on this day" onclick={() => (eventForm = { date: d.date })}>＋</button>{/if}
           {#each d.items.slice(0, 3) as i (i.key)}<button type="button" class="ev" class:block={i.allDay} style="--c:{i.color}" onclick={() => openRef = i.ref}>{#if !i.allDay}<i></i><em>{label(i)}</em>{/if}<span>{i.title}</span></button>{/each}
           {#if d.items.length > 3}<a class="more" href={href({ view: 'day', date: d.date })}>+{d.items.length - 3} more</a>{/if}
           {#if d.items.length}<a class="dots" href={href({ view: 'day', date: d.date })} aria-label="{d.items.length} events">{#each d.items.slice(0, 4) as i (i.key)}<i style="background:{i.color}"></i>{/each}</a>{/if}
@@ -84,7 +88,7 @@
 {#if detail}
   <div class="backdrop" role="presentation" onclick={() => openRef = ''}></div>
   <aside class="panel" aria-label="Event details">
-    <header><div><h3><i style="background:{detail.color}"></i>{detail.title}</h3><p>{span(detail)}</p></div><button type="button" class="btn" onclick={() => openRef = ''}>✕</button></header>
+    <header><div><h3><i style="background:{detail.color}"></i>{detail.title}</h3><p>{span(detail)}</p></div>{#if detail.writable}<button type="button" class="btn" onclick={() => (eventForm = { date: data.date, existing: detail })}>✎ Edit</button>{/if}<button type="button" class="btn" onclick={() => openRef = ''}>✕</button></header>
     <dl>
       {#if detail.recurring}<dt>Repeats</dt><dd>↻ {detail.recurrence || 'Recurring event'}</dd>{/if}
       {#if !detail.allDay && detail.timeZone && detail.timeZone !== data.tz}<dt>Event time zone</dt><dd>{time(detail.start, detail.timeZone)} – {time(detail.end, detail.timeZone)} ({detail.timeZone})</dd>{/if}
@@ -102,7 +106,10 @@
   </aside>
 {/if}
 </AppShell>
+{#if eventForm}<EventForm calendars={data.calendars} tz={data.tz} date={eventForm.date} existing={eventForm.existing ?? null} onclose={() => (eventForm = null)} onsaved={async () => { openRef = ''; await invalidateAll(); }} />{/if}
+
 <style>
+  .newev{background:#3157de;border-color:#3157de;color:#fff;margin-bottom:10px}.cell{position:relative}.add{position:absolute;top:4px;right:4px;border:0;background:none;color:#8da2f0;font-size:13px;cursor:pointer;opacity:0;padding:0 4px}.cell:hover .add{opacity:1}.add:hover{color:#3157de}
   main{max-width:1150px}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}header>div{flex:1;min-width:0}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:7px 12px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px;text-decoration:none;display:inline-block}.btn:hover{border-color:#8da2f0}.btn.nav{padding:7px 11px}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}

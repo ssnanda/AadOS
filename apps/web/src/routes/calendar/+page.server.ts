@@ -20,7 +20,8 @@ export const load: PageServerLoad = async ({ url }) => {
   const hidden = new Set((p.get('off') || '').split(',').filter(Boolean));
   const disabled = new Set(state.calendarDisabled);
 
-  const calendars = state.calendars.map((c, i) => ({ id: c.id, name: c.name, accountId: c.accountId, provider: c.provider, color: /^#[0-9a-f]{3,8}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length], primary: c.primary, syncing: !disabled.has(c.id), shown: !hidden.has(c.id) && !disabled.has(c.id) && (!account || c.accountId === account) }));
+  const writable = new Set(state.accounts.filter((a) => a.calendarWrite).map((a) => a.id));
+  const calendars = state.calendars.map((c, i) => ({ id: c.id, name: c.name, accountId: c.accountId, writable: writable.has(c.accountId), provider: c.provider, color: /^#[0-9a-f]{3,8}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length], primary: c.primary, syncing: !disabled.has(c.id), shown: !hidden.has(c.id) && !disabled.has(c.id) && (!account || c.accountId === account) }));
   const byId = new Map(calendars.map((c) => [c.id, c]));
   const shown = new Set(calendars.filter((c) => c.shown).map((c) => c.id));
 
@@ -35,7 +36,9 @@ export const load: PageServerLoad = async ({ url }) => {
       title: o.title, start: o.start, end: o.end, allDay: o.allDay, timeZone: o.timeZone, location: o.location, description: text(o.description || ''),
       organizer: o.organizer || '', attendees: (o.attendees || []).slice(0, 50), attendeeCount: (o.attendees || []).length, meetingUrl: /^https?:\/\//i.test(o.meetingUrl || '') ? o.meetingUrl! : '',
       htmlLink: /^https:\/\//i.test(o.htmlLink || '') ? o.htmlLink! : '', recurrence: describeRecurrence(o.recurrence), recurring: Boolean(o.recurrence?.length || o.recurringEventId), tentative: o.status === 'tentative',
-      calendar: c?.name || '', color: c?.color || PALETTE[0], provider: o.provider
+      calendar: c?.name || '', color: c?.color || PALETTE[0], provider: o.provider,
+      // For editing: the stored event (a series for repeating events), its calendar and the raw text fields.
+      eventId: o.id, calendarId: o.calendarId, writable: writable.has(o.accountId), rawDescription: (o.description || '').slice(0, 8000)
     }];
   }));
   const enabled = state.accounts.filter((a) => a.calendar);
@@ -47,6 +50,7 @@ export const load: PageServerLoad = async ({ url }) => {
     calendars, account, off: [...hidden],
     accounts: state.accounts.filter((a) => a.calendar).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} · ${a.email}` })),
     enabled: enabled.length,
+    canEditAny: enabled.some((a) => a.calendarWrite),
     errors: enabled.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} · ${a.email}`, message: a.calendarError! })),
     lastSync: enabled.map((a) => a.calendarLastSync || '').sort().pop() || ''
   };

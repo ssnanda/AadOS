@@ -18,6 +18,8 @@ export type CalEvent = {
   recurrence?: string[];
   /** Set on an edited/cancelled single instance of a recurring event. */
   recurringEventId?: string; originalStart?: string;
+  /** Zoho's version tag, required to update or delete the event. */
+  etag?: string;
 };
 export type Occurrence = CalEvent & { occurrenceStart: string };
 

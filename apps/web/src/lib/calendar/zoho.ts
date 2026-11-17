@@ -39,6 +39,7 @@ export function mapZohoEvent(raw: Raw, calendar: CalendarInfo): CalEvent | null 
     title: String(raw.title || '(no title)'), description: String(raw.description || ''), location: String(raw.location || ''),
     start: start.iso, end: (end || start).iso, allDay, timeZone: String(dt.timezone || calendar.timeZone), status: raw.status === 'cancelled' ? 'cancelled' : 'confirmed',
     ...(raw.organizer ? { organizer: String(raw.organizer) } : {}), ...(attendees.length ? { attendees } : {}), ...(meetingUrl ? { meetingUrl } : {}),
+    ...(raw.etag ? { etag: String(raw.etag) } : {}),
     ...(rrule.length ? { recurrence: rrule.map((r) => (/^RRULE:/i.test(r) ? r : `RRULE:${r}`)) } : {})
   };
 }
@@ -46,6 +47,8 @@ export function mapZohoEvent(raw: Raw, calendar: CalendarInfo): CalEvent | null 
 // ---- fetch client (documented Zoho Calendar API v1; unverified against a live account) ----
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 const calendarBase = (dc: string) => `https://calendar.zoho.${dc || 'com'}/api/v1`;
+/** Zoho calendar uids end in base64 padding (`==`); Zoho answers 404 when it is percent-encoded, so `=` stays literal. */
+export const zohoUid = (uid: string) => encodeURIComponent(uid).replace(/%3D/gi, '=');
 
 async function getZoho(fetchImpl: Fetch, url: string, token: string): Promise<Raw> {
   const res = await fetchImpl(url, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json+large' } }); // +large: documented way to include event descriptions
@@ -68,7 +71,7 @@ export async function fetchZohoEvents(fetchImpl: Fetch, dc: string, token: strin
   for (let start = from.getTime(); start < to.getTime(); start += 30 * 86_400_000) {
     const end = Math.min(start + 30 * 86_400_000, to.getTime());
     const range = encodeURIComponent(JSON.stringify({ start: stamp(new Date(start)), end: stamp(new Date(end)) }));
-    const body = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars/${encodeURIComponent(calendar.providerCalendarId)}/events?range=${range}`, token);
+    const body = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars/${zohoUid(calendar.providerCalendarId)}/events?range=${range}`, token);
     for (const raw of Array.isArray(body.events) ? body.events : []) { const ev = mapZohoEvent(raw, calendar); if (ev) out.set(ev.id, ev); }
   }
   return [...out.values()];

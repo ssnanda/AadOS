@@ -1,29 +1,30 @@
 <script lang="ts">
+  // Settings open inside the normal app frame (left menu + top bar); the settings pages are tabs above the content.
   import { page } from '$app/state';
-  import SyncProgress from '$lib/components/SyncProgress.svelte';
+  import AppShell from '$lib/components/AppShell.svelte';
+  import { SETTINGS_PAGES as items } from '$lib/settings-nav';
   let { children, data } = $props();
   const providers = [{ key: 'zoho', label: 'Zoho Mail' }, { key: 'gmail', label: 'Gmail' }];
-  import { SETTINGS_PAGES as items } from '$lib/settings-nav';
   const active = (href: string) => href === '/settings' ? page.url.pathname === href : page.url.pathname.startsWith(href);
+  const current = $derived(items.find((i) => active(i.href))?.label || 'General');
 </script>
+<AppShell title={`Settings · ${current}`}>
 <div class="settings">
-  <nav aria-label="Settings"><a class="home" href="/">← Home</a>{#each items as item}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>
-    {#if item.href === '/settings/emails' && active(item.href)}<div class="sub"><a href="/settings/emails#connections">Connections</a>{#each providers as p}<a href={`/settings/emails#${p.key}`} class="prov">{p.label}</a>{#each data.mailAccounts.filter((a) => a.provider === p.key) as a (a.id)}<a href={`/settings/emails#acct-${a.id}`} class="acct" title={a.email}>{a.email}</a>{/each}{/each}<a href="/settings/emails#views">Views</a></div>{/if}{/each}</nav>
+  <nav class="tabs" aria-label="Settings">{#each items as item (item.href)}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>{/each}</nav>
+  {#if active('/settings/emails')}<nav class="sub" aria-label="Email settings sections"><a href="/settings/emails#connections">Connections</a>{#each providers as p (p.key)}<span class="prov"><a href={`/settings/emails#${p.key}`}>{p.label}</a>{#each data.mailAccounts.filter((a) => a.provider === p.key) as a (a.id)}<a href={`/settings/emails#acct-${a.id}`} class="acct" title={a.email}>{a.email}</a>{/each}</span>{/each}<a href="/settings/emails#views">Views</a></nav>{/if}
   <div class="content">{@render children()}</div>
 </div>
-<SyncProgress />
+</AppShell>
 <style>
-  .settings{display:flex;align-items:flex-start;max-width:1150px;margin:auto;color:#29344c}
-  nav{position:sticky;top:0;display:grid;gap:4px;width:230px;flex:none;padding:35px 0 0 24px}
-  nav a{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:9px;color:#43516c;text-decoration:none;font-weight:600}
-  nav a span{width:20px;text-align:center}
-  nav a:hover{background:#eef1f8}
-  nav a.active{background:#eef1ff;color:#3157de}
-  .sub{display:grid;gap:1px;margin:-2px 0 6px 22px;border-left:1px solid #e3e8f1;padding-left:8px}
-  .sub a{padding:5px 8px;font-size:13px;font-weight:600;color:#5b6a86}.sub .prov{margin-top:3px;color:#43516c}.sub .acct{padding-left:18px;font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
-  nav .home{color:#8a95a8;font-weight:500;margin-bottom:8px}
-  .content{flex:1;min-width:0}
-  .content :global(main){max-width:none;margin:0}
-  .content :global(header > a:first-child){display:none}
-  @media(max-width:700px){.settings{display:block}nav{position:static;width:auto;display:flex;flex-wrap:wrap;padding:16px 16px 0}nav .home{width:100%;margin:0}}
+  .settings{color:#29344c;max-width:1150px}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #e3e8f1;padding-bottom:10px;margin-bottom:10px}
+  .tabs a{display:flex;gap:8px;align-items:center;padding:8px 14px;border-radius:9px;color:#43516c;text-decoration:none;font-weight:700;font-size:13px}
+  .tabs a span{width:18px;text-align:center}.tabs a:hover{background:#eef1f8}.tabs a.active{background:#eef1ff;color:#3157de}
+  .sub{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;font-size:12px;margin-bottom:6px}
+  .sub a{color:#5b6a86;text-decoration:none;font-weight:600;padding:3px 0}.sub a:hover{color:#3157de}
+  .prov{display:inline-flex;gap:8px;align-items:center;background:#f6f7fa;border-radius:8px;padding:2px 9px}.prov > a:first-child{color:#43516c;font-weight:800}
+  .acct{font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .content{min-width:0}
+  .content :global(main){max-width:none;margin:0;padding:6px 0 30px}
+  .content :global(main > header > a:first-child){display:none}
 </style>

@@ -14,7 +14,7 @@ async function jsonResponse(response: Response) {
 }
 
 export const ZOHO_MAIL_SCOPE = 'ZohoMail.accounts.READ,ZohoMail.folders.READ,ZohoMail.messages.READ,ZohoMail.messages.UPDATE,ZohoMail.messages.DELETE,ZohoMail.messages.CREATE';
-export const ZOHO_CALENDAR_SCOPE = 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ';
+export const ZOHO_CALENDAR_SCOPE = 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ,ZohoCalendar.event.CREATE,ZohoCalendar.event.UPDATE,ZohoCalendar.event.DELETE';
 
 export function beginOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean } = {}) {
   const token = randomBytes(24).toString('base64url');
@@ -41,6 +41,7 @@ export async function finishOAuth(state: AadOSState, code: string, returnedState
   account.id = accountId('zoho', account.email || account.remoteId);
   const existing = state.accounts.find((item) => item.id === account.id);
   account.calendar = String(tokens.scope || '').includes('ZohoCalendar');
+  account.calendarWrite = /ZohoCalendar\.event\.(ALL|CREATE)/.test(String(tokens.scope || ''));
   account.canSend = /messages\.(ALL|CREATE)/.test(String(tokens.scope || ''));
   account.canModify = /messages\.(ALL|UPDATE)/.test(String(tokens.scope || '')) && /messages\.(ALL|DELETE)/.test(String(tokens.scope || ''));
   if (existing) Object.assign(existing, account, { refreshToken: account.refreshToken || existing.refreshToken });
