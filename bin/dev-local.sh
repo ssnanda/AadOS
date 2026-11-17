@@ -92,15 +92,19 @@ if [[ "$CONFIG_CHANGED" == true ]]; then printf '%s\n' "$CONFIG" | sed '/^$/d' |
 set -a
 eval "$CONFIG"
 set +a
-echo "Local login: username $AADOS_USER"
-if [[ -n "${NEW_LOGIN_PASSWORD:-}" ]]; then echo "              password $NEW_LOGIN_PASSWORD   (shown once - save it now)"; fi
 [[ ${#SECRET_KEY_BASE} -ge 64 ]] || { echo 'ERROR: SECRET_KEY_BASE must contain at least 64 characters.' >&2; exit 1; }
+# Printed last, after all build/compose output, so it is the final thing on screen.
+summary() {
+  echo ''
+  echo "AadOS v$(tr -d '[:space:]' < "$ROOT/VERSION") is running locally."
+  echo "  URL:      http://127.0.0.1:${AADOS_WEB_PORT:-3100}"
+  echo "  Username: $AADOS_USER"
+  if [[ -n "${NEW_LOGIN_PASSWORD:-}" ]]; then echo "  Password: $NEW_LOGIN_PASSWORD   (shown once - save it now)"; fi
+  echo "  Reset:    ./bin/dev-local.sh --reset-user"
+}
 case "$COMMAND" in
-  rebuild)
-    docker compose up -d --build --remove-orphans
-    echo "AadOS local web: http://127.0.0.1:${AADOS_WEB_PORT:-3100}"
-    ;;
-  refresh) docker compose up -d --no-build ;;
+  rebuild) docker compose up -d --build --remove-orphans; summary ;;
+  refresh) docker compose up -d --no-build; summary ;;
   stop) docker compose down ;;
   logs) docker compose logs -f ;;
   shell) docker compose exec web sh ;;

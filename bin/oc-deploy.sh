@@ -110,10 +110,16 @@ LOG="$LOGDIR/$AADOS_ENV-$(date -u +%Y%m%dT%H%M%SZ).log"
 # Keep credential output out of the deployment log while still showing it in the terminal.
 exec 3>&1
 exec > >(tee -a "$LOG") 2>&1
+TEE_PID=$!
+# Hand the terminal back and let tee drain, so nothing logged can appear after the final summary.
+flush_log() { exec 1>&3 2>&3; wait "$TEE_PID" 2>/dev/null || sleep 1; }
 on_error() {
   local status=$?
   trap - ERR
   echo "Deployment failed (exit $status). Version $VERSION NOT verified as deployed. Log: $LOG" >&2
+  oc get pods -n "$NAMESPACE" -l app.kubernetes.io/part-of=aados -o wide >&2 || true
+  oc get events -n "$NAMESPACE" --sort-by=.lastTimestamp 2>/dev/null | tail -n 15 >&2 || true
+  flush_log
   if [[ "$LOGIN_CHANGED" == true ]]; then
     echo '' >&3
     echo 'AadOS login was created/reset before the failure. Save it for the next attempt:' >&3
@@ -122,8 +128,6 @@ on_error() {
     echo "  Password: $AADOS_LOGIN_PASSWORD   (shown once)" >&3
     echo '' >&3
   fi
-  oc get pods -n "$NAMESPACE" -l app.kubernetes.io/part-of=aados -o wide >&2 || true
-  oc get events -n "$NAMESPACE" --sort-by=.lastTimestamp 2>/dev/null | tail -n 15 >&2 || true
   exit "$status"
 }
 trap on_error ERR
@@ -196,6 +200,7 @@ echo "Local access: oc port-forward -n $NAMESPACE svc/$APP_NAME-web 3000:3000"
 echo 'Then open http://localhost:3000'
 echo "Ensure DNS points $HOSTNAME to the OpenShift router; cert-manager manages renewal."
 echo "Log: $LOG"
+flush_log
 {
   echo ''
   echo "Deployment complete — AadOS v$VERSION is live."
