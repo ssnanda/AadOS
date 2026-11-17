@@ -6,14 +6,14 @@ import { classify, detectAction, importance, type ActionKind } from './categorie
 export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply' | 'recent' | 'read' | 'attention' | 'people' | 'bills' | 'bulk';
 export type InboxQuery = {
   view?: InboxView; account?: string; provider?: string; sender?: string; from?: string; to?: string;
-  read?: 'read' | 'unread' | ''; category?: string; importance?: 'high' | ''; pipeline?: string; thread?: string;
+  read?: 'read' | 'unread' | ''; category?: string; importance?: 'high' | ''; pipeline?: string; thread?: string; folder?: string;
   q?: string; page?: number; pageSize?: number;
 };
 export type InboxRow = {
   key: string; id: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; summary: string;
   unread: boolean; accountId: string; accountEmail: string; provider: 'zoho' | 'gmail' | ''; categories: string[];
   importance: 'high' | 'normal'; action: ActionKind | null; actionReason: string; due: string; reviewed: boolean; followUp: string;
-  inInbox: boolean; threadId: string; threadCount: number; pipelines: string[]; copyIds: string[];
+  inInbox: boolean; threadId: string; threadCount: number; pipelines: string[]; copyIds: string[]; folders: string[];
 };
 export type InboxResult = {
   rows: InboxRow[]; total: number; page: number; pageSize: number; pages: number;
@@ -24,6 +24,43 @@ export const RECENT_DAYS = 7;
 /** Mailbox unread state, unless the owner already opened it in AadOS. */
 export const itemUnread = (item: Pick<PipelineItem, 'unread' | 'seen'>) => item.unread !== false && !item.seen;
 export const messageKey = (accountId: string, messageId: string) => `${accountId}:${messageId}`;
+
+/** Mailbox folder (Zoho folder / Gmail label) a stored copy came from: its recorded folder, else its view's only folder in that account. */
+export function itemFolder(item: Pick<PipelineItem, 'folderId' | 'accountId'>, pipeline?: Pick<Pipeline, 'accountId' | 'folderId' | 'folders'>) {
+  if (item.folderId) return item.folderId;
+  if (!pipeline) return '';
+  const account = item.accountId || pipeline.accountId;
+  const list = (pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, accountId: pipeline.accountId }]).filter((f) => (f.accountId || pipeline.accountId) === account);
+  return list.length === 1 ? list[0].id : '';
+}
+
+/** Per-account folders with message and unread counts (each message counted once per folder). */
+export function folderSummary(input: { pipelines: Pipeline[]; accounts: MailAccount[]; items: PipelineItem[] }) {
+  const byPipeline = new Map(input.pipelines.map((p) => [p.id, p]));
+  const seen = new Map<string, { total: Set<string>; unread: Set<string>; read: Set<string> }>();
+  for (const item of input.items) {
+    const pipeline = byPipeline.get(item.pipelineId);
+    const account = item.accountId || pipeline?.accountId || '';
+    const folder = itemFolder(item, pipeline);
+    if (!account || !folder) continue;
+    const k = `${account}\u0000${folder}`;
+    let e = seen.get(k); if (!e) seen.set(k, (e = { total: new Set(), unread: new Set(), read: new Set() }));
+    e.total.add(item.messageId);
+    if (itemUnread(item)) e.unread.add(item.messageId); else e.read.add(item.messageId);
+  }
+  const names = new Map<string, string>();
+  for (const p of input.pipelines) for (const f of p.folders?.length ? p.folders : [{ id: p.folderId, name: p.folderName, accountId: p.accountId }]) names.set(`${f.accountId || p.accountId}\u0000${f.id}`, f.name);
+  for (const a of input.accounts) for (const f of a.folders || []) names.set(`${a.id}\u0000${f.id}`, f.name);
+  const out: Record<string, { id: string; name: string; total: number; unread: number }[]> = {};
+  for (const [k, e] of seen) {
+    const [account, id] = k.split('\u0000');
+    // A message read in any copy counts as read (same rule as the inbox rows).
+    const unread = [...e.unread].filter((m) => !e.read.has(m)).length;
+    (out[account] ||= []).push({ id, name: names.get(k) || id, total: e.total.size, unread });
+  }
+  for (const list of Object.values(out)) list.sort((a, b) => (a.name.toLowerCase() === 'inbox' ? -1 : b.name.toLowerCase() === 'inbox' ? 1 : a.name.localeCompare(b.name)));
+  return out;
+}
 
 /** Collapse copies of the same source message (several views / labels) into one row. */
 export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[]; items: PipelineItem[]; familyNames?: string[]; now?: Date }): InboxRow[] {
@@ -67,7 +104,8 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       reviewed: merged.actionState === 'reviewed', followUp: merged.followUp || '',
       inInbox: copies.some((c) => byPipeline.get(c.pipelineId)?.system), threadId, threadCount: 1,
       pipelines: [...new Set(copies.map((c) => byPipeline.get(c.pipelineId)).filter((p): p is Pipeline => Boolean(p && !p.system)).map((p) => p.name))],
-      copyIds: copies.map((c) => c.id)
+      copyIds: copies.map((c) => c.id),
+      folders: [...new Set(copies.map((c) => itemFolder(c, byPipeline.get(c.pipelineId))).filter(Boolean))]
     });
   }
   for (const row of rows) if (row.threadId) row.threadCount = threads.get(`${row.accountId}:${row.threadId}`) || 1;
@@ -103,7 +141,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
   const pageSize = Math.min(Math.max(Math.floor(query.pageSize || 50), 1), 200);
 
   // Counts reflect the whole (deduplicated) mailbox, narrowed only by account/provider scope.
-  const scoped = rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider));
+  const scoped = rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider) && (!query.folder || r.folders.includes(query.folder)));
   const counts: InboxResult['counts'] = { inbox: 0, all: scoped.length, unread: 0, important: 0, needsReply: 0, recent: 0, read: 0, attention: 0, people: 0, bills: 0, bulk: 0, categories: {}, accounts: {} };
   for (const r of scoped) {
     if (r.inInbox) counts.inbox++;

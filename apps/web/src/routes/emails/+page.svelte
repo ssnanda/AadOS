@@ -73,7 +73,7 @@
   {#if notice}<div class="alert">{notice}{#if /read-only access/.test(notice)} <a href="/settings/emails">Open Settings</a>{/if} <button class="link" onclick={() => notice = ''}>Dismiss</button></div>{/if}
 
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.query.q} placeholder="Search all accounts…" aria-label="Search all accounts">
-    {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
+    {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread, folder: data.query.folder }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
     {#if data.query.view === 'all'}<button type="button" class="link" onclick={() => showFilters = !showFilters}>Filters{hasFilters ? ' •' : ''}</button>{/if}</form>
   {#if data.query.view === 'all' && showFilters}
   <form class="filters" method="GET">
@@ -87,7 +87,7 @@
     <div class="go"><button class="btn">Apply</button>{#if hasFilters}<a class="link" href={href({ account: '', provider: '', sender: '', from: '', to: '', read: '', category: '', pipeline: '', thread: '', q: '' })}>Clear</a>{/if}</div>
   </form>{/if}
 
-  {#if data.query.account}{@const acc = data.accounts.find((a) => a.id === data.query.account)}<div class="scopebar"><span class="provider {acc?.provider}">{acc?.provider === 'gmail' ? 'G' : 'Z'}</span><strong>{acc?.email || data.query.account}</strong><a href={href({ account: '' })} aria-label="Show all inboxes">✕ All inboxes</a></div>{/if}
+  {#if data.query.account}{@const acc = data.accounts.find((a) => a.id === data.query.account)}<div class="scopebar"><span class="provider {acc?.provider}">{acc?.provider === 'gmail' ? 'G' : 'Z'}</span><strong>{acc?.email || data.query.account}</strong>{#if data.query.folder}<span class="fold">› {data.folderName}</span><a href={href({ folder: '' })}>✕ Folder</a>{/if}<a href={href({ account: '', folder: '' })} aria-label="Show all inboxes">✕ All inboxes</a></div>{/if}
 
   <nav class="tabs" aria-label="Message status">{#each tabs as [v, label, hint] (v)}<a class:on={data.query.view === v} class:secondary={v === 'all'} title={hint} href={viewHref(v)}>{label}{#if v !== 'recent'}<i>{tabCount(v)}</i>{/if}</a>{/each}</nav>
   {#if data.query.view === 'all'}<details class="categories" open={Boolean(data.query.category)}><summary>Categories{data.query.category ? ` · ${data.query.category}` : ''}</summary><div class="chips">{#each data.categories.filter((c) => data.counts.categories[c]) as c (c)}<a class="chip" class:on={data.query.category === c} href={href({ category: data.query.category === c ? '' : c })}>{c}<i>{data.counts.categories[c]}</i></a>{/each}</div></details>{/if}
@@ -139,6 +139,7 @@
   .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:12px;margin-bottom:10px}
   .filters label{display:grid;gap:4px;font-size:11px;font-weight:700;color:#53607a}.filters select,.filters input{border:1px solid #dbe1eb;border-radius:8px;padding:7px;font-size:12px;min-width:0}.go{display:flex;gap:12px;align-items:end}
   .scopebar{display:flex;align-items:center;gap:9px;margin-bottom:10px;font-size:13px}.scopebar a{margin-left:4px;color:#3157de;font-size:12px;font-weight:700;text-decoration:none}
+  .fold{color:#53607a;font-weight:700}
   .provider{width:27px;height:27px;display:grid!important;place-items:center;border-radius:8px;flex:none;background:#eef1ff;color:#3157de;font-weight:800}.provider.gmail{background:#fff0ee;color:#d94d43}
   .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.tabs a{display:inline-flex;gap:7px;align-items:center;padding:7px 12px;border-radius:9px;background:#fff;border:1px solid #e4e9f2;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.tabs a.on{background:#3157de;border-color:#3157de;color:#fff}
   .tabs a.secondary:not(.on){color:#8a95a8;background:transparent}

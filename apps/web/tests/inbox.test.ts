@@ -115,3 +115,16 @@ test('smart views: recent = newest 10, people, needs attention, bills, bulk', ()
   assert.ok(ids('bills').includes('b1'));
   assert.ok(ids('bulk').includes('n1')); assert.ok(ids('bulk').includes('f0')); assert.ok(!ids('bulk').includes('p1'));
 });
+
+test('folders: per-account folder counts and folder filter', async () => {
+  const { buildRows, queryInbox, folderSummary } = await import('../src/lib/server/inbox.ts');
+  const accounts = [{ id: 'z1', provider: 'zoho' as const, email: 'a@x', remoteId: '', accessToken: '', refreshToken: '', expiresAt: 0, folders: [{ id: 'f-in', name: 'Inbox', path: 'Inbox', type: 'Inbox' }, { id: 'f-news', name: 'News', path: 'News', type: '' }] }];
+  const pipelines = [{ id: 'inbox-z1', name: 'Inbox', source: 'zoho' as const, accountId: 'z1', folderId: 'f-in', folderName: 'Inbox', folders: [], parser: 'generic' as const, enabled: true, cursor: 0, lastSync: '', lastError: '', system: true }];
+  const it = (id: string, folderId: string, unread: boolean) => ({ id: `inbox-z1:${id}`, pipelineId: 'inbox-z1', messageId: id, subject: id, sender: 's', receivedAt: '2026-11-01T00:00:00Z', summary: '', kind: 'other', stage: 'new', unread, folderId, facts: {} });
+  const items = [it('1', 'f-in', true), it('2', 'f-in', false), it('3', 'f-news', false)] as never[];
+  const sum = folderSummary({ pipelines, accounts, items } as never);
+  assert.deepEqual(sum.z1.map((f) => [f.name, f.total, f.unread]), [['Inbox', 2, 1], ['News', 1, 0]]);
+  const rows = buildRows({ pipelines, accounts, items } as never);
+  assert.equal(queryInbox(rows, { view: 'all', account: 'z1', folder: 'f-news' }).total, 1);
+  assert.equal(queryInbox(rows, { view: 'unread', account: 'z1', folder: 'f-in' }).total, 1);
+});

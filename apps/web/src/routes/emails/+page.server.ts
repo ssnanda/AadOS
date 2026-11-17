@@ -4,7 +4,7 @@ import type { PageServerLoad } from './$types';
 import { database, hasDatabase } from '$lib/server/aados-store';
 import { getInsights } from '$lib/server/ai/db';
 import { ensureInboxPipelines, missingInboxPipelines, readState, updateState, visiblePipelines } from '$lib/server/aados-store';
-import { buildRows, queryInbox, type InboxQuery, type InboxView } from '$lib/server/inbox';
+import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxView } from '$lib/server/inbox';
 import { CATEGORIES } from '$lib/server/categories';
 import { isUnread } from '$lib/server/search';
 
@@ -20,15 +20,16 @@ export const load: PageServerLoad = async ({ url }) => {
   const query: InboxQuery = {
     view, account: p.get('account') || '', provider: p.get('provider') || '', sender: p.get('sender') || '', from: p.get('from') || '', to: p.get('to') || '',
     read: p.get('read') === 'read' ? 'read' : p.get('read') === 'unread' ? 'unread' : '', category: (CATEGORIES as readonly string[]).includes(p.get('category') || '') ? p.get('category')! : '',
-    pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize: 50
+    pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', folder: p.get('folder') || '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize: 50
   };
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
   const result = queryInbox(rows, query);
   // Cached AI insights for the visible rows only (never computed here).
   const insights: Record<string, { summary: string; category: string; confidence: number; needsReply: boolean; paymentDue: string | null }> = {};
   if (hasDatabase()) for (const [k, v] of await getInsights(await database(), result.rows.map((r) => r.key)).catch(() => new Map())) if (v.status === 'done' && v.insight) insights[k] = { summary: v.insight.summary, category: v.insight.category, confidence: v.insight.confidence, needsReply: v.insight.needsReply, paymentDue: v.insight.paymentDue };
+  const folderName = query.folder ? (folderSummary(state)[query.account || '']?.find((f) => f.id === query.folder)?.name || query.folder) : '';
   return {
-    insights, aiAvailable: hasDatabase(),
+    folderName, insights, aiAvailable: hasDatabase(),
     query, ...result,
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),
