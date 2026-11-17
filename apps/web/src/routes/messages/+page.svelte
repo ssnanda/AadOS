@@ -34,7 +34,7 @@
   async function send() {
     const text = draft.trim(); if (!text || !openGuid) return;
     sending = true; notice = '';
-    const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: openGuid, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false };
+    const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: openGuid, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false, read: true };
     messages = [...messages, temp]; draft = ''; await toBottom();
     try { const r = await api('send', { chatGuid: openGuid, text }); if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(openGuid, r.message || temp); }
     catch (e) { notice = (e as Error).message; messages = messages.map((m) => (m.guid === temp.guid ? { ...m, error: true } : m)); draft = text; }
@@ -94,7 +94,7 @@
       <ul>{#each shown as c (c.guid)}
         <li><button class="chat" class:on={c.guid === openGuid} class:unread={isUnread(c, {}) && unread.includes(c.guid)} onclick={() => select(c.guid)}>
           <span class="av" class:grp={c.group}>{c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
-          <span class="meta"><span class="row1"><strong>{c.title}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span></span>
+          <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span></span>
           {#if unread.includes(c.guid)}<i class="dot"></i>{/if}
         </button></li>{:else}<li class="muted pad">No conversations.</li>{/each}</ul>
     </aside>
@@ -147,7 +147,7 @@
   .av{width:38px;height:38px;border-radius:50%;background:#e7ecf6;color:#53607a;display:grid;place-items:center;font-weight:800;flex:none}.av.grp{background:#eaf7ef}
   .meta{display:grid;gap:2px;min-width:0;flex:1}.row1{display:flex;gap:6px;justify-content:space-between}.row1 strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1f2a44}.row1 time{color:#8a95a8;font-size:11px;flex:none}
   .pv{color:#6b7690;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.chat.unread strong,.chat.unread .pv{font-weight:800;color:#1f2a44}
-  .dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
+  .sms{font-style:normal;font-size:9px;font-weight:800;background:#e6f6ea;color:#2a8a55;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
   .thread header{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #eef0f5}.thread header div{display:grid;flex:1;min-width:0}.thread header small{color:#8a95a8}.back{display:none}
   .summary{display:flex;gap:8px;background:#faf7ff;border-bottom:1px solid #ece3ff;padding:8px 14px}.summary pre{margin:0;flex:1;white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif}
   .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px}

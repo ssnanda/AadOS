@@ -57,9 +57,19 @@ async function getZoho(fetchImpl: Fetch, url: string, token: string): Promise<Ra
   return body;
 }
 
+/** My calendars plus Group calendars (e.g. a shared Conference Room). Zoho returns only "own" unless asked per
+ *  category; a failing group lookup never hides the owner's own calendars. */
 export async function listZohoCalendars(fetchImpl: Fetch, dc: string, token: string, accountId: string): Promise<CalendarInfo[]> {
-  const body = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars`, token);
-  return (Array.isArray(body.calendars) ? body.calendars : []).filter((c: Raw) => c?.uid).map((c: Raw) => mapZohoCalendar(c, accountId));
+  const own = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars?category=own`, token);
+  const group = await getZoho(fetchImpl, `${calendarBase(dc)}/calendars?category=group`, token).catch(() => ({ calendars: [] }));
+  const seen = new Set<string>(), out: CalendarInfo[] = [];
+  for (const c of [...(Array.isArray(own.calendars) ? own.calendars : []), ...(Array.isArray(group.calendars) ? group.calendars : [])]) {
+    if (!c?.uid || seen.has(String(c.uid))) continue;
+    seen.add(String(c.uid));
+    const info = mapZohoCalendar(c, accountId);
+    out.push(c.category === 'group' ? { ...info, name: `${info.name} (group)` } : info);
+  }
+  return out;
 }
 
 // Event ranges are sent as plain dates (yyyyMMdd), the form every Zoho Calendar example uses.

@@ -68,6 +68,14 @@ async function accessToken(state: AadOSState, account: MailAccount) {
   return account.accessToken;
 }
 
+/** Any Zoho Mail API call (path after /api), refreshing the token once on 401. Used by the shared-mailbox client. */
+export async function zohoRequest(state: AadOSState, account: MailAccount, method: string, path: string): Promise<any> {
+  const call = async () => fetchRetry(`${mailHost(state.zoho.dataCenter)}/api${path}`, { method, headers: { Authorization: `Zoho-oauthtoken ${await accessToken(state, account)}`, Accept: 'application/json' } });
+  let response = await call();
+  if (response.status === 401 && account.refreshToken) { account.expiresAt = 0; response = await call(); }
+  return jsonResponse(response);
+}
+
 async function api(state: AadOSState, account: MailAccount, path: string) {
   const call = async () => fetchRetry(`${mailHost(state.zoho.dataCenter)}/api${path}`, { headers: { Authorization: `Zoho-oauthtoken ${await accessToken(state, account)}`, Accept: 'application/json' } });
   let response = await call();
@@ -132,10 +140,10 @@ async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipel
 }
 
 /** Fetch one page of a folder (cursor = page number, newest first) and store unknown messages. */
-export async function syncZohoPage(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, cursor: string, maxAdd = Infinity): Promise<PageResult> {
+export async function syncZohoPage(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, cursor: string, maxAdd = Infinity, unreadOnly = false): Promise<PageResult> {
   const page = Number(cursor) || 0;
   const known = knownMessageIds(state, pipeline.id);
-  const query = new URLSearchParams({ folderId, start: String(page * PAGE_SIZE + 1), limit: String(PAGE_SIZE) });
+  const query = new URLSearchParams({ folderId, start: String(page * PAGE_SIZE + 1), limit: String(PAGE_SIZE), ...(unreadOnly ? { status: 'unread' } : {}) });
   const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${query}`);
   const rows: Record<string, unknown>[] = Array.isArray(response.data) ? response.data : [];
   const unknownRows = rows.filter((row) => { const id = String(row.messageId || ''); return id && !known.has(id); });
@@ -154,6 +162,28 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
     state.items.push(...items);
   }
   return { scanned: rows.length, added: fresh.length, unknown: unknownRows.length, next: rows.length < PAGE_SIZE ? '' : String(page + 1), ids: rows.map((row) => String(row.messageId || '')).filter(Boolean) };
+}
+
+// Folders whose mail never belongs in an unread list.
+const SKIP_UNREAD = /^(trash|spam|sent|drafts|outbox|templates|snoozed)$/i;
+
+/**
+ * Unread mail in every folder (not just Inbox), like Zoho's own "Unread" view: one folder-list call gives each folder's
+ * unread count, then the unread page of each folder that has any is pulled into the account's inbox feed (tagged with its
+ * folder). A folder whose whole unread list fit on one page also has its read state aligned (read elsewhere → read here).
+ */
+export async function liveZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline) {
+  const list = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders`);
+  let added = 0;
+  for (const f of Array.isArray(list.data) ? list.data : []) {
+    const folderId = String(f.folderId || ''), unread = Number(f.unreadCount || 0);
+    if (!folderId || SKIP_UNREAD.test(String(f.folderType || f.folderName || '')) || SKIP_UNREAD.test(String(f.folderName || ''))) continue;
+    if (unread === 0) { applyUnread(state, pipeline, folderId, new Set(), account.id); continue; }
+    const page = await syncZohoPage(state, account, pipeline, folderId, '0', 50, true);
+    added += page.added;
+    if (!page.next) applyUnread(state, pipeline, folderId, new Set(page.ids || []), account.id);
+  }
+  return { added };
 }
 
 /** Live sync of one open folder: the newest page only (new mail, read state, anything that left the folder). */

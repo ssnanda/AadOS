@@ -23,14 +23,16 @@ export const GMAIL_SCOPE = `${GMAIL_READ_SCOPE} ${GMAIL_MODIFY_SCOPE} ${GMAIL_SE
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 /** Create/edit/delete events (requested with the read scope; calendarList itself needs the read scope). */
 export const CALENDAR_WRITE_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+/** Google Contacts, read-only (People API) — names for phone numbers and addresses. */
+export const CONTACTS_SCOPE = 'https://www.googleapis.com/auth/contacts.readonly';
 
-export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; loginHint?: string; owner?: string } = {}) {
+export function beginGmailOAuth(state: AadOSState, redirectUri: string, opts: { calendar?: boolean; contacts?: boolean; loginHint?: string; owner?: string } = {}) {
   // One entry per connect attempt, so parallel flows cannot overwrite each other. PKCE (S256): the verifier stays server-side.
   const token = randomBytes(24).toString('base64url');
   const verifier = randomBytes(48).toString('base64url');
   addFlow((state.gmail.pending ||= {}), token, verifier, Date.now(), opts.owner);
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: opts.calendar ? `${GMAIL_SCOPE} ${CALENDAR_SCOPE} ${CALENDAR_WRITE_SCOPE}` : GMAIL_SCOPE, access_type: 'offline', prompt: 'consent select_account', // incremental auth: a plain reconnect keeps the calendar scope already granted
+  return `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({ client_id: state.gmail.clientId, redirect_uri: redirectUri, response_type: 'code', scope: [GMAIL_SCOPE, ...(opts.calendar ? [CALENDAR_SCOPE, CALENDAR_WRITE_SCOPE] : []), ...(opts.contacts ? [CONTACTS_SCOPE] : [])].join(' '), access_type: 'offline', prompt: 'consent select_account', // incremental auth: a plain reconnect keeps the calendar scope already granted
     include_granted_scopes: 'true', state: token, code_challenge: challenge, code_challenge_method: 'S256', ...(opts.loginHint ? { login_hint: opts.loginHint } : {}) })}`;
 }
 
@@ -46,6 +48,7 @@ export async function finishGmailOAuth(state: AadOSState, code: string, returned
   // Calendar access exists only if Google actually granted the scope.
   account.calendar = String(tokens.scope || '').split(' ').includes(CALENDAR_SCOPE);
   account.calendarWrite = String(tokens.scope || '').split(' ').includes(CALENDAR_WRITE_SCOPE);
+  account.contacts = String(tokens.scope || '').split(' ').includes(CONTACTS_SCOPE);
   const granted = String(tokens.scope || '').split(' ');
   account.canModify = granted.includes(GMAIL_MODIFY_SCOPE);
   account.canSend = granted.includes(GMAIL_MODIFY_SCOPE) || granted.includes('https://www.googleapis.com/auth/gmail.send');
@@ -311,4 +314,22 @@ export async function createGmailFilter(state: AadOSState, account: MailAccount,
 export async function deleteGmailFilter(state: AadOSState, account: MailAccount, id: string): Promise<void> {
   const res = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/settings/filters/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${await token(state, account)}` } });
   if (!res.ok && res.status !== 404) await json(res);
+}
+
+/** Google Contacts (People API, read-only): every connection's name with its phone numbers and emails. */
+export async function googleContacts(state: AadOSState, account: MailAccount): Promise<{ name: string; phones: string[]; emails: string[] }[]> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const out: { name: string; phones: string[]; emails: string[] }[] = [];
+  let pageToken = '';
+  for (let n = 0; n < 20; n++) {
+    const q = new URLSearchParams({ personFields: 'names,phoneNumbers,emailAddresses', pageSize: '1000', ...(pageToken ? { pageToken } : {}) });
+    const body = await json(await gmailFetch(`https://people.googleapis.com/v1/people/me/connections?${q}`, { headers }));
+    for (const p of body.connections || []) {
+      const name = String(p.names?.[0]?.displayName || '').trim();
+      if (name) out.push({ name, phones: (p.phoneNumbers || []).map((x: any) => String(x.canonicalForm || x.value || '')).filter(Boolean), emails: (p.emailAddresses || []).map((x: any) => String(x.value || '')).filter(Boolean) });
+    }
+    pageToken = String(body.nextPageToken || '');
+    if (!pageToken) break;
+  }
+  return out;
 }

@@ -4,6 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { readState, updateState, type AadOSState } from './aados-store';
 import { addressKey, toChat, toMessage, type Chat, type Message } from '$lib/messages-model';
+import { googleContactNames } from './contacts';
 
 export class BBError extends Error { constructor(message: string, public status = 0) { super(message); } }
 export type BBConn = { url: string; password: string };
@@ -24,6 +25,9 @@ async function call(c: BBConn, method: string, path: string, opts: { query?: Rec
   try {
     res = await fetch(url, { method, headers: { accept: 'application/json', ...(opts.body !== undefined ? { 'content-type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined, signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000) });
   } catch (e) { throw new BBError(`Cannot reach the BlueBubbles server (${e instanceof Error ? e.message : 'network error'}). Is the Mac on and the URL right?`); }
+  // Cloudflare answers 52x/530 when the tunnel is not connected — almost always a quick-tunnel URL that changed.
+  const tunnelDown = (status: number) => status === 530 || (status >= 520 && status <= 527) || status === 1033;
+  if (tunnelDown(res.status)) throw new BBError(`The BlueBubbles tunnel at ${c.url} is not connected (HTTP ${res.status}). If BlueBubbles restarted, its Cloudflare URL changed — copy the current Server URL from BlueBubbles into Settings → Messages.`, res.status);
   if (opts.raw) { if (!res.ok) throw new BBError(`BlueBubbles HTTP ${res.status}`, res.status); return res; }
   const body = await res.json().catch(() => ({}));
   if (!res.ok || (typeof body.status === 'number' && body.status >= 400)) throw new BBError(res.status === 401 ? 'BlueBubbles rejected the password.' : body.error?.error || body.message || `BlueBubbles HTTP ${res.status}`, res.status);
@@ -51,7 +55,9 @@ export async function contactNames(c: BBConn): Promise<Map<string, string>> {
 }
 
 export async function chats(c: BBConn, limit = 100): Promise<Chat[]> {
-  const [raw, names] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c)]);
+  const [raw, mac, google] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c), googleContactNames().catch(() => new Map<string, string>())]);
+  // Google Contacts first, then the Mac's contacts for anything Google does not know.
+  const names = new Map([...mac, ...google]);
   return (Array.isArray(raw) ? raw : []).map((x) => toChat(x, names)).filter((x) => x.guid).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
 }
 

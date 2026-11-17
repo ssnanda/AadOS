@@ -21,7 +21,10 @@ test('chats take the group name, else contact names, else pretty numbers', () =>
 test('messages, unread and previews', () => {
   const m = toMessage({ guid: 'm1', text: 'Hi', isFromMe: false, dateCreated: 2000, handle: { address: '+19803068308' }, attachments: [{ guid: 'a1', transferName: 'IMG.jpg', mimeType: 'image/jpeg', totalBytes: 10 }] }, 'g2');
   assert.equal(m.sender, '+19803068308'); assert.equal(m.attachments[0].name, 'IMG.jpg');
-  const chat = { guid: 'g2', title: 't', participants: [], group: false, last: m };
+  const chat = { guid: 'g2', title: 't', participants: [], group: false, last: m, sms: false };
   assert.equal(isUnread(chat, {}), true); assert.equal(isUnread(chat, { g2: 3000 }), false);
+  // Already read on the phone/Mac (dateRead) → not unread here either.
+  assert.equal(isUnread({ ...chat, last: toMessage({ guid: 'm2', text: 'x', dateCreated: 2000, dateRead: 2500, handle: { address: 'a' } }, 'g2') }, {}), false);
+  assert.equal(toChat({ guid: 'SMS;-;+17325551234', participants: [{ address: '+17325551234' }] }, new Map()).sms, true);
   assert.equal(preview({ ...m, text: '' }), '📎 IMG.jpg');
 });

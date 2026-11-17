@@ -91,6 +91,10 @@ export type MailAccount = {
   calendarWrite?: boolean;
   /** Owner turned this account's calendars off (grant kept; nothing synced or shown). */
   calendarOff?: boolean;
+  /** Google Contacts read access was granted (contacts.readonly). */
+  contacts?: boolean;
+  /** Owner turned this account's contacts off (grant kept). */
+  contactsOff?: boolean;
   /** Family member who linked this account (only they see its mail and calendars); absent = the owner's. */
   ownerId?: string;
   calendarLastSync?: string;
@@ -311,7 +315,9 @@ export function knownMessageIds(state: AadOSState, pipelineId: string): Set<stri
  * Items with no recorded folder are only reset when the view has a single folder (else only flagged unread).
  */
 export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: string, unreadIds: Set<string>, account: string) {
-  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1;
+  // Items without a recorded folder count as this folder's only if it IS the view's single folder (not an extra folder
+  // synced into the view, e.g. a Zoho subfolder pulled into the inbox feed).
+  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1 && pipelineFolders(pipeline).some((f) => f.id === folderId);
   for (const item of state.items) {
     if (item.pipelineId !== pipeline.id || (item.accountId || pipeline.accountId) !== account) continue;
     if (unreadIds.has(item.messageId)) { item.unread = true; item.folderId ||= folderId; }
@@ -321,7 +327,7 @@ export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: str
 
 /** Stored copies of one view's folder (same folder rule as `applyUnread`). */
 const folderItems = (state: AadOSState, pipeline: Pipeline, folderId: string, account: string) => {
-  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1;
+  const single = pipelineFolders(pipeline).filter((folder) => folder.accountId === account).length <= 1 && pipelineFolders(pipeline).some((f) => f.id === folderId);
   return state.items.filter((item) => item.pipelineId === pipeline.id && (item.accountId || pipeline.accountId) === account && (item.folderId === folderId || (!item.folderId && single)));
 };
 
@@ -379,7 +385,7 @@ export function publicState(state: AadOSState) {
     dataCenter: state.zoho.dataCenter,
     gmailConfigured: Boolean(state.gmail.clientId && state.gmail.clientSecret),
     // Tokens never leave the server.
-    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarWrite: Boolean(account.calendarWrite), calendarOff: Boolean(account.calendarOff), ownerId: account.ownerId || '', calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
+    accounts: state.accounts.map((account) => ({ id: account.id, provider: account.provider, email: account.email, folders: account.folders, lastSync: account.lastSync || '', lastError: account.lastError || '', paused: Boolean(account.paused), canModify: Boolean(account.canModify), canSend: Boolean(account.canSend), canFilter: Boolean(account.canFilter), calendar: Boolean(account.calendar), calendarWrite: Boolean(account.calendarWrite), calendarOff: Boolean(account.calendarOff), contacts: Boolean(account.contacts), contactsOff: Boolean(account.contactsOff), ownerId: account.ownerId || '', calendarLastSync: account.calendarLastSync || '', calendarError: account.calendarError || '', messages: state.items.filter((item) => (item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId) === account.id).length })),
     pipelines: visiblePipelines(state),
     itemCounts: Object.fromEntries(visiblePipelines(state).map((pipeline) => [pipeline.id, state.items.filter((item) => item.pipelineId === pipeline.id).length]))
   };

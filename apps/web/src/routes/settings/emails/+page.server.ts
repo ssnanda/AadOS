@@ -1,3 +1,4 @@
+import { resetContactCache } from '$lib/server/contacts';
 import { security } from '$lib/server/auth';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -71,6 +72,21 @@ export const actions: Actions = {
   },
   // Sync every view/inbox feed that reads this account (only this account's folders).
   // Re-consent with the read-only calendar scope for an existing account (Google: incremental auth, same login).
+  // Google Contacts (read-only): one-time Google approval, keeping the calendar grant the account already has.
+  enableContacts: async ({ request, url }) => {
+    const id = String((await request.formData()).get('id') || '');
+    let target = '';
+    try {
+      await updateState((s) => {
+        const a = s.accounts.find((item) => item.id === id && item.provider === 'gmail');
+        if (!a) throw new Error('Gmail account not found.');
+        if (!s.gmail.clientId || !s.gmail.clientSecret) throw new Error('Save Gmail credentials first.');
+        target = beginGmailOAuth(s, `${url.origin}/oauth/gmail/callback`, { calendar: Boolean(a.calendar), contacts: true, loginHint: a.email });
+      });
+    } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start contacts authorization.' }); }
+    resetContactCache();
+    throw redirect(303, target);
+  },
   enableCalendar: async ({ request, url }) => {
     const id = String((await request.formData()).get('id') || '');
     let target = '';
@@ -123,7 +139,9 @@ export const actions: Actions = {
       const a = s.accounts.find((item) => item.id === id); if (!a) return;
       if (kind === 'mail') a.paused = !on;
       if (kind === 'calendar') a.calendarOff = !on;
+      if (kind === 'contacts') a.contactsOff = !on;
     });
+    if (kind === 'contacts') resetContactCache();
     return { toggled: id };
   },
   // Privacy: remove this account's synced copies from AadOS. The mailbox is untouched; a sync brings mail back.

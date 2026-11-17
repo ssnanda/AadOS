@@ -1,5 +1,5 @@
 import { pipelineFolders, type AadOSState, type Pipeline } from './aados-store';
-import { liveZohoFolder, syncPipeline } from './zoho';
+import { liveZohoFolder, liveZohoUnread, syncPipeline } from './zoho';
 import { liveGmailLabel, syncGmailPipeline } from './gmail';
 
 /**
@@ -42,6 +42,11 @@ export function liveTargets(state: AadOSState, scope: LiveScope, allowed?: Set<s
       out.set(`${pipeline.id}\u0000${folder.accountId}\u0000${folder.id}`, { pipeline, accountId: folder.accountId, folderId: folder.id });
     }
   }
+  // A folder no view covers (e.g. Zoho "Shopping"): sync it into the account's inbox feed, tagged with its folder.
+  if (!out.size && scope.account && scope.folder && live(scope.account)) {
+    const inbox = state.pipelines.find((p) => p.system && p.accountId === scope.account);
+    if (inbox) out.set('adhoc', { pipeline: inbox, accountId: scope.account, folderId: scope.folder });
+  }
   return [...out.values()];
 }
 
@@ -61,6 +66,14 @@ export async function syncLive(state: AadOSState, scope: LiveScope, allowed?: Se
     } catch (cause) {
       failed++;
       account.lastError = cause instanceof Error ? cause.message : 'Sync failed';
+    }
+  }
+  // Unread views (all inboxes, or one account) also pick up unread mail in every Zoho folder, not only Inbox.
+  if (!scope.folder && !scope.pipeline) {
+    for (const account of state.accounts.filter((a) => a.provider === 'zoho' && !a.paused && (!allowed || allowed.has(a.id)) && (!scope.account || scope.account === a.id))) {
+      const inbox = state.pipelines.find((p) => p.system && p.accountId === account.id);
+      if (!inbox) continue;
+      try { added += (await liveZohoUnread(state, account, inbox)).added; } catch (cause) { failed++; account.lastError = cause instanceof Error ? cause.message : 'Unread sync failed'; }
     }
   }
   return { added, removed, failed };

@@ -2,7 +2,7 @@
 // Pure (type-only imports) so it is unit-tested with `node --test`.
 import type { AadOSState } from './aados-store';
 
-const ACCOUNT_FIELDS = ['accessToken', 'refreshToken', 'expiresAt', 'folders', 'lastSync', 'lastError', 'email', 'remoteId', 'historyIds', 'canModify', 'canSend', 'canFilter', 'calendar', 'calendarWrite', 'calendarLastSync', 'calendarError'] as const;
+const ACCOUNT_FIELDS = ['accessToken', 'refreshToken', 'expiresAt', 'folders', 'lastSync', 'lastError', 'email', 'remoteId', 'historyIds', 'canModify', 'canSend', 'canFilter', 'calendar', 'calendarWrite', 'contacts', 'calendarLastSync', 'calendarError'] as const;
 const PIPELINE_FIELDS = ['cursor', 'lastSync', 'lastError'] as const;
 const ITEM_FIELDS = ['unread', 'folderId', 'accountId', 'threadId'] as const;
 

@@ -20,7 +20,8 @@ function fakeProviders(opts: { expire410?: boolean } = {}) {
       if (opts.expire410 && url.includes('syncToken=')) return json({ error: { message: 'Gone' } }, 410);
       return json({ items: [{ id: 'e1', summary: 'Lunch', start: { dateTime: '2026-11-17T12:00:00-05:00' }, end: { dateTime: '2026-11-17T13:00:00-05:00' } }, { id: 'old', status: 'cancelled' }], nextSyncToken: url.includes('syncToken=') ? 'S2' : 'S1' });
     }
-    if (url.endsWith('/api/v1/calendars')) return json({ calendars: [{ uid: 'zc', name: 'Home', timezone: 'Asia/Kolkata' }] });
+    if (url.includes('/api/v1/calendars?category=group')) return json({ calendars: [] });
+    if (url.includes('/api/v1/calendars?category=own')) return json({ calendars: [{ uid: 'zc', name: 'Home', timezone: 'Asia/Kolkata' }] });
     if (url.includes('/events?range=')) return json({ events: [{ uid: 'ze', title: 'Gym', dateandtime: { start: '20261118T010000Z', end: '20261118T020000Z', timezone: 'Asia/Kolkata' } }] });
     return json({}, 404);
   };
@@ -85,7 +86,7 @@ test('zoho events are fetched in 30-day windows and deduplicated', async () => {
 
 test('one zoho calendar failing does not fail the account', async () => {
   const state = { zoho: { dataCenter: 'com' }, calendarDisabled: [], events: [], calendars: [], calendarSync: {}, accounts: [{ id: 'z1', provider: 'zoho', calendar: true }] } as any;
-  const http = async (url: string) => url.endsWith('/calendars')
+  const http = async (url: string) => url.includes('category=group') ? json({ calendars: [] }) : url.includes('/calendars?category=own')
     ? json({ calendars: [{ uid: 'ok', name: 'Mine' }, { uid: 'bad', name: 'Holidays' }] })
     : url.includes('/bad/') ? new Response('{}', { status: 404 }) : json({ events: [{ uid: 'e', title: 'T', dateandtime: { start: '20261118T010000Z', end: '20261118T020000Z' } }] });
   const r = await syncCalendars(state, undefined, Date.parse('2026-11-17T00:00:00Z'), { http, tokens: { google: async () => 't', zoho: async () => 't' } });
@@ -110,4 +111,12 @@ test('a disabled calendar stays listed but its events and sync token are dropped
   assert.ok(!off.calls.some((c) => c.url.includes('/events')));
   s.calendarDisabled = []; await syncCalendars(s, 'g1', NOW, { http: fakeProviders().http, tokens });
   assert.equal(s.events.length, 1);
+});
+
+test('zoho lists own and group calendars; group lookup failing keeps own', async () => {
+  const { listZohoCalendars } = await import('../src/lib/calendar/zoho.ts');
+  const ok = async (url: string) => json({ calendars: url.includes('group') ? [{ uid: 'g1', name: 'Conference Room', category: 'group' }, { uid: 'o1', name: 'dup', category: 'group' }] : [{ uid: 'o1', name: 'sandip.nanda', category: 'own' }] });
+  assert.deepEqual((await listZohoCalendars(ok, 'com', 't', 'z1')).map((c) => c.name), ['sandip.nanda', 'Conference Room (group)']);
+  const groupFails = async (url: string) => url.includes('group') ? new Response('{}', { status: 403 }) : json({ calendars: [{ uid: 'o1', name: 'sandip.nanda' }] });
+  assert.equal((await listZohoCalendars(groupFails, 'com', 't', 'z1')).length, 1);
 });
