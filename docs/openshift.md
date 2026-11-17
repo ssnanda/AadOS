@@ -28,4 +28,4 @@ Normal deploys keep the existing username and password hash. Run `./bin/oc-deplo
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.
 - `bin/dev-local.sh` uses Docker Compose for optional local-only testing, not for OpenShift.
-- Pending local changes are committed and pushed via `bin/bump.sh` before deploying. The deploy commit carries `[skip ci]`; run `./bin/bump.sh` directly if you want CI.
+- Pending local changes are committed and pushed via `bin/bump.sh` before deploying. The commit carries `[skip ci]`, like every `bump.sh` commit; start CI manually from GitHub Actions if wanted.

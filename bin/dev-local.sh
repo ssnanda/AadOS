@@ -11,12 +11,12 @@ for arg in "$@"; do
     *) COMMAND="$arg" ;;
   esac
 done
-if [[ "$COMMAND" == bump ]]; then AADOS_SKIP_CI=1 exec "$ROOT/bin/bump.sh"; fi
+if [[ "$COMMAND" == bump ]]; then exec "$ROOT/bin/bump.sh"; fi
 if [[ "$COMMAND" == help || "$COMMAND" == --help || "$COMMAND" == -h ]]; then
   echo 'Usage: bin/dev-local.sh [rebuild|refresh|stop|logs|shell|test|bump] [--reset-user]'
-  echo '  rebuild  Build and start the local stack. Never touches git (no commit, bump, push or CI).'
+  echo '  rebuild  If there are pending changes, run bump.sh first (commit/version/push, [skip ci]); then build and start the local stack.'
   echo '  test     Run all checks locally: web check + Node tests, then API tests against a throwaway Postgres (Docker).'
-  echo '  bump     Explicit commit/version/push via bump.sh (adds [skip ci]); the only command that uses git.'
+  echo '  bump     Commit/version/push via bump.sh. Commits always carry [skip ci]: nothing here starts GitHub Actions.'
   echo '  --reset-user  Generate a new username and password, invalidating all sessions'
   echo 'Local web: http://127.0.0.1:3100 | API: http://127.0.0.1:4000 (override with AADOS_WEB_PORT / AADOS_API_PORT)'
   exit 0
@@ -26,7 +26,12 @@ fi
 }
 command -v docker >/dev/null 2>&1 || { echo 'ERROR: Docker CLI missing.' >&2; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo 'ERROR: Docker Compose plugin missing.' >&2; exit 1; }
-# Local runs never commit, bump or push. Use `bin/dev-local.sh bump` (or bin/bump.sh) when you want that.
+# rebuild: pending changes are committed and pushed via bump.sh first, so the running stack matches GitHub.
+# bump.sh always adds [skip ci], so this never starts GitHub Actions. Other commands do not touch git.
+if [[ "$COMMAND" == rebuild && -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+  echo 'Local changes found; running bin/bump.sh before rebuilding.'
+  "$ROOT/bin/bump.sh" --if-dirty || { echo 'ERROR: bump/push failed; rebuild cancelled.' >&2; exit 1; }
+fi
 if [[ "$COMMAND" == test ]]; then
   # Same checks CI runs, but on this machine: no GitHub Actions involved.
   # Compose interpolates every service's required variables; these placeholders are never used by the test services.

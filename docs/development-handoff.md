@@ -52,9 +52,9 @@ Not verified: UI in a browser, live Gmail/Zoho/Google Calendar/Zoho Calendar cal
 Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by the permission classifier), so Elixir changes are verified only by CI.
 
 ## Local workflow (no GitHub Actions needed)
-- `bin/dev-local.sh rebuild` builds/starts the stack and **never touches git** (it used to auto-run `bump.sh` on a dirty tree: interactive prompt, commit, version bump, push).
+- `bin/dev-local.sh rebuild`: if the tree is dirty it runs `bump.sh` first (interactive version prompt, commit, tag, push with `[skip ci]`), then builds/starts the stack.
 - `bin/dev-local.sh test` runs `npm ci`, `npm run check`, `npm test`, then the Elixir unit + Postgres integration tests in Docker (`apitest` + throwaway in-memory `testdb`, compose profile `test`). Same checks as CI.
-- `bin/dev-local.sh bump` (or `bin/bump.sh`) is the only path that commits/pushes; The commit always carries `[skip ci]` (no Actions run) unless `AADOS_RUN_CI=1`. The release tag is created and pushed by the script itself. CI otherwise runs only on pushes/PRs to `main` without that marker and on manual dispatch.
+- `bin/bump.sh` is the only script that commits/pushes (`push.sh` was removed). Every commit carries `[skip ci]`, with no opt-out, and the script pushes the release tag itself. `dev-local.sh rebuild` and `oc-deploy.sh` run `bump.sh --if-dirty` first. CI runs only on manual dispatch or pushes/PRs to `main` made outside these scripts.
 - Not yet run on this machine: Docker commands were blocked by the permission classifier during development; `bin/dev-local.sh test` is syntax- and compose-validated only.
 
 ## Architecture

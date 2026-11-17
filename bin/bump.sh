@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AadOS canonical AJOPS-style bump/commit/push (patch default; option 5 no bump).
-# Adds [skip ci] to the commit by default so no GitHub Actions run starts (AADOS_RUN_CI=1 opts in).
+# Every commit carries [skip ci]: bumping never starts GitHub Actions. Run CI manually (Actions -> CI -> Run workflow) if wanted.
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 command -v git >/dev/null || { echo 'ERROR: git is required.' >&2; exit 1; }
@@ -97,8 +97,8 @@ if git diff --cached --name-only | grep -E '(^|/)(\.env($|\.[^/]+$)|id_rsa|id_ed
 fi
 message="chore: update AadOS"
 if [[ "$choice" != 5 ]]; then message="chore(release): v$new"; fi
-# Local bumps never start GitHub Actions: the commit carries [skip ci]. Set AADOS_RUN_CI=1 to run CI on purpose.
-if [[ "${AADOS_RUN_CI:-}" != 1 ]]; then message="$message [skip ci]"; fi
+# Never start GitHub Actions from a local bump. The script pushes the release tag itself.
+message="$message [skip ci]"
 git commit -m "$message"
 if [[ "$choice" != 5 ]]; then
   git tag "v$new"
