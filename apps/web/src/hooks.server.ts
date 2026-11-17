@@ -1,5 +1,5 @@
-import { redirect, type Handle } from '@sveltejs/kit';
-import { SESSION_COOKIE, validSession } from '$lib/server/auth';
+import { error, redirect, type Handle } from '@sveltejs/kit';
+import { SESSION_COOKIE, allowedPath, sessionUser } from '$lib/server/auth';
 import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
 import { initStorage } from '$lib/server/aados-store';
 import { startReminderScheduler } from '$lib/server/reminder-scheduler';
@@ -14,8 +14,10 @@ startTriageWorker(); // does nothing unless AI + background triage are enabled i
 startExtractionWorker();
 
 export const handle: Handle = async ({ event, resolve }) => {
-  const authenticated = validSession(event.cookies.get(SESSION_COOKIE));
+  const user = sessionUser(event.cookies.get(SESSION_COOKIE));
+  const authenticated = Boolean(user);
   event.locals.authenticated = authenticated;
+  event.locals.user = user;
   const publicPath = PUBLIC_PATHS.has(event.url.pathname) || event.url.pathname.startsWith('/_app/');
 
   if (!authenticated && !publicPath) {
@@ -23,6 +25,11 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   if (authenticated && event.url.pathname === '/login') {
     throw redirect(303, '/');
+  }
+  // Family members only reach the sections the owner allowed (pages and their APIs alike).
+  if (user && !allowedPath(user, event.url.pathname)) {
+    if (event.request.method === 'GET' && event.request.headers.get('accept')?.includes('text/html')) throw redirect(303, '/?denied=1');
+    throw error(403, 'You do not have access to this section.');
   }
   if (authenticated && event.url.pathname === '/settings/zoho') {
     throw redirect(303, '/settings/emails');

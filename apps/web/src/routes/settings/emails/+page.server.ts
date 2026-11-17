@@ -1,9 +1,9 @@
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { updateStateDetached, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
-import { clearCalendarData, syncCalendars } from '$lib/server/calendar-sync';
+import { clearCalendarData } from '$lib/server/calendar-sync';
 
 const slug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
@@ -95,11 +95,6 @@ export const actions: Actions = {
       });
     } catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not start authorization.' }); }
     throw redirect(303, target);
-  },
-  syncCalendarAccount: async ({ request }) => {
-    const id = String((await request.formData()).get('id') || '');
-    try { await updateStateDetached(async (s) => { await syncCalendars(s, id); }); return { calendarSynced: id }; }
-    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Calendar sync failed.' }); }
   },
   // Per-calendar on/off: a disabled calendar stays listed but is not synced or shown.
   toggleCalendar: async ({ request }) => {

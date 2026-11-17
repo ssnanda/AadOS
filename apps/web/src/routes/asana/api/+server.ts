@@ -12,6 +12,7 @@ import { applyToMailbox } from '$lib/server/mail-actions';
 import { findRow } from '$lib/server/ai/email-service';
 import { fetchGmailAttachment, listGmailAttachments } from '$lib/server/gmail';
 import { fetchZohoAttachment, listZohoAttachments } from '$lib/server/zoho';
+import { keyAllowed } from '$lib/server/scope';
 
 // One JSON endpoint for every Asana action on the Asana pages and the email reader. Asana is called directly
 // (live), so the page can update optimistically and roll back on an error.
@@ -62,9 +63,12 @@ async function emailAttachments(key: string) {
   return list;
 }
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ request, locals }) => {
   const b = await request.json().catch(() => ({}));
   const op = str(b.op, 40);
+  if (b.key && !keyAllowed(locals.user, str(b.key, 300))) return json({ error: 'Email not found.' }, { status: 404 });
+  // Connecting/disconnecting Asana is the owner's call.
+  if ((op === 'connect' || op === 'disconnect') && !locals.user?.owner) return json({ error: 'Only the owner can change the Asana connection.' }, { status: 403 });
   try {
     if (op === 'connect') return json(await asana.connect(str(b.token, 500), str(b.workspace, 40)));
     if (op === 'disconnect') { await asana.disconnect(); return json({ ok: true }); }

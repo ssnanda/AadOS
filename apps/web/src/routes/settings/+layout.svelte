@@ -3,13 +3,7 @@
   import SyncProgress from '$lib/components/SyncProgress.svelte';
   let { children, data } = $props();
   const providers = [{ key: 'zoho', label: 'Zoho Mail' }, { key: 'gmail', label: 'Gmail' }];
-  const items = [
-    { href: '/settings', label: 'General', icon: '⚙' },
-    { href: '/settings/family', label: 'Family', icon: '👪' },
-    { href: '/settings/emails', label: 'Emails', icon: '✉' },
-    { href: '/settings/ai', label: 'AI', icon: '✦' },
-    { href: '/settings/storage', label: 'Storage', icon: '▤' }
-  ];
+  import { SETTINGS_PAGES as items } from '$lib/settings-nav';
   const active = (href: string) => href === '/settings' ? page.url.pathname === href : page.url.pathname.startsWith(href);
 </script>
 <div class="settings">

@@ -19,7 +19,7 @@
     {#if a.lastError}<form method="POST" action="?/allowChanges"><input type="hidden" name="id" value={a.id}><button class="primary">Reconnect</button></form>{/if}
     <form method="POST" action="?/refreshAccount"><input type="hidden" name="id" value={a.id}><button title="Reload folders/labels">Refresh</button></form>
     <form method="POST" action="?/toggleAccountSync"><input type="hidden" name="id" value={a.id}><button title="Automatic sync of open folders">{a.paused ? 'Resume auto sync' : 'Pause auto sync'}</button></form>
-    {#if a.calendar}<form method="POST" action="?/syncCalendarAccount"><input type="hidden" name="id" value={a.id}><button>Sync calendar</button></form>{:else}<form method="POST" action="?/enableCalendar"><input type="hidden" name="id" value={a.id}><button title="Read-only calendar access">Enable calendar</button></form>{/if}
+    {#if !a.calendar}<form method="POST" action="?/enableCalendar"><input type="hidden" name="id" value={a.id}><button title="Read-only calendar access">Enable calendar</button></form>{/if}
     <span class="sp"></span>
     {#if a.calendar}<form method="POST" action="?/clearCalendar" onsubmit={(e) => { if (!confirm('Remove this account\'s synced calendar data from AadOS?')) e.preventDefault(); }}><input type="hidden" name="id" value={a.id}><button class="quiet danger">Clear calendar</button></form>{/if}
     <form method="POST" action="?/purgeAccountData" onsubmit={(e) => { if (!confirm('Remove all synced emails of this account from AadOS? A sync brings them back.')) e.preventDefault(); }}><input type="hidden" name="id" value={a.id}><button class="quiet danger" title="Remove local copies">Clear data</button></form>

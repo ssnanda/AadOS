@@ -4,9 +4,16 @@
   import SyncProgress from './SyncProgress.svelte';
   import ReminderNotifier from './ReminderNotifier.svelte';
   import { purgeEmails } from '$lib/sync';
+  import { SETTINGS_PAGES } from '$lib/settings-nav';
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
+  let settingsOpen = $state(false);
+  // Signed-in user (owner, or a family member limited to the sections the owner allowed).
+  const me = $derived(page.data.shell?.user as { name: string; owner: boolean; permissions: string[] } | null | undefined);
+  const may = (p: string) => !me || me.owner || me.permissions.includes(p);
+  // Close the Settings menu on any click outside it, on Escape, and after navigating.
+  $effect(() => { void page.url.pathname; settingsOpen = false; });
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number; total: number }[]);
   let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number; folders: { id: string; name: string; total: number; unread: number }[] }[]);
@@ -32,22 +39,23 @@
   const here = (path: string) => path === '/' ? page.url.pathname === '/' : page.url.pathname === path;
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
 </script>
+<svelte:window onclick={(e) => { if (settingsOpen && !(e.target as HTMLElement).closest('.menuwrap')) settingsOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') settingsOpen = false; }} />
 <ReminderNotifier enabled={Boolean(page.data.shell?.notifyBrowser)} />
 <div class="workspace">
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
-    <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails{#if !inEmails && totalUnread}<b>{totalUnread}</b>{/if}</a>
+    {#if may('emails')}<a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails{#if !inEmails && totalUnread}<b>{totalUnread}</b>{/if}</a>{/if}
     {#if inEmails && accounts.length}<div class="inboxes" aria-label="Inboxes"><div class="mode" role="group" aria-label="Show"><a class:on={!mailAll} href={mailHref(currentAccount || '', false, currentFolder)}>Unread</a><a class:on={mailAll} href={mailHref(currentAccount || '', true, currentFolder)}>All</a></div><a class="ibx" class:on={currentAccount === ''} href={mailHref('')}>All inboxes{#if totalUnread}<b>{totalUnread}</b>{/if}</a>{#each shownAccounts as a (a.id)}<a class="ibx" class:on={currentAccount === a.id && !currentFolder} href={mailHref(a.id)} title={a.email}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i><span>{a.email}</span>{#if a.unread}<b>{a.unread}</b>{/if}</a>{#each foldersOf(a) as f (f.id)}<a class="ibx fld" class:on={currentAccount === a.id && currentFolder === f.id} href={mailHref(a.id, mailAll, f.id)} title={`${f.name} · ${f.unread} unread of ${f.total}`}><span>{f.name}</span><b>{mailAll ? f.total : f.unread}</b></a>{/each}{/each}{#if !shownAccounts.length}<small class="none">No unread mail</small>{/if}</div>{/if}
     {#if views.length}<div class="subviews" aria-label="Views"><small>Views</small>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`} title={`${v.total} emails · ${v.count} unread`}><span>{icon(v.parser)}</span>{v.name}{#if v.total}<b>{v.total}</b>{/if}</a>{/each}</div>{/if}
-    <a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a><a class="nav pink" class:active={here('/asana')} href="/asana"><span>◉</span>Asana</a>
-    <a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>
-    <a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>
-    <a class="nav teal" class:active={page.url.pathname.startsWith('/documents')} href="/documents"><span>▤</span>Documents</a>
-    <a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>
+    {#if may('tasks')}<a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a>{/if}{#if may('asana')}<a class="nav pink" class:active={here('/asana')} href="/asana"><span>◉</span>Asana</a>{/if}
+    {#if may('calendar')}<a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>{/if}
+    {#if may('assistant')}<a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>{/if}
+    {#if may('documents')}<a class="nav teal" class:active={page.url.pathname.startsWith('/documents')} href="/documents"><span>▤</span>Documents</a>{/if}
+    {#if may('reminders')}<a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>{/if}
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small><button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Delete all emails stored in AadOS (mailboxes unchanged); open folders re-sync automatically">⌫ Purge</button><a class="btn cfg" class:on={page.url.pathname.startsWith('/settings')} href="/settings">⚙ Settings</a><form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if me?.owner !== false}<button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Delete all emails stored in AadOS (mailboxes unchanged); open folders re-sync automatically">⌫ Purge</button>{/if}{#if me?.owner !== false}<div class="menuwrap"><button class="btn cfg" class:on={page.url.pathname.startsWith('/settings') || settingsOpen} aria-haspopup="menu" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>⚙ Settings ▾</button>{#if settingsOpen}<div class="smenu" role="menu">{#each SETTINGS_PAGES as s (s.href)}<a role="menuitem" href={s.href} class:cur={page.url.pathname === s.href}><span>{s.icon}</span>{s.label}</a>{/each}<hr><a role="menuitem" href="/asana" class:cur={page.url.pathname === '/asana'}><span>◉</span>Asana connection</a></div>{/if}</div>{:else}<small class="who">{me?.name}</small>{/if}<form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
 <SyncProgress />
@@ -78,6 +86,8 @@
   .topbar strong{color:#3e4860}.search{display:flex;align-items:center;gap:8px;flex:1;max-width:420px;background:#f4f6fb;border:1px solid #e6eaf3;border-radius:10px;padding:0 12px;margin:0 12px}.search:focus-within{border-color:#8da2f0;background:#fff}.search span{color:#8a95a8;font-size:18px}.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;padding:9px 0;font-size:13px;color:#29344c;font-family:inherit}.actions{margin-left:auto;display:flex;align-items:center;gap:8px}.actions form{margin:0}.actions small{color:#139488;font-weight:700;font-size:12px}
   .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
   .cfg{background:#f1ebff;color:#6a3fd1}.cfg:hover,.cfg.on{background:#6a3fd1;color:#fff}
+  .menuwrap{position:relative}.who{color:#6a3fd1;font-weight:700}.smenu{position:absolute;right:0;top:calc(100% + 6px);z-index:80;min-width:200px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;box-shadow:0 12px 30px #151c2d26;padding:6px;display:grid}
+  .smenu a{display:flex;gap:9px;align-items:center;padding:8px 10px;border-radius:8px;color:#29344c;text-decoration:none;font-size:13px;font-weight:600}.smenu a span{width:18px;text-align:center;color:#6a3fd1}.smenu a:hover{background:#f4f1ff}.smenu a.cur{background:#f1ebff;color:#6a3fd1}.smenu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
   .purge{background:#fff0f1;color:#c24457}.purge:hover{background:#c24457;color:#fff}
   .content{max-width:2200px;margin:auto;padding:32px}

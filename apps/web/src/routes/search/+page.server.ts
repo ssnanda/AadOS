@@ -1,11 +1,12 @@
+import { scopeState } from '$lib/server/scope';
 import { fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { readState, updateState } from '$lib/server/aados-store';
 import { filterItems } from '$lib/server/search';
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, locals }) => {
   const q = (url.searchParams.get('q') || '').trim();
-  const state = await readState();
+  const state = scopeState(await readState(), locals.user);
   const hits = q ? filterItems(state.items, { q }).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)) : [];
   return { q, total: state.items.length, matched: hits.length, items: hits.slice(0, 300), names: Object.fromEntries(state.pipelines.map((p) => [p.id, p.name])) };
 };

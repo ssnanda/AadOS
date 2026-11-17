@@ -1,5 +1,6 @@
 import { fail, type Actions } from '@sveltejs/kit';
 import { applyToMailbox } from '$lib/server/mail-actions';
+import { keyAllowed, scopeState } from '$lib/server/scope';
 import type { PageServerLoad } from './$types';
 import { database, hasDatabase } from '$lib/server/aados-store';
 import { getInsights } from '$lib/server/ai/db';
@@ -11,10 +12,11 @@ import { isUnread } from '$lib/server/search';
 // Tabs: unread, recent, smart views, all. Older views (important, needs-reply, inbox, read) still work for existing links.
 const VIEWS: InboxView[] = ['unread', 'recent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, locals }) => {
   let state = await readState();
   // First visit after connecting an account: create the hidden per-account inbox feeds (never touches existing data).
   if (missingInboxPipelines(state)) { await updateState((s) => { ensureInboxPipelines(s); }); state = await readState(); }
+  state = scopeState(state, locals.user);
   const p = url.searchParams;
   const view = (VIEWS as string[]).includes(p.get('view') || '') ? (p.get('view') as InboxView) : 'unread';
   const query: InboxQuery = {
@@ -41,9 +43,9 @@ const account = (state: Awaited<ReturnType<typeof readState>>, item: { pipelineI
 
 export const actions: Actions = {
   // Local-only review state for one source message (all its copies). The mailbox is never modified.
-  mark: async ({ request }) => {
+  mark: async ({ request, locals }) => {
     const form = await request.formData();
-    const keys = [...form.getAll('key'), ...form.getAll('keys')].map(String).filter(Boolean);
+    const keys = [...form.getAll('key'), ...form.getAll('keys')].map(String).filter((k) => k && keyAllowed(locals.user, k));
     const op = String(form.get('op') || '');
     const value = String(form.get('value') || '');
     // Delete and read state are changed in Gmail/Zoho first; AadOS follows only where that worked.

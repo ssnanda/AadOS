@@ -50,7 +50,7 @@ const calendarBase = (dc: string) => `https://calendar.zoho.${dc || 'com'}/api/v
 async function getZoho(fetchImpl: Fetch, url: string, token: string): Promise<Raw> {
   const res = await fetchImpl(url, { headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json+large' } }); // +large: documented way to include event descriptions
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(String(body?.message || body?.error || `Zoho Calendar HTTP ${res.status}`));
+  if (!res.ok) throw new Error(`Zoho Calendar HTTP ${res.status}${body?.message || body?.error ? `: ${body.message || body.error}` : ''} (${new URL(url).pathname.replace(/^\/api\/v1/, '')})`);
   return body;
 }
 
@@ -59,7 +59,8 @@ export async function listZohoCalendars(fetchImpl: Fetch, dc: string, token: str
   return (Array.isArray(body.calendars) ? body.calendars : []).filter((c: Raw) => c?.uid).map((c: Raw) => mapZohoCalendar(c, accountId));
 }
 
-const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+// Event ranges are sent as plain dates (yyyyMMdd), the form every Zoho Calendar example uses.
+const stamp = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
 /** Events overlapping [from, to). Zoho limits a query range, so this walks 30-day windows. */
 export async function fetchZohoEvents(fetchImpl: Fetch, dc: string, token: string, calendar: CalendarInfo, from: Date, to: Date): Promise<CalEvent[]> {

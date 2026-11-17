@@ -10,10 +10,15 @@ import { todayIn } from '$lib/calendar/view';
 import { cachedBriefing } from '$lib/server/ai/briefing-service';
 import { aiConfigured } from '$lib/server/ai/service';
 import * as asanaApi from '$lib/server/asana';
+import { scopeState } from '$lib/server/scope';
+import { can } from '$lib/server/auth';
 import { dayIn, dueDay, dueShort, stageOf } from '$lib/asana-model';
 
-export const load: PageServerLoad = async () => {
-  const state = await readState();
+export const load: PageServerLoad = async ({ locals }) => {
+  // Family members see only their mailboxes and the sections they were given.
+  const user = locals.user;
+  const full = scopeState(await readState(), user);
+  const state = { ...full, events: can(user, 'calendar') ? full.events : [], tasks: can(user, 'tasks') ? full.tasks : [], reminders: can(user, 'reminders') ? full.reminders : [], accounts: full.accounts.map((a) => (can(user, 'calendar') ? a : { ...a, calendar: false })) };
   const tiles = visiblePipelines(state).map((p) => {
     const items = state.items.filter((i) => i.pipelineId === p.id).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
     const unread = items.filter(isUnread);
@@ -38,7 +43,7 @@ export const load: PageServerLoad = async () => {
   const inbox = { unread: counts.unread, needsReply: counts.needsReply, important: counts.important, bills: counts.categories['Bills'] || 0, renewals: counts.categories['Renewals'] || 0, receipts: counts.categories['Receipts'] || 0 };
   // Asana card, streamed (not awaited) so the dashboard never waits on Asana. "Dashboard due tasks only" (Asana page)
   // limits it to today/overdue; otherwise Incoming tasks show too.
-  const asana = asanaApi.connectedState(state) ? (async () => {
+  const asana = can(user, 'asana') && asanaApi.connectedState(state) ? (async () => {
     const today = dayIn(new Date(), tz), dueOnly = Boolean(state.prefs.asanaDashboardDueOnly);
     const all = await asanaApi.myTasks(await asanaApi.connection());
     const list = all.filter((t) => { const d = dueDay(t, tz); return (d && d <= today) || (!dueOnly && stageOf(t.sectionName) === 'incoming'); })
@@ -49,7 +54,7 @@ export const load: PageServerLoad = async () => {
     asana,
     tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
     tz,
-    briefing: { cached: await cachedBriefing(), aiEnabled: state.ai.enabled, configured: aiConfigured(state) },
+    briefing: { cached: can(user, 'assistant') ? await cachedBriefing() : null, aiEnabled: state.ai.enabled, configured: aiConfigured(state) },
     calendar: { enabled: calendarAccounts.length, today: cal.today, todayEvents: cal.todayEvents.map(occ), next: cal.next ? occ(cal.next) : null, week: cal.week, weekTotal: cal.weekTotal,
       errors: calendarAccounts.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} Calendar · ${a.email}`, message: a.calendarError! })) },
     reminders: { waiting: rem.active.length, unread: rem.unread, items: [...rem.active, ...rem.upcoming].slice(0, 5).map((r) => ({ id: r.id, title: r.title, at: effectiveAt(r), fired: r.status === 'fired' })) },

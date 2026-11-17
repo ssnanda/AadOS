@@ -26,7 +26,14 @@ async function syncGoogle(http: Http, tokens: Tokens, state: AadOSState, account
 async function syncZoho(http: Http, tokens: Tokens, state: AadOSState, account: MailAccount, now: number) {
   const token = await tokens.zoho(state, account);
   const calendars = await listZohoCalendars(http, state.zoho.dataCenter, token, account.id);
-  for (const calendar of calendars) if (state.calendarDisabled.includes(calendar.id)) dropCalendar(state, calendar.id); else state.events = replaceCalendarEvents(state.events, calendar.id, await fetchZohoEvents(http, state.zoho.dataCenter, token, calendar, new Date(now - 7 * DAY), new Date(now + 90 * DAY)));
+  // One calendar Zoho refuses (e.g. a holiday or shared calendar answering 404) must not fail the whole account.
+  const failures: string[] = [];
+  for (const calendar of calendars) {
+    if (state.calendarDisabled.includes(calendar.id)) { dropCalendar(state, calendar.id); continue; }
+    try { state.events = replaceCalendarEvents(state.events, calendar.id, await fetchZohoEvents(http, state.zoho.dataCenter, token, calendar, new Date(now - 7 * DAY), new Date(now + 90 * DAY))); }
+    catch (cause) { failures.push(`${calendar.name}: ${cause instanceof Error ? cause.message : 'failed'}`); }
+  }
+  if (failures.length && failures.length === calendars.filter((c) => !state.calendarDisabled.includes(c.id)).length) throw new Error(failures.join(' · '));
   return calendars;
 }
 

@@ -80,7 +80,16 @@ test('zoho events are fetched in 30-day windows and deduplicated', async () => {
   const cal = { id: 'z1:zc', accountId: 'z1', provider: 'zoho', providerCalendarId: 'zc', name: 'n', timeZone: 'UTC', primary: false, color: '' } as any;
   const list = await fetchZohoEvents(http, 'com', 't', cal, new Date('2026-11-01T00:00:00Z'), new Date('2027-01-15T00:00:00Z'));
   assert.equal(urls.length, 3); assert.equal(list.length, 1);
-  assert.ok(decodeURIComponent(urls[0]).includes('"start":"20261101T000000Z"'));
+  assert.ok(decodeURIComponent(urls[0]).includes('"start":"20261101"'));
+});
+
+test('one zoho calendar failing does not fail the account', async () => {
+  const state = { zoho: { dataCenter: 'com' }, calendarDisabled: [], events: [], calendars: [], calendarSync: {}, accounts: [{ id: 'z1', provider: 'zoho', calendar: true }] } as any;
+  const http = async (url: string) => url.endsWith('/calendars')
+    ? json({ calendars: [{ uid: 'ok', name: 'Mine' }, { uid: 'bad', name: 'Holidays' }] })
+    : url.includes('/bad/') ? new Response('{}', { status: 404 }) : json({ events: [{ uid: 'e', title: 'T', dateandtime: { start: '20261118T010000Z', end: '20261118T020000Z' } }] });
+  const r = await syncCalendars(state, undefined, Date.parse('2026-11-17T00:00:00Z'), { http, tokens: { google: async () => 't', zoho: async () => 't' } });
+  assert.equal(r.failed, 0); assert.equal(state.accounts[0].calendarError, ''); assert.equal(state.events.length, 1);
 });
 
 test('merging a calendar sync result keeps concurrent mail edits (detached sync path)', () => {

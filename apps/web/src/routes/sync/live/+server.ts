@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { updateStateDetached, type AadOSState } from '$lib/server/aados-store';
 import { syncLive } from '$lib/server/pipeline-sync';
 import { syncJob } from '$lib/server/sync-job';
+import { canSeeAccount } from '$lib/server/auth';
 
 // Automatic sync of what is on screen (called by the page on open and every 2 minutes while visible),
 // like a mail client refreshing the open folder. Same scope within MIN_GAP_MS is answered from memory.
@@ -10,9 +11,11 @@ const MIN_GAP_MS = 30_000;
 // Cheap "did anything visible change": message count, unread count, account errors.
 const fingerprint = (state: AadOSState) => `${state.items.length}:${state.items.filter((item) => item.unread !== false).length}:${state.accounts.map((a) => a.lastError || '').join('|')}`;
 
-export const POST = async ({ request }) => {
+export const POST = async ({ request, locals }) => {
   const body = await request.json().catch(() => ({}));
   const scope = { account: String(body.account || ''), folder: String(body.folder || ''), pipeline: String(body.pipeline || '') };
+  // Family members only refresh mailboxes they were given (no account = their allowed inboxes only).
+  if (!locals.user?.owner && locals.user?.mailboxes !== 'all') { if (!scope.account || !canSeeAccount(locals.user, scope.account)) return json({ changed: false, skipped: 'scope' }); }
   if (globalThis.__aadosSyncRunning || syncJob().running) return json({ changed: false, skipped: 'busy' });
   const key = `${scope.account}|${scope.folder}|${scope.pipeline}`;
   const last = (globalThis.__aadosLiveLast ??= new Map()), running = (globalThis.__aadosLiveRunning ??= new Set());

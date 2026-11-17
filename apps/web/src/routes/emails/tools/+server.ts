@@ -1,3 +1,4 @@
+import { keyAllowed } from '$lib/server/scope';
 import { json } from '@sveltejs/kit';
 import { createRule, details, prepare, related, removeRule, rules, send } from '$lib/server/mail-tools';
 import { rateLimited } from '$lib/server/ai/service';
@@ -5,10 +6,11 @@ import type { Mode } from '$lib/server/compose';
 
 const MODES: Mode[] = ['reply', 'replyAll', 'forward'];
 // Owner-only (session enforced in hooks). Sending happens only on an explicit "send" request from the compose form.
-export const POST = async ({ request }) => {
+export const POST = async ({ request, locals }) => {
   const b = await request.json().catch(() => null);
   if (!b || typeof b !== 'object') return json({ error: 'Invalid request.' }, { status: 400 });
   const key = String(b.key || '').slice(0, 300), op = String(b.op || '');
+  if (key && !keyAllowed(locals.user, key)) return json({ error: 'Email not found.' }, { status: 404 });
   try {
     switch (op) {
       case 'details': { const d = await details(key); const { headers: _h, text: _t, ...rest } = d; return json(rest); }

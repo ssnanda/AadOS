@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { onMount } from 'svelte';
+  import { startAutoSync } from '$lib/sync';
   import AppShell from '$lib/components/AppShell.svelte';
-  import type { ActionData, PageData } from './$types';
-  let { data, form }: { data: PageData; form: ActionData } = $props();
-  let syncing = $state(false);
+  import type { PageData } from './$types';
+  let { data }: { data: PageData } = $props();
+  // Calendars sync automatically (on open, every 2 minutes while visible), like email.
+  onMount(() => { if (!data.enabled) return; const auto = startAutoSync(() => ({}), () => invalidateAll(), '/calendar/live'); void auto.run(); return () => auto.stop(); });
   let openRef = $state('');
   const detail = $derived(openRef ? data.details[openRef] : null);
 
@@ -35,10 +38,7 @@
 <main>
   <header>
     <div><h1>{title}</h1><p>{data.total} event{data.total === 1 ? '' : 's'} · read-only · {data.tz}{#if data.lastSync} · synced {new Date(data.lastSync).toLocaleString()}{/if}</p></div>
-    {#if data.enabled}<form method="POST" action="?/sync" use:enhance={() => { syncing = true; return async ({ update }) => { await update(); syncing = false; }; }}><button class="btn" disabled={syncing}>{syncing ? 'Syncing…' : '⇩ Sync'}</button></form>{/if}
   </header>
-  {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
-  {#if form && 'synced' in form && form.synced}<div class="ok">Synced {form.synced.accounts} account{form.synced.accounts === 1 ? '' : 's'}{form.synced.failed ? ` · ${form.synced.failed} failed` : ''}.</div>{/if}
   {#each data.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails#acct-{e.id}">Settings</a></div>{/each}
 
   <div class="bar">
@@ -53,7 +53,7 @@
   </div>{/if}
 
   {#if data.enabled === 0}<div class="empty">No calendar access yet. <a href="/settings/emails">Enable calendar</a> on a Google or Zoho account in Settings; AadOS asks for read-only permission and never changes your calendar.</div>
-  {:else if data.calendars.length === 0}<div class="empty">Calendar access is on. Use “Sync” to load your events.</div>
+  {:else if data.calendars.length === 0}<div class="empty">Calendar access is on. Your events load automatically.</div>
   {:else if data.view === 'month'}
     <div class="month" role="grid" aria-label={title}>
       {#each weekdays as w (w)}<div class="wd">{w}</div>{/each}
@@ -103,9 +103,9 @@
 {/if}
 </AppShell>
 <style>
-  main{max-width:1150px}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}header>div{flex:1;min-width:0}header form{margin:0}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
+  main{max-width:1150px}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}header>div{flex:1;min-width:0}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:7px 12px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px;text-decoration:none;display:inline-block}.btn:hover{border-color:#8da2f0}.btn.nav{padding:7px 11px}
-  .alert,.ok{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}.ok{background:#e3f6f3;color:#0f7f74}
+  .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
   .bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.views{margin-left:auto;display:inline-flex;background:#fff;border:1px solid #e4e9f2;border-radius:10px;overflow:hidden}.views a{padding:7px 14px;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.views a.on{background:#3157de;color:#fff}
   .filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
   .chip.cal i{width:9px;height:9px;border-radius:50%}.chip.offc{opacity:.45;text-decoration:line-through}.sep{width:1px;height:18px;background:#e4e9f2;margin:0 4px}.manage{margin-left:auto;font-size:11px;color:#3157de;font-weight:700;text-decoration:none}

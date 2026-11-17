@@ -4,20 +4,20 @@ export type LiveScope = { account?: string; folder?: string; pipeline?: string }
 const AUTO_SYNC_MS = 120_000;
 
 /** Sync what is on screen now. True when the stored mail changed (the page should reload its data). */
-export async function liveSync(scope: LiveScope): Promise<boolean> {
+export async function liveSync(scope: LiveScope, endpoint = '/sync/live'): Promise<boolean> {
   try {
-    const response = await fetch('/sync/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(scope) });
+    const response = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(scope) });
     return Boolean((await response.json().catch(() => ({}))).changed);
   } catch { return false; }
 }
 
 /** Browser only (call from onMount). `run()` syncs now (e.g. after switching folder); `stop()` on unmount. */
-export function startAutoSync(scope: () => LiveScope, onChange: () => unknown) {
+export function startAutoSync(scope: () => LiveScope, onChange: () => unknown, endpoint = '/sync/live') {
   let busy = false;
   const run = async () => {
     if (busy || document.visibilityState !== 'visible') return;
     busy = true;
-    try { if (await liveSync(scope())) await onChange(); } finally { busy = false; }
+    try { if (await liveSync(scope(), endpoint)) await onChange(); } finally { busy = false; }
   };
   const timer = setInterval(run, AUTO_SYNC_MS);
   const visible = () => { if (document.visibilityState === 'visible') void run(); };

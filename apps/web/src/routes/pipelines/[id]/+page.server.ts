@@ -1,3 +1,4 @@
+import { scopeState } from '$lib/server/scope';
 import { error, fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { readState, updateState } from '$lib/server/aados-store';
@@ -10,8 +11,8 @@ const count = (values: string[]) => {
   return [...map.entries()].sort((a, b) => b[1] - a[1]);
 };
 
-export const load: PageServerLoad = async ({ params, url }) => {
-  const state = await readState();
+export const load: PageServerLoad = async ({ params, url, locals }) => {
+  const state = scopeState(await readState(), locals.user);
   const pipeline = state.pipelines.find((item) => item.id === params.id);
   if (!pipeline) throw error(404, 'Pipeline not found');
   const all = state.items.filter((item) => item.pipelineId === pipeline.id);

@@ -34,7 +34,13 @@ export const actions: Actions = {
     const submittedToken = String(data.get('csrfToken') || '');
     const cookieToken = cookies.get(CSRF_COOKIE) || '';
     if (!submittedToken || !cookieToken || !sameToken(submittedToken, cookieToken)) return fail(403, { error: 'Login form expired. Reload and try again.', username });
-    const valid = sameUsername(username) && await verifyPassword(password, env.AADOS_PASSWORD_HASH ? ownerPasswordHash() : '');
+    // The owner (deployment login), else a family member created in Settings → Family.
+    let member: { id: string; ver: number } | undefined;
+    let valid = sameUsername(username) && await verifyPassword(password, env.AADOS_PASSWORD_HASH ? ownerPasswordHash() : '');
+    if (!valid) {
+      const m = security().memberByUsername(username);
+      if (m && !m.disabled && await verifyPassword(password, m.passwordHash)) { valid = true; member = { id: m.id, ver: m.ver }; }
+    }
     if (!valid) {
       security().addFailure(address, WINDOW_MS);
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -43,7 +49,7 @@ export const actions: Actions = {
 
     security().clearFailures(address);
     const secure = url.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
-    cookies.set(SESSION_COOKIE, createSession(), sessionCookieOptions(secure));
+    cookies.set(SESSION_COOKIE, createSession(member), sessionCookieOptions(secure));
     cookies.delete(CSRF_COOKIE, { path: '/login' });
     throw redirect(303, '/');
   }

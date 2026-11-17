@@ -1,7 +1,5 @@
-import { fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { readState, updateStateDetached } from '$lib/server/aados-store';
-import { syncCalendars } from '$lib/server/calendar-sync';
+import { readState } from '$lib/server/aados-store';
 import { agenda, validZone } from '$lib/calendar/model';
 import { bucketByDay, describeRecurrence, isDate, rangeUtc, shiftDate, todayIn, viewDays, type ViewKind } from '$lib/calendar/view';
 
@@ -52,11 +50,4 @@ export const load: PageServerLoad = async ({ url }) => {
     errors: enabled.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} · ${a.email}`, message: a.calendarError! })),
     lastSync: enabled.map((a) => a.calendarLastSync || '').sort().pop() || ''
   };
-};
-
-export const actions: Actions = {
-  sync: async () => {
-    try { let r = { accounts: 0, failed: 0 }; await updateStateDetached(async (s) => { r = await syncCalendars(s); }); return { synced: r }; }
-    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Calendar sync failed.' }); }
-  }
 };

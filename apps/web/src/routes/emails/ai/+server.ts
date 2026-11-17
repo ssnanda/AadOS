@@ -1,3 +1,4 @@
+import { keyAllowed } from '$lib/server/scope';
 import { json } from '@sveltejs/kit';
 import { database, readState, updateState } from '$lib/server/aados-store';
 import { AiError, describeError } from '$lib/server/ai/ajmcp';
@@ -11,10 +12,11 @@ import { tick } from '$lib/server/reminders';
 const TONES: Tone[] = ['reply', 'shorten', 'formal', 'friendly', 'regenerate'];
 
 // Owner-only email AI actions. Read-only towards Gmail/Zoho: nothing here sends or modifies a mailbox.
-export const POST = async ({ request }) => {
+export const POST = async ({ request, locals }) => {
   const b = await request.json().catch(() => null);
   if (!b || typeof b !== 'object') return json({ error: 'Invalid request.' }, { status: 400 });
   const op = String(b.op || ''), key = String(b.key || '').slice(0, 300);
+  if (key && !keyAllowed(locals.user, key)) return json({ error: 'Email not found.' }, { status: 404 });
   try {
     const state = await readState();
     if (!findRow(state, key)) return json({ error: 'Email not found.' }, { status: 404 });

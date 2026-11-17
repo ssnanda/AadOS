@@ -5,7 +5,14 @@ import { join } from 'node:path';
 
 /** passwordHash: owner password changed in Settings; base = fingerprint of the deployment hash it replaced (a reset of
  *  the deployment login, e.g. `dev-local.sh --reset-user`, changes that hash and so makes the override inactive). */
-type Data = { validAfter: number; failures: Record<string, number[]>; passwordHash?: string; passwordBase?: string };
+type Data = { validAfter: number; failures: Record<string, number[]>; passwordHash?: string; passwordBase?: string; members?: Member[] };
+
+/** Sections a family member can be allowed into (Settings is always owner-only). */
+export const PERMISSIONS = ['emails', 'calendar', 'tasks', 'reminders', 'asana', 'documents', 'assistant'] as const;
+export type Permission = (typeof PERMISSIONS)[number];
+/** A family login. `mailboxes`: account ids they may read ('all' = every mailbox). `ver` bumps on password change/disable,
+ *  ending that member's sessions. */
+export type Member = { id: string; name: string; username: string; passwordHash: string; permissions: Permission[]; mailboxes: string[] | 'all'; ver: number; disabled?: boolean; createdAt: string };
 
 export class SecurityStore {
   private dir: string;
@@ -13,8 +20,8 @@ export class SecurityStore {
   constructor(dir: string) { this.dir = dir; this.file = join(dir, 'security.json'); }
 
   private read(): Data {
-    try { const d = JSON.parse(readFileSync(this.file, 'utf8')); return { validAfter: Number(d.validAfter) || 0, failures: d.failures && typeof d.failures === 'object' ? d.failures : {}, ...(typeof d.passwordHash === 'string' ? { passwordHash: d.passwordHash, passwordBase: String(d.passwordBase || '') } : {}) }; }
-    catch { return { validAfter: 0, failures: {} }; }
+    try { const d = JSON.parse(readFileSync(this.file, 'utf8')); return { members: Array.isArray(d.members) ? d.members : [], validAfter: Number(d.validAfter) || 0, failures: d.failures && typeof d.failures === 'object' ? d.failures : {}, ...(typeof d.passwordHash === 'string' ? { passwordHash: d.passwordHash, passwordBase: String(d.passwordBase || '') } : {}) }; }
+    catch { return { validAfter: 0, failures: {}, members: [] }; }
   }
   private write(data: Data) {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
@@ -40,4 +47,11 @@ export class SecurityStore {
     (d.failures[key] ||= []).push(now); this.write(d);
   }
   clearFailures(key: string) { const d = this.read(); if (d.failures[key]) { delete d.failures[key]; this.write(d); } }
+
+  // ---- family members ----
+  members(): Member[] { return this.read().members || []; }
+  member(id: string): Member | undefined { return this.members().find((m) => m.id === id); }
+  memberByUsername(username: string): Member | undefined { const u = username.trim().toLowerCase(); return this.members().find((m) => m.username.toLowerCase() === u); }
+  saveMember(member: Member) { const d = this.read(); const list = d.members || []; const i = list.findIndex((m) => m.id === member.id); if (i >= 0) list[i] = member; else list.push(member); d.members = list; this.write(d); }
+  removeMember(id: string) { const d = this.read(); d.members = (d.members || []).filter((m) => m.id !== id); this.write(d); }
 }

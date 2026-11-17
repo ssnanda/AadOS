@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { readState, updateState, type MailAccount } from '$lib/server/aados-store';
 import { fetchZohoBody } from '$lib/server/zoho';
 import { fetchGmailBody } from '$lib/server/gmail';
+import { canSeeAccount } from '$lib/server/auth';
 
 // Fetches one email body from the mailbox on demand (read-only) and marks it seen in AadOS.
 // The mailbox call runs WITHOUT the state lock (it used to hold it, so every preview queued behind
@@ -32,7 +33,12 @@ function persist(pipelineId: string, messageId: string, change: { seen: boolean;
   }).catch((cause) => console.warn('[aados] saving preview state failed:', cause instanceof Error ? cause.message : cause));
 }
 
-export const GET: RequestHandler = async ({ params, url }) => {
+export const GET: RequestHandler = async ({ params, url, locals }) => {
+  // Family members: only mail from mailboxes they were given.
+  if (!locals.user?.owner) {
+    const s = await readState(), p = s.pipelines.find((x) => x.id === params.id), it = s.items.find((x) => x.pipelineId === params.id && x.messageId === params.mid);
+    if (!it || !canSeeAccount(locals.user, it.accountId || p?.accountId || '')) throw error(404, 'Email not found');
+  }
   const prefetch = url.searchParams.has('prefetch');
   const key = `${params.id}\u0000${params.mid}`;
   const seen = (globalThis.__aadosSeen ??= new Set());
