@@ -68,7 +68,7 @@
     {#if data.query.view === 'all'}<button type="button" class="link" onclick={() => showFilters = !showFilters}>Filters{hasFilters ? ' •' : ''}</button>{/if}</form>
   {#if data.query.view === 'all' && showFilters}
   <form class="filters" method="GET">
-    {#if data.query.view !== 'unread'}<input type="hidden" name="view" value={data.query.view}>{/if}{#if data.query.q}<input type="hidden" name="q" value={data.query.q}>{/if}
+    <input type="hidden" name="view" value="all">{#if data.query.q}<input type="hidden" name="q" value={data.query.q}>{/if}
     <label>Account<select name="account"><option value="">All</option>{#each data.accounts as a (a.id)}<option value={a.id} selected={data.query.account === a.id}>{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}</option>{/each}</select></label>
     <label>Category<select name="category"><option value="">All</option>{#each data.categories as c (c)}<option selected={data.query.category === c}>{c}</option>{/each}</select></label>
     <label>Status<select name="read"><option value="">Any</option><option value="unread" selected={data.query.read === 'unread'}>Unread</option><option value="read" selected={data.query.read === 'read'}>Read</option></select></label>
