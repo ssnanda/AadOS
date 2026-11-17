@@ -20,6 +20,7 @@
 - [ ] Oban incremental sync, dedupe, cursor/checkpoint and retry safety
 - [x] Unified inbox, search, sender/account/thread grouping and pagination (unverified build, see development-handoff.md)
 - [x] Show unread dashboard counts accurately
+- [x] Make account inboxes and saved views first-class on the Emails page (owner browser verification pending)
 - [ ] Show actionable and account connection errors accurately
 
 ## M2 — AI email triage

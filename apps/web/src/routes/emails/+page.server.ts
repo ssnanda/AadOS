@@ -5,6 +5,7 @@ import { getInsights } from '$lib/server/ai/db';
 import { ensureInboxPipelines, missingInboxPipelines, readState, updateState, visiblePipelines } from '$lib/server/aados-store';
 import { buildRows, queryInbox, type InboxQuery, type InboxView } from '$lib/server/inbox';
 import { CATEGORIES } from '$lib/server/categories';
+import { isUnread } from '$lib/server/search';
 
 const VIEWS: InboxView[] = ['inbox', 'all', 'unread', 'important', 'needs-reply', 'recent', 'read'];
 
@@ -13,13 +14,14 @@ export const load: PageServerLoad = async ({ url }) => {
   // First visit after connecting an account: create the hidden per-account inbox feeds (never touches existing data).
   if (missingInboxPipelines(state)) { await updateState((s) => { ensureInboxPipelines(s); }); state = await readState(); }
   const p = url.searchParams;
-  const view = (VIEWS as string[]).includes(p.get('view') || '') ? (p.get('view') as InboxView) : 'inbox';
+  const view = (VIEWS as string[]).includes(p.get('view') || '') ? (p.get('view') as InboxView) : 'unread';
   const query: InboxQuery = {
     view, account: p.get('account') || '', provider: p.get('provider') || '', sender: p.get('sender') || '', from: p.get('from') || '', to: p.get('to') || '',
     read: p.get('read') === 'read' ? 'read' : p.get('read') === 'unread' ? 'unread' : '', category: (CATEGORIES as readonly string[]).includes(p.get('category') || '') ? p.get('category')! : '',
     pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize: 50
   };
-  const result = queryInbox(buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items }), query);
+  const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
+  const result = queryInbox(rows, query);
   // Cached AI insights for the visible rows only (never computed here).
   const insights: Record<string, { summary: string; category: string; confidence: number; needsReply: boolean; paymentDue: string | null }> = {};
   if (hasDatabase()) for (const [k, v] of await getInsights(await database(), result.rows.map((r) => r.key)).catch(() => new Map())) if (v.status === 'done' && v.insight) insights[k] = { summary: v.insight.summary, category: v.insight.category, confidence: v.insight.confidence, needsReply: v.insight.needsReply, paymentDue: v.insight.paymentDue };
@@ -27,8 +29,8 @@ export const load: PageServerLoad = async ({ url }) => {
     insights, aiAvailable: hasDatabase(),
     query, ...result,
     categories: CATEGORIES,
-    accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '' })),
-    views: visiblePipelines(state).map((v) => ({ id: v.id, name: v.name })),
+    accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),
+    views: visiblePipelines(state).map((v) => ({ id: v.id, name: v.name, parser: v.parser, total: state.items.filter((i) => i.pipelineId === v.id).length, unread: state.items.filter((i) => i.pipelineId === v.id && isUnread(i)).length })),
     inboxIds: state.pipelines.filter((v) => v.system).map((v) => v.id)
   };
 };
@@ -39,15 +41,24 @@ export const actions: Actions = {
   // Local-only review state for one source message (all its copies). The mailbox is never modified.
   mark: async ({ request }) => {
     const form = await request.formData();
-    const key = String(form.get('key') || '');
+    const keys = [...form.getAll('key'), ...form.getAll('keys')].map(String).filter(Boolean);
     const op = String(form.get('op') || '');
     const value = String(form.get('value') || '');
     try {
       await updateState((state) => {
-        const copies = state.items.filter((item) => `${account(state, item)}:${item.messageId}` === key);
-        if (!copies.length) throw new Error('Email not found.');
+        const wanted = new Set(keys);
+        const copies = state.items.filter((item) => wanted.has(`${account(state, item)}:${item.messageId}`));
+        if (!keys.length || !copies.length) throw new Error('Choose at least one email.');
+        if (op === 'delete') {
+          const gone = new Set(copies.map((item) => item.id));
+          state.items = state.items.filter((item) => !gone.has(item.id));
+          state.dismissed.push(...[...gone].filter((id) => !state.dismissed.includes(id)));
+          return;
+        }
         for (const item of copies) {
-          if (op === 'actionable' || op === 'dismissed' || op === 'reviewed') item.actionState = op;
+          if (op === 'mark-read') item.seen = true;
+          else if (op === 'mark-unread') { item.seen = false; item.unread = true; }
+          else if (op === 'actionable' || op === 'dismissed' || op === 'reviewed') item.actionState = op;
           else if (op === 'clear-action') delete item.actionState;
           else if (op === 'follow-up') item.followUp = item.followUp || new Date().toISOString();
           else if (op === 'clear-follow-up') delete item.followUp;

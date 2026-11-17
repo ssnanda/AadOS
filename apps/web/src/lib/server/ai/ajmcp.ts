@@ -18,6 +18,18 @@ export const DEFAULT_LIMITS: Limits = { maxBytes: 32 * 1024, maxMessages: 20, ma
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 export type ClientOptions = { baseUrl: string; token: string; httpHosts?: string[]; timeoutMs?: number; retries?: number; limits?: Partial<Limits>; fetchImpl?: Fetch; sleep?: (ms: number) => Promise<void> };
 
+/** The admin UI is not an API prefix. Accept a copied admin URL and reduce it to the gateway origin. */
+export function normalizeBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  try {
+    const url = new URL(trimmed);
+    if (url.pathname === '/admin') url.pathname = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/+$/, '');
+  } catch { return trimmed; }
+}
+
 /** Only HTTPS, except loopback and hosts explicitly listed in AADOS_ALLOW_HTTP_HOSTS (local Docker mocks/tests). */
 export function validBaseUrl(value: string, httpHosts: string[] = []): boolean {
   try { const u = new URL(value); return u.protocol === 'https:' || (u.protocol === 'http:' && (['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) || httpHosts.includes(u.hostname))); }
@@ -63,9 +75,9 @@ export function createAjmcpClient(opts: ClientOptions) {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const timeoutMs = opts.timeoutMs ?? 60_000, retries = Math.min(Math.max(opts.retries ?? 2, 0), 4);
-  if (!opts.baseUrl || !opts.token) throw new AiError('not_configured', 'missing URL or token');
-  if (!validBaseUrl(opts.baseUrl, opts.httpHosts)) throw new AiError('not_configured', 'AJMCP URL must be https');
-  const base = opts.baseUrl.replace(/\/+$/, '');
+  const base = normalizeBaseUrl(opts.baseUrl);
+  if (!base || !opts.token) throw new AiError('not_configured', 'missing URL or token');
+  if (!validBaseUrl(base, opts.httpHosts)) throw new AiError('not_configured', 'AJMCP URL must be https');
 
   async function call(path: string, init: RequestInit, signal?: AbortSignal): Promise<{ body: any; latencyMs: number }> {
     let last: AiError = new AiError('unavailable', 'no attempt');

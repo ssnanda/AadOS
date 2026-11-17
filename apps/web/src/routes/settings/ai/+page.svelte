@@ -11,7 +11,7 @@
 
   <section><h2>AJMCP gateway</h2>
     <form method="POST" action="?/gateway" class="cfg">
-      <label>Gateway URL<input name="url" type="url" value={data.gateway.url} placeholder="https://ajmcp.example.com" disabled={data.gateway.urlFromEnv}>{#if data.gateway.urlFromEnv}<small>Set by environment (AADOS_AJMCP_URL)</small>{/if}</label>
+      <label>Gateway URL<input name="url" type="url" value={data.gateway.url} placeholder="https://ajmcp.example.com" disabled={data.gateway.urlFromEnv}>{#if data.gateway.urlFromEnv}<small>Set by environment (AADOS_AJMCP_URL)</small>{:else}<small>Use the server origin only, without <code>/admin</code>.</small>{/if}</label>
       <label>AadOS site token<input name="token" type="password" autocomplete="off" placeholder={data.gateway.hasToken ? 'Saved — leave blank to keep' : 'Paste the token of the AadOS site in AJMCP'} disabled={data.gateway.tokenFromEnv}>{#if data.gateway.tokenFromEnv}<small>Set by environment (AADOS_AJMCP_TOKEN)</small>{:else if data.gateway.hasToken}<small><label class="inline"><input type="checkbox" name="clearToken"> Remove saved token</label></small>{/if}</label>
       <div class="row"><button>Save</button><small>Use a dedicated AJMCP site for AadOS, never a website's token. The token is stored encrypted and never shown again.</small></div>
     </form>

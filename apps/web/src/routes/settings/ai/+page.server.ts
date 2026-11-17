@@ -4,7 +4,7 @@ import { readState, updateState } from '$lib/server/aados-store';
 import { AiError, describeError } from '$lib/server/ai/ajmcp';
 import { env } from '$env/dynamic/private';
 import { aiConfigured, client, gatewayHost, recordAi } from '$lib/server/ai/service';
-import { validBaseUrl } from '$lib/server/ai/ajmcp';
+import { normalizeBaseUrl, validBaseUrl } from '$lib/server/ai/ajmcp';
 import { ajmcpConfig } from '$lib/server/integrations';
 import { triagePass, triageStatus, triageSummary } from '$lib/server/ai/email-service';
 
@@ -19,7 +19,8 @@ const bool = (f: FormData, k: string) => f.get(k) === 'on';
 export const actions: Actions = {
   gateway: async ({ request }) => {
     const f = await request.formData();
-    const url = String(f.get('url') || '').trim().replace(/\/+$/, '');
+    const submittedUrl = String(f.get('url') || '').trim();
+    const url = normalizeBaseUrl(submittedUrl);
     const token = String(f.get('token') || '').trim();
     const hosts = (env.AADOS_ALLOW_HTTP_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean);
     if (url && !validBaseUrl(url, hosts)) return fail(400, { error: 'The gateway URL must start with https://' });
@@ -29,7 +30,7 @@ export const actions: Actions = {
       if (f.get('clearToken') === 'on') s.integrations.ajmcp.token = '';
       else if (token) s.integrations.ajmcp.token = token; // blank = keep the saved token
     });
-    return { message: 'Gateway settings saved.' };
+    return { message: submittedUrl !== url ? `Gateway settings saved as ${url}. The admin-page suffix was removed.` : 'Gateway settings saved.' };
   },
   save: async ({ request }) => {
     const f = await request.formData();

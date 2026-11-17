@@ -2,6 +2,7 @@
 // otherwise the value saved in Settings (stored in the encrypted credential vault). Secrets never leave the server.
 import { env } from '$env/dynamic/private';
 import type { AadOSState } from './aados-store';
+import { normalizeBaseUrl } from './ai/ajmcp';
 
 type Source = 'env' | 'settings' | '';
 const pick = (e: string | undefined, s: string): [string, Source] => (e ? [e, 'env'] : s ? [s, 'settings'] : ['', '']);
@@ -9,7 +10,7 @@ const pick = (e: string | undefined, s: string): [string, Source] => (e ? [e, 'e
 export function ajmcpConfig(state: Pick<AadOSState, 'integrations'>) {
   const [url, urlFrom] = pick(env.AADOS_AJMCP_URL, state.integrations.ajmcp.url);
   const [token, tokenFrom] = pick(env.AADOS_AJMCP_TOKEN, state.integrations.ajmcp.token);
-  return { url, token, from: { url: urlFrom, token: tokenFrom } };
+  return { url: normalizeBaseUrl(url), token, from: { url: urlFrom, token: tokenFrom } };
 }
 
 const S3_KEYS = { endpoint: 'AADOS_S3_ENDPOINT', bucket: 'AADOS_S3_BUCKET', region: 'AADOS_S3_REGION', accessKey: 'AADOS_S3_ACCESS_KEY', secretKey: 'AADOS_S3_SECRET_KEY', prefix: 'AADOS_S3_PREFIX' } as const;

@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AiError, createAjmcpClient, describeError, fitMessages, validBaseUrl } from '../src/lib/server/ai/ajmcp.ts';
+import { AiError, createAjmcpClient, describeError, fitMessages, normalizeBaseUrl, validBaseUrl } from '../src/lib/server/ai/ajmcp.ts';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 const mk = (handler: (url: string, init?: RequestInit) => Promise<Response>, extra = {}) => createAjmcpClient({ baseUrl: 'https://ai.example.test/', token: 'TOKEN-123', fetchImpl: handler, sleep: async () => {}, ...extra });
 
 test('config: https only (loopback allowed for mocks); missing token is not_configured', () => {
   assert.equal(validBaseUrl('https://ajmcp.example.com'), true); assert.equal(validBaseUrl('http://ajmcp.example.com'), false); assert.equal(validBaseUrl('http://127.0.0.1:9999'), true); assert.equal(validBaseUrl('nope'), false);
+  assert.equal(normalizeBaseUrl('https://ajmcp.example.com/admin'), 'https://ajmcp.example.com');
+  assert.equal(normalizeBaseUrl('https://ajmcp.example.com/admin/'), 'https://ajmcp.example.com');
   assert.throws(() => createAjmcpClient({ baseUrl: 'https://x.test', token: '' }), (e: AiError) => e.kind === 'not_configured');
   assert.throws(() => createAjmcpClient({ baseUrl: 'http://x.test', token: 't' }), (e: AiError) => e.kind === 'not_configured');
 });

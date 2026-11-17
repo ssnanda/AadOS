@@ -7,14 +7,16 @@
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let viewing = $state<PageData['rows'][number] | null>(null);
   let showFilters = $state(false);
+  let selected = $state<string[]>([]);
+  let acting = $state(false);
 
-  const TABS = [['inbox', 'All Inboxes'], ['all', 'All Messages'], ['unread', 'Unread'], ['important', 'Important'], ['needs-reply', 'Needs Reply'], ['recent', 'Recent'], ['read', 'Read']] as const;
+  const TABS = [['unread', 'Unread'], ['important', 'Important'], ['needs-reply', 'Needs Reply'], ['recent', 'Recent'], ['inbox', 'Combined inbox'], ['all', 'All mail'], ['read', 'Read']] as const;
   const tabCount = (v: string) => ({ inbox: data.counts.inbox, all: data.counts.all, unread: data.counts.unread, important: data.counts.important, 'needs-reply': data.counts.needsReply, recent: data.counts.recent, read: data.counts.read } as Record<string, number>)[v];
   // Keeps every active filter when switching view/page, so "back" always lands on the same list.
   const href = (over: Record<string, string | number>) => {
     const q = new URLSearchParams();
     const merged: Record<string, string | number | undefined> = { ...data.query, page: 1, ...over };
-    for (const [k, v] of Object.entries(merged)) if (v && !(k === 'view' && v === 'inbox') && !(k === 'page' && v === 1) && k !== 'pageSize') q.set(k, String(v));
+    for (const [k, v] of Object.entries(merged)) if (v && !(k === 'view' && v === 'unread') && !(k === 'page' && v === 1) && k !== 'pageSize') q.set(k, String(v));
     const s = q.toString();
     return s ? `?${s}` : '?';
   };
@@ -22,6 +24,29 @@
   const ago = (iso: string) => { const d = new Date(iso); return Date.now() - d.getTime() < 86_400_000 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };
   const name = (s: string) => s.replace(/<[^>]*>/g, '').replace(/["']/g, '').trim() || s;
   const bad = $derived(data.accounts.filter((a) => a.lastError));
+  const allShown = $derived(data.rows.length > 0 && selected.length === data.rows.length);
+  const viewingIndex = $derived(viewing ? data.rows.findIndex((r) => r.key === viewing?.key) : -1);
+  const toggle = (key: string, checked: boolean) => selected = checked ? [...new Set([...selected, key])] : selected.filter((x) => x !== key);
+  const toggleAll = (checked: boolean) => selected = checked ? data.rows.map((r) => r.key) : [];
+  async function act(op: string, keys = selected) {
+    if (!keys.length || acting) return false;
+    if (op === 'delete' && !confirm(`Delete ${keys.length} email${keys.length === 1 ? '' : 's'} from AadOS?\n\nGmail and Zoho are not changed. Deleted emails will not sync back into AadOS.`)) return false;
+    acting = true;
+    const body = new FormData(); for (const key of keys) body.append('keys', key); body.set('op', op);
+    const res = await fetch('?/mark', { method: 'POST', body });
+    acting = false;
+    if (!res.ok) return false;
+    selected = selected.filter((key) => !keys.includes(key));
+    await invalidateAll();
+    return true;
+  }
+  function move(offset: number) { const row = data.rows[viewingIndex + offset]; if (row) viewing = row; }
+  async function deleteViewing() {
+    if (!viewing) return;
+    const current = viewing;
+    const replacement = data.rows[viewingIndex + 1] ?? data.rows[viewingIndex - 1] ?? null;
+    if (await act('delete', [current.key])) viewing = replacement;
+  }
 </script>
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
@@ -35,11 +60,11 @@
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
 
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.query.q} placeholder="Search all accounts…" aria-label="Search all accounts">
-    {#each Object.entries({ view: data.query.view === 'inbox' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
+    {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
     <button type="button" class="link" onclick={() => showFilters = !showFilters}>Filters{hasFilters ? ' •' : ''}</button></form>
   {#if showFilters}
   <form class="filters" method="GET">
-    {#if data.query.view !== 'inbox'}<input type="hidden" name="view" value={data.query.view}>{/if}{#if data.query.q}<input type="hidden" name="q" value={data.query.q}>{/if}
+    {#if data.query.view !== 'unread'}<input type="hidden" name="view" value={data.query.view}>{/if}{#if data.query.q}<input type="hidden" name="q" value={data.query.q}>{/if}
     <label>Account<select name="account"><option value="">All</option>{#each data.accounts as a (a.id)}<option value={a.id} selected={data.query.account === a.id}>{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}</option>{/each}</select></label>
     <label>Category<select name="category"><option value="">All</option>{#each data.categories as c (c)}<option selected={data.query.category === c}>{c}</option>{/each}</select></label>
     <label>Status<select name="read"><option value="">Any</option><option value="unread" selected={data.query.read === 'unread'}>Unread</option><option value="read" selected={data.query.read === 'read'}>Read</option></select></label>
@@ -49,8 +74,15 @@
     <div class="go"><button class="btn">Apply</button>{#if hasFilters}<a class="link" href={href({ account: '', provider: '', sender: '', from: '', to: '', read: '', category: '', pipeline: '', thread: '', q: '' })}>Clear</a>{/if}</div>
   </form>{/if}
 
-  <nav class="tabs" aria-label="Inbox views">{#each TABS as [v, label] (v)}<a class:on={data.query.view === v} href={href({ view: v })}>{label}<i>{tabCount(v)}</i></a>{/each}</nav>
-  <div class="chips">{#each data.categories.filter((c) => data.counts.categories[c]) as c (c)}<a class="chip" class:on={data.query.category === c} href={href({ category: data.query.category === c ? '' : c })}>{c}<i>{data.counts.categories[c]}</i></a>{/each}</div>
+  <section class="scope">
+    <div class="scope-head"><h2>Accounts</h2>{#if data.query.account}<a class="clear" href={href({ account: '' })}>Show all accounts</a>{/if}</div>
+    <nav class="accounts" aria-label="Email accounts">{#each data.accounts as a (a.id)}<a class:on={data.query.account === a.id} href={href({ account: a.id, pipeline: '', view: 'unread' })}><span class="provider {a.provider}">{a.provider === 'gmail' ? 'G' : 'Z'}</span><span><strong>{a.email}</strong><small>{a.unread} unread · {a.total} total</small></span></a>{/each}</nav>
+    <div class="scope-head views-head"><h2>Saved views</h2><a class="clear" href="/settings/emails#views">Manage views</a></div>
+    {#if data.views.length}<nav class="saved" aria-label="Saved email views">{#each data.views as v (v.id)}<a class:on={data.query.pipeline === v.id} href={href({ pipeline: v.id, account: '', view: 'unread' })}><span>{v.parser === 'shop' ? '🛍' : v.parser === 'health' ? '♡' : '✉'}</span><strong>{v.name}</strong><i>{v.unread}</i></a>{/each}</nav>{:else}<p class="no-views">No saved views. <a href="/settings/emails#views">Add one</a></p>{/if}
+  </section>
+
+  <nav class="tabs" aria-label="Message status">{#each TABS as [v, label] (v)}<a class:on={data.query.view === v} class:secondary={v === 'inbox' || v === 'all' || v === 'read'} href={href({ view: v })}>{label}<i>{tabCount(v)}</i></a>{/each}</nav>
+  <details class="categories" open={Boolean(data.query.category)}><summary>Categories{data.query.category ? ` · ${data.query.category}` : ''}</summary><div class="chips">{#each data.categories.filter((c) => data.counts.categories[c]) as c (c)}<a class="chip" class:on={data.query.category === c} href={href({ category: data.query.category === c ? '' : c })}>{c}<i>{data.counts.categories[c]}</i></a>{/each}</div></details>
 
   <section>{#if data.rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages synced yet. Use “Sync all inboxes”.' : 'No messages match.'}</div>{/if}
   <ul class="list">{#each data.rows as r (r.key)}
@@ -87,9 +119,13 @@
   .link{border:0;background:none;color:#3157de;font-weight:700;cursor:pointer;padding:0;font-size:12px;text-decoration:none}
   .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:12px;margin-bottom:10px}
   .filters label{display:grid;gap:4px;font-size:11px;font-weight:700;color:#53607a}.filters select,.filters input{border:1px solid #dbe1eb;border-radius:8px;padding:7px;font-size:12px;min-width:0}.go{display:flex;gap:12px;align-items:end}
+  .scope{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:13px;margin-bottom:12px}.scope-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}.scope-head h2{margin:0;font-size:12px;color:#53607a;text-transform:uppercase;letter-spacing:.7px}.scope-head .clear{margin-left:auto;color:#3157de;font-size:11px;font-weight:700;text-decoration:none}.views-head{margin-top:13px;border-top:1px solid #eef0f5;padding-top:12px}
+  .accounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px}.accounts a{display:flex;align-items:center;gap:9px;border:1px solid #e4e9f2;border-radius:9px;padding:8px 10px;color:#43516c;text-decoration:none;min-width:0}.accounts a:hover,.accounts a.on{border-color:#8da2f0;background:#f7f9ff}.accounts a>span:last-child{min-width:0}.accounts strong,.accounts small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.accounts strong{font-size:12px}.accounts small{font-size:10px;color:#8a95a8;margin-top:2px}.provider{width:27px;height:27px;display:grid!important;place-items:center;border-radius:8px;flex:none;background:#eef1ff;color:#3157de;font-weight:800}.provider.gmail{background:#fff0ee;color:#d94d43}
+  .saved{display:flex;gap:7px;flex-wrap:wrap}.saved a{display:inline-flex;align-items:center;gap:7px;border:1px solid #e4e9f2;border-radius:9px;padding:7px 10px;color:#43516c;text-decoration:none;font-size:12px}.saved a:hover,.saved a.on{border-color:#7c4dde;background:#f5f0ff;color:#6a3fd1}.saved i{font-style:normal;background:#f1ebff;color:#7c4dde;border-radius:99px;padding:1px 6px;font-size:10px}.no-views{margin:0;color:#8a95a8;font-size:12px}.no-views a{color:#3157de;font-weight:700}
   .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.tabs a{display:inline-flex;gap:7px;align-items:center;padding:7px 12px;border-radius:9px;background:#fff;border:1px solid #e4e9f2;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.tabs a.on{background:#3157de;border-color:#3157de;color:#fff}
+  .tabs a.secondary:not(.on){color:#8a95a8;background:transparent}
   .tabs i,.chip i{font-style:normal;font-size:11px;background:#f0f2f7;color:#5b6a86;border-radius:99px;padding:1px 7px}.tabs a.on i,.chip.on i{background:#ffffff33;color:#fff}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
+  .categories{margin-bottom:14px}.categories summary{cursor:pointer;color:#53607a;font-size:12px;font-weight:700}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
   .list{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e4e9f2;border-radius:12px;overflow:hidden}
   li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}
   .row{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;gap:14px;align-items:baseline;width:100%;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:#29344c}
