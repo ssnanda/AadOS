@@ -3,7 +3,9 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-type Data = { validAfter: number; failures: Record<string, number[]> };
+/** passwordHash: owner password changed in Settings; base = fingerprint of the deployment hash it replaced (a reset of
+ *  the deployment login, e.g. `dev-local.sh --reset-user`, changes that hash and so makes the override inactive). */
+type Data = { validAfter: number; failures: Record<string, number[]>; passwordHash?: string; passwordBase?: string };
 
 export class SecurityStore {
   private dir: string;
@@ -11,7 +13,7 @@ export class SecurityStore {
   constructor(dir: string) { this.dir = dir; this.file = join(dir, 'security.json'); }
 
   private read(): Data {
-    try { const d = JSON.parse(readFileSync(this.file, 'utf8')); return { validAfter: Number(d.validAfter) || 0, failures: d.failures && typeof d.failures === 'object' ? d.failures : {} }; }
+    try { const d = JSON.parse(readFileSync(this.file, 'utf8')); return { validAfter: Number(d.validAfter) || 0, failures: d.failures && typeof d.failures === 'object' ? d.failures : {}, ...(typeof d.passwordHash === 'string' ? { passwordHash: d.passwordHash, passwordBase: String(d.passwordBase || '') } : {}) }; }
     catch { return { validAfter: 0, failures: {} }; }
   }
   private write(data: Data) {
@@ -19,6 +21,13 @@ export class SecurityStore {
     const tmp = `${this.file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 }); chmodSync(tmp, 0o600); renameSync(tmp, this.file);
   }
+
+  /** The owner's password hash: a Settings change wins only while the deployment hash it replaced is unchanged. */
+  effectivePasswordHash(deploymentHash: string, fingerprint: (v: string) => string): string {
+    const d = this.read();
+    return d.passwordHash && d.passwordBase === fingerprint(deploymentHash) ? d.passwordHash : deploymentHash;
+  }
+  setPasswordHash(hash: string, deploymentHash: string, fingerprint: (v: string) => string) { const d = this.read(); d.passwordHash = hash; d.passwordBase = fingerprint(deploymentHash); this.write(d); }
 
   /** Sessions issued before this time (ms) are rejected. */
   validAfter(): number { return this.read().validAfter; }

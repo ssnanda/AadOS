@@ -89,7 +89,7 @@ export type MailAccount = {
 // One page of a folder/label sync. `next` is the cursor for the following page ('' = done).
 export type PageResult = { scanned: number; added: number; unknown: number; next: string };
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
-export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean } };
+export type AadOSState = { zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },
@@ -107,7 +107,8 @@ const emptyState = (): AadOSState => ({
   prefs: defaultPrefs(),
   ai: defaultAiPrefs(),
   aiStatus: defaultAiStatus(),
-  notify: { browser: false }
+  notify: { browser: false },
+  integrations: defaultIntegrations()
 });
 
 /** A view's folders, each resolved to its own account and provider. */
@@ -124,6 +125,9 @@ import type { Reminder } from './reminders.ts';
 /** AI is OFF until the owner enables it; nothing is sent to AJMCP before that. */
 export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean }; emailBodies: boolean };
 export type AiStatus = { lastOk: string; lastError: string; lastErrorAt: string; provider: string; model: string; gatewayVersion: string; checkedAt: string };
+/** Integration settings edited in Settings. Stored with the other secrets (encrypted credential vault in PostgreSQL). */
+export type Integrations = { ajmcp: { url: string; token: string }; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
+export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
 export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true }, emailBodies: false });
 export const defaultAiStatus = (): AiStatus => ({ lastOk: '', lastError: '', lastErrorAt: '', provider: '', model: '', gatewayVersion: '', checkedAt: '' });
 export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
@@ -180,6 +184,7 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     ai: { ...defaultAiPrefs(), ...(saved.ai || {}), share: { ...defaultAiPrefs().share, ...(saved.ai?.share || {}) } },
     aiStatus: { ...defaultAiStatus(), ...(saved.aiStatus || {}) },
     notify: { browser: false, ...(saved.notify || {}) },
+    integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
     pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }

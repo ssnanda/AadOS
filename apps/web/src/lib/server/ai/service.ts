@@ -1,5 +1,6 @@
 // Server-only glue: AJMCP client from env, owner AI preferences/status, rate limiting, and the assistant pipeline.
 import { env } from '$env/dynamic/private';
+import { ajmcpConfig } from '../integrations';
 import { createAjmcpClient, AiError, describeError, type AjmcpClient, type ChatMessage, type ChatResult } from './ajmcp';
 import { readState, updateState, database, hasDatabase, type AadOSState } from '../aados-store';
 import { buildRows } from '../inbox';
@@ -8,16 +9,17 @@ import { searchDocumentPassages, tsTerms, addMessage, getConversation, createCon
 import { todayIn } from '../../calendar/view';
 import { validZone } from '../../calendar/model';
 
-export const aiConfigured = () => Boolean(env.AADOS_AJMCP_URL && env.AADOS_AJMCP_TOKEN);
-export const gatewayHost = () => { try { return new URL(env.AADOS_AJMCP_URL || '').host; } catch { return ''; } };
+export const aiConfigured = (state: Pick<AadOSState, 'integrations'>) => { const c = ajmcpConfig(state); return Boolean(c.url && c.token); };
+export const gatewayHost = (state: Pick<AadOSState, 'integrations'>) => { try { return new URL(ajmcpConfig(state).url).host; } catch { return ''; } };
 
 let cached: { key: string; client: AjmcpClient } | null = null;
 /** Throws AiError not_configured/disabled; the token never leaves this module. */
-export function client(state?: Pick<AadOSState, 'ai'>, opts: { ignoreDisabled?: boolean } = {}): AjmcpClient {
-  if (!aiConfigured()) throw new AiError('not_configured', 'missing env');
-  if (state && !state.ai.enabled && !opts.ignoreDisabled) throw new AiError('disabled', 'AI disabled');
-  const key = `${env.AADOS_AJMCP_URL}|${env.AADOS_AJMCP_TOKEN}|${env.AADOS_AJMCP_TIMEOUT_MS}`;
-  if (cached?.key !== key) cached = { key, client: createAjmcpClient({ baseUrl: env.AADOS_AJMCP_URL!, token: env.AADOS_AJMCP_TOKEN!, httpHosts: (env.AADOS_ALLOW_HTTP_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean), timeoutMs: Number(env.AADOS_AJMCP_TIMEOUT_MS) || 60_000, retries: 2, limits: { maxBytes: Number(env.AADOS_AJMCP_MAX_BYTES) || undefined, maxChars: Number(env.AADOS_AJMCP_MAX_CHARS) || undefined, maxMessages: Number(env.AADOS_AJMCP_MAX_MESSAGES) || undefined } }) };
+export function client(state: Pick<AadOSState, 'ai' | 'integrations'>, opts: { ignoreDisabled?: boolean } = {}): AjmcpClient {
+  const cfg = ajmcpConfig(state);
+  if (!cfg.url || !cfg.token) throw new AiError('not_configured', 'missing URL or token');
+  if (!state.ai.enabled && !opts.ignoreDisabled) throw new AiError('disabled', 'AI disabled');
+  const key = `${cfg.url}|${cfg.token}|${env.AADOS_AJMCP_TIMEOUT_MS}`;
+  if (cached?.key !== key) cached = { key, client: createAjmcpClient({ baseUrl: cfg.url, token: cfg.token, httpHosts: (env.AADOS_ALLOW_HTTP_HOSTS || '').split(',').map((h) => h.trim()).filter(Boolean), timeoutMs: Number(env.AADOS_AJMCP_TIMEOUT_MS) || 60_000, retries: 2, limits: { maxBytes: Number(env.AADOS_AJMCP_MAX_BYTES) || undefined, maxChars: Number(env.AADOS_AJMCP_MAX_CHARS) || undefined, maxMessages: Number(env.AADOS_AJMCP_MAX_MESSAGES) || undefined } }) };
   return cached.client;
 }
 
@@ -31,7 +33,7 @@ export async function recordAi(result: { ok: true; provider?: string; model?: st
 }
 
 /** One AI call with status bookkeeping. */
-export async function chat(state: Pick<AadOSState, 'ai'>, messages: ChatMessage[], signal?: AbortSignal): Promise<ChatResult> {
+export async function chat(state: Pick<AadOSState, 'ai' | 'integrations'>, messages: ChatMessage[], signal?: AbortSignal): Promise<ChatResult> {
   try { const r = await client(state).chat(messages, signal); await recordAi({ ok: true, provider: r.provider, model: r.model }); return r; }
   catch (e) { await recordAi({ ok: false, error: e }); throw e; }
 }

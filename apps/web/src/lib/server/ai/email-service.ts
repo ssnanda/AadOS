@@ -111,7 +111,7 @@ export const triageStatus = () => globalThis.__aadosTriage || { last: '', proces
 export async function triagePass(): Promise<{ processed: number; failed: number; note: string }> {
   const state = await readState();
   if (!state.ai.enabled || !state.ai.background || !state.ai.share.email) return { processed: 0, failed: 0, note: 'Background AI triage is off.' };
-  if (!aiConfigured() || !hasDatabase()) return { processed: 0, failed: 0, note: 'AI or database not configured.' };
+  if (!aiConfigured(state) || !hasDatabase()) return { processed: 0, failed: 0, note: 'AI or database not configured.' };
   const db = await database();
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items }).map((r) => ({ key: r.key, receivedAt: r.receivedAt, fp: fingerprint(r) }));
   const done = await getInsights(db, rows.filter((r) => Date.now() - Date.parse(r.receivedAt) <= RECENT_DAYS * 86_400_000).map((r) => r.key));

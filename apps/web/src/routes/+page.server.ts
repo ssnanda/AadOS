@@ -37,7 +37,7 @@ export const load: PageServerLoad = async () => {
   return {
     tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
     tz,
-    briefing: { cached: await cachedBriefing(), aiEnabled: state.ai.enabled, configured: aiConfigured() },
+    briefing: { cached: await cachedBriefing(), aiEnabled: state.ai.enabled, configured: aiConfigured(state) },
     calendar: { enabled: calendarAccounts.length, today: cal.today, todayEvents: cal.todayEvents.map(occ), next: cal.next ? occ(cal.next) : null, week: cal.week, weekTotal: cal.weekTotal,
       errors: calendarAccounts.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} Calendar · ${a.email}`, message: a.calendarError! })) },
     reminders: { waiting: rem.active.length, unread: rem.unread, items: [...rem.active, ...rem.upcoming].slice(0, 5).map((r) => ({ id: r.id, title: r.title, at: effectiveAt(r), fired: r.status === 'fired' })) },

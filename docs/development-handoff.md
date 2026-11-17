@@ -1,5 +1,11 @@
 # Development handoff
 
+## After v0.1.32 (uncommitted, verified locally)
+- **Settings → AI / Storage are editable**: AJMCP URL + token and RustFS endpoint/bucket/region/keys/path-style/prefix can be entered in the UI. Secrets are write-only (never rendered back) and stored in the encrypted credential vault (`mail_credentials` scope `app:integrations`, AES-256-GCM); environment variables still win and show as "Set by environment". Resolution: `lib/server/integrations.ts`.
+- **Owner password change** (Settings → General): verifies the current password, ≥12 characters, stores only a new scrypt hash in `security.json` (0600), signs out every other device, keeps this browser signed in. A deployment reset (`dev-local.sh --reset-user` / `oc-deploy.sh --reset-user`) makes the override inactive (recovery path).
+- Tests: Node 120 (109 + 11 Postgres-only), `apps/web/scripts/e2e-settings.mjs` and `e2e-phase3.mjs` all pass on the throwaway stack.
+- **Family accounts**: owner chose the hybrid model; design + open questions in `docs/decisions/family-accounts.md`. Not implemented yet.
+
 ## Phase 3 — AI, documents, notifications (v0.1.32)
 **Verified locally (Docker):** `bin/dev-local.sh test` (Svelte check, all Node tests incl. real-Postgres, Elixir incl. real DB), `npm run build`, `bin/dev-local.sh rebuild` of the real stack (see "Final verification" below). End-to-end on a throwaway stack (`aados-e2e`) with a mock AJMCP and a fake S3: `node apps/web/scripts/e2e-phase3.mjs` — all checks passed.
 **Not live-verified:** a real AJMCP call (no AadOS tenant token yet), a real RustFS bucket (no credentials yet), real Gmail/Zoho attachment download, browser UI review, browser notification popups (permission is user-triggered).
@@ -24,7 +30,7 @@
 - Background jobs stay in-process (idempotent, durable state) rather than Oban: provider and AI code is TypeScript in the web app; Oban would need a cross-service queue. Revisit when sync moves to the API.
 - Web Push evaluated and deferred: needs VAPID keys + a push service worker + subscription storage; in-tab browser notifications are implemented, in-app reminders unchanged.
 - OCR deferred (no existing implementation; scanned PDFs/images are stored, marked "not searchable").
-- `bin/dev-local.sh` never commits or pushes (owner's Phase 3 instruction, reversing the earlier auto-bump request); `oc-deploy.sh` still bumps pending changes first.
+- `bin/dev-local.sh rebuild` and `oc-deploy.sh` bump pending changes first (owner's workflow; Phase 3 briefly removed this for dev-local, restored).
 
 ### Next
 1. Owner: AJMCP site token + RustFS bucket/keys -> live verification of assistant, triage, briefing, documents.
@@ -83,9 +89,9 @@ Not verified: UI in a browser, live Gmail/Zoho/Google Calendar/Zoho Calendar cal
 Elixir/Postgres are not installed on the dev Mac (`brew install` was blocked by the permission classifier), so Elixir changes are verified only by CI.
 
 ## Local workflow (no GitHub Actions needed)
-- `bin/dev-local.sh rebuild` builds/starts the stack from the working tree and never commits, bumps or pushes.
+- `bin/dev-local.sh rebuild`: if the tree is dirty it runs `bump.sh` first (interactive version prompt, commit, tag, push with `[skip ci]`), then builds/starts the stack. (Owner's explicit workflow; restored after Phase 3 briefly removed it.)
 - `bin/dev-local.sh test` runs `npm ci`, `npm run check`, `npm test`, then the Elixir unit + Postgres integration tests in Docker (`apitest` + throwaway in-memory `testdb`, compose profile `test`). Same checks as CI.
-- `bin/bump.sh` is the only script that commits/pushes (`push.sh` was removed). Every commit carries `[skip ci]`, with no opt-out, and the script pushes the release tag itself. `oc-deploy.sh` runs `bump.sh --if-dirty` first; `dev-local.sh` never does. CI runs only on manual dispatch or pushes/PRs to `main` made outside these scripts.
+- `bin/bump.sh` is the only script that commits/pushes (`push.sh` was removed). Every commit carries `[skip ci]`, with no opt-out, and the script pushes the release tag itself. `dev-local.sh rebuild` and `oc-deploy.sh` run `bump.sh --if-dirty` first. CI runs only on manual dispatch or pushes/PRs to `main` made outside these scripts.
 - Not yet run on this machine: Docker commands were blocked by the permission classifier during development; `bin/dev-local.sh test` is syntax- and compose-validated only.
 
 ## Architecture

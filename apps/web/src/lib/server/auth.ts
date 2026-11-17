@@ -7,9 +7,15 @@ import { SecurityStore } from './security-store';
 export const SESSION_COOKIE = 'aados_session';
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 
+const fingerprint = (v: string) => createHash('sha256').update(`aados-password-base:${v}`).digest('hex');
+/** Current owner password hash (Settings change, else the deployment's AADOS_PASSWORD_HASH). */
+export const ownerPasswordHash = () => security().effectivePasswordHash(env.AADOS_PASSWORD_HASH || '', fingerprint);
+/** Store a new owner password hash. Sessions are signed with the hash, so every other session ends. */
+export const setOwnerPasswordHash = (hash: string) => security().setPasswordHash(hash, env.AADOS_PASSWORD_HASH || '', fingerprint);
+
 function signingKey(): Buffer {
   const secret = env.AADOS_SESSION_SECRET || '';
-  const passwordHash = env.AADOS_PASSWORD_HASH || '';
+  const passwordHash = env.AADOS_PASSWORD_HASH ? ownerPasswordHash() : '';
   if (secret.length < 64 || !passwordHash) throw new Error('AadOS authentication is not configured');
   return createHmac('sha256', secret).update(passwordHash).digest();
 }

@@ -25,7 +25,7 @@ export function validBaseUrl(value: string, httpHosts: string[] = []): boolean {
 }
 
 const FRIENDLY: Record<AiErrorKind, string> = {
-  not_configured: 'AI is not configured (AADOS_AJMCP_URL / AADOS_AJMCP_TOKEN).', disabled: 'AI is turned off in Settings → AI.',
+  not_configured: 'AI is not configured yet (Settings → AI: gateway URL and token).', disabled: 'AI is turned off in Settings → AI.',
   auth: 'AJMCP rejected the AadOS token.', forbidden: 'This AJMCP token is not allowed to chat (site token required).',
   rate_limit: 'AJMCP rate limit reached; try again in a minute.', busy: 'AJMCP is busy; try again shortly.',
   too_large: 'The request was too large for AJMCP.', invalid_request: 'AJMCP rejected the request.',

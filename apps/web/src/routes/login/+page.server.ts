@@ -2,7 +2,7 @@ import { env } from '$env/dynamic/private';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { createSession, security, sameUsername, SESSION_COOKIE, sessionCookieOptions } from '$lib/server/auth';
+import { createSession, ownerPasswordHash, security, sameUsername, SESSION_COOKIE, sessionCookieOptions } from '$lib/server/auth';
 import { verifyPassword } from '$lib/server/password.js';
 
 const WINDOW_MS = 10 * 60 * 1000;
@@ -34,7 +34,7 @@ export const actions: Actions = {
     const submittedToken = String(data.get('csrfToken') || '');
     const cookieToken = cookies.get(CSRF_COOKIE) || '';
     if (!submittedToken || !cookieToken || !sameToken(submittedToken, cookieToken)) return fail(403, { error: 'Login form expired. Reload and try again.', username });
-    const valid = sameUsername(username) && await verifyPassword(password, env.AADOS_PASSWORD_HASH || '');
+    const valid = sameUsername(username) && await verifyPassword(password, env.AADOS_PASSWORD_HASH ? ownerPasswordHash() : '');
     if (!valid) {
       security().addFailure(address, WINDOW_MS);
       await new Promise((resolve) => setTimeout(resolve, 500));

@@ -14,6 +14,8 @@ export function splitState(state: AadOSState): { doc: Record<string, unknown>; c
   }
   credentials['app:zoho'] = doc.zoho; credentials['app:gmail'] = doc.gmail;
   doc.zoho = {}; doc.gmail = {};
+  // AJMCP token and RustFS keys (Settings → AI / Storage) are secrets too.
+  if (doc.integrations) { credentials['app:integrations'] = doc.integrations; delete doc.integrations; }
   return { doc, credentials };
 }
 
@@ -25,6 +27,7 @@ export function assembleState(doc: Record<string, any>, credentials: Credentials
   }
   state.zoho = clone(credentials['app:zoho'] || {});
   state.gmail = clone(credentials['app:gmail'] || {});
+  if (credentials['app:integrations']) state.integrations = clone(credentials['app:integrations']);
   return state;
 }
 

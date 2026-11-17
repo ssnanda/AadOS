@@ -10,8 +10,12 @@
   {#if form && 'message' in form && form.message}<p class="good">{form.message}</p>{/if}
 
   <section><h2>AJMCP gateway</h2>
+    <form method="POST" action="?/gateway" class="cfg">
+      <label>Gateway URL<input name="url" type="url" value={data.gateway.url} placeholder="https://ajmcp.example.com" disabled={data.gateway.urlFromEnv}>{#if data.gateway.urlFromEnv}<small>Set by environment (AADOS_AJMCP_URL)</small>{/if}</label>
+      <label>AadOS site token<input name="token" type="password" autocomplete="off" placeholder={data.gateway.hasToken ? 'Saved — leave blank to keep' : 'Paste the token of the AadOS site in AJMCP'} disabled={data.gateway.tokenFromEnv}>{#if data.gateway.tokenFromEnv}<small>Set by environment (AADOS_AJMCP_TOKEN)</small>{:else if data.gateway.hasToken}<small><label class="inline"><input type="checkbox" name="clearToken"> Remove saved token</label></small>{/if}</label>
+      <div class="row"><button>Save</button><small>Use a dedicated AJMCP site for AadOS, never a website's token. The token is stored encrypted and never shown again.</small></div>
+    </form>
     <dl>
-      <dt>Gateway</dt><dd>{data.host || '—'}{#if !data.configured} <em>(set AADOS_AJMCP_URL and AADOS_AJMCP_TOKEN)</em>{/if}</dd>
       <dt>Provider / model</dt><dd>{[data.status.provider, data.status.model].filter(Boolean).join(' · ') || '—'}{data.status.gatewayVersion ? ` · AJMCP ${data.status.gatewayVersion}` : ''}</dd>
       <dt>Last success</dt><dd>{when(data.status.lastOk)}</dd>
       <dt>Last error</dt><dd class:err={data.status.lastError}>{data.status.lastError ? `${data.status.lastError} (${when(data.status.lastErrorAt)})` : '—'}</dd>
@@ -55,8 +59,9 @@
   main{padding:35px;color:#29344c;max-width:760px}header{display:flex;gap:10px;align-items:center;margin-bottom:14px}h1{margin:0}h2{margin:0 0 10px;font-size:15px}h3{margin:12px 0 6px;font-size:12px;color:#53607a}
   .pill{font-size:11px;font-weight:800;border-radius:99px;padding:3px 9px;background:#f0f2f7;color:#5b6a86}.pill.ok{background:#e3f6f3;color:#0f7f74}
   section{background:#fff;border:1px solid #e3e8f1;border-radius:14px;padding:16px 20px;margin-bottom:12px}
-  dl{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;margin:0 0 12px;font-size:13px}dt{color:#8a95a8;font-weight:700;font-size:12px}dd{margin:0}dd em{color:#8a95a8;font-style:normal;font-size:12px}.err{color:#a5414d}
+  dl{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;margin:0 0 12px;font-size:13px}dt{color:#8a95a8;font-weight:700;font-size:12px}dd{margin:0}.err{color:#a5414d}
   .opts{display:grid;gap:8px}.opts label{font-size:13px;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}.opts small{color:#8a95a8;font-size:11px;flex-basis:100%;padding-left:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .cfg{display:grid;gap:10px;margin-bottom:14px}.cfg label{display:grid;gap:4px;font-size:12px;font-weight:700;color:#53607a}.cfg input[type=url],.cfg input[type=password]{border:1px solid #dbe1eb;border-radius:8px;padding:8px;font:inherit;font-size:13px;font-weight:400}.cfg input:disabled{background:#f4f6fa}.cfg small{font-weight:400;color:#8a95a8;font-size:11px}.inline{display:inline-flex!important;gap:5px;align-items:center;font-weight:400}.row{display:flex;gap:12px;align-items:center}
   form{margin:0}button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:8px 13px;cursor:pointer;color:#3157de;font-weight:700;justify-self:start}button:disabled{opacity:.5;cursor:default}
   .bad,.good{padding:9px 12px;border-radius:9px;font-size:13px}.bad{background:#fff0f1;color:#a5414d}.good{background:#e3f6f3;color:#0f7f74}
   details{font-size:13px;color:#53607a}summary{cursor:pointer;font-weight:700}details li{margin:4px 0}

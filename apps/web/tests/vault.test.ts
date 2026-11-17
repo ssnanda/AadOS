@@ -44,3 +44,11 @@ test('split removes every secret from the database document and reassembly is lo
   assert.equal(canonical(assembleState(doc, credentials)), canonical(state));
   assert.equal(state.accounts[0].accessToken, 'ACCESS'); // source untouched
 });
+
+test('integration secrets (AJMCP token, RustFS keys) are moved to the vault and restored', () => {
+  const withInt = { ...state, integrations: { ajmcp: { url: 'https://ai.example', token: 'AJ-TOKEN' }, s3: { endpoint: 'https://s3.example', bucket: 'b', region: '', accessKey: 'AK-X', secretKey: 'SK-X', forcePathStyle: true, prefix: '' } } };
+  const { doc, credentials } = splitState(withInt);
+  for (const s of ['AJ-TOKEN', 'AK-X', 'SK-X']) assert.ok(!JSON.stringify(doc).includes(s), s);
+  assert.equal((credentials['app:integrations'] as any).ajmcp.token, 'AJ-TOKEN');
+  assert.equal(canonical(assembleState(doc, credentials)), canonical(withInt));
+});

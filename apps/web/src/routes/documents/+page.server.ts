@@ -7,7 +7,7 @@ import { TYPES } from '$lib/server/documents/validate';
 import { isDate } from '$lib/calendar/view';
 
 export const load: PageServerLoad = async ({ url }) => {
-  const status = storageStatus();
+  const status = await storageStatus();
   if (!hasDatabase()) return { available: false, status, docs: [], folders: [], types: TYPES, filter: { q: '', type: '', folder: '', from: '', to: '' } };
   const p = url.searchParams;
   const filter = { q: (p.get('q') || '').trim().slice(0, 100), type: p.get('type') && p.get('type')! in TYPES ? p.get('type')! : '', folder: (p.get('folder') || '').slice(0, 80), from: isDate(p.get('from') || '') ? p.get('from')! : '', to: isDate(p.get('to') || '') ? p.get('to')! : '' };

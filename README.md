@@ -19,11 +19,11 @@ AadOS is an independent, self-hosted personal AI operating system. **Email is th
 | --- | --- |
 | `./bin/pull-latest.sh` | Safely fast-forward clean local checkout from GitHub |
 | `./bin/bump.sh` | Patch-default version bump, commit, tag and push (option 5 = no bump) |
-| `./bin/dev-local.sh` | Local Docker Compose rebuild, refresh, logs, stop, shell or test (never commits or pushes) |
+| `./bin/dev-local.sh` | Local Docker Compose rebuild (bumps pending changes first), refresh, logs, stop, shell, test or config |
 | `./bin/oc-deploy.sh` | Deploy to OpenShift using `oc`, binary BuildConfigs and internal registry; no Helm |
 | `./bin/build-ipa.sh` | Signed IPA build; requires a future native Xcode project |
 
-None of these scripts start GitHub Actions: every commit made by `bump.sh` carries `[skip ci]`. `oc-deploy.sh` runs `bump.sh` first when there are pending changes; `dev-local.sh` never commits or pushes.
+None of these scripts start GitHub Actions: every commit made by `bump.sh` carries `[skip ci]`. `dev-local.sh rebuild` and `oc-deploy.sh` run `bump.sh` first when there are pending changes.
 
 ## OpenShift — using your existing oc login
 
