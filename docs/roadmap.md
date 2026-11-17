@@ -29,7 +29,9 @@
 
 ## M3 — Operational hardening and mobile
 - [ ] Owner-controlled workflows for any mail modifications
-- [ ] SwiftUI iOS app, signed IPA and release workflow
+- [x] Initial SwiftUI iOS workspace app and Xcode project (owner build verification pending)
+- [x] Unsigned IPA packaging, local AltStore manifest, and IPA-only rolling GitHub release aligned with ajopsios (owner verification pending)
+- [ ] App Store signing and release workflow
 - [ ] Backup/restore, monitoring, OpenShift GitOps and staged promotion
 
 Keep scope small: deliver useful inbox access before extending to household tasks, calendars, finance, health, files or smart-home integrations.

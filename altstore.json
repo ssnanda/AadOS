@@ -1,0 +1,30 @@
+{
+  "name": "AadOS",
+  "identifier": "com.aadnanda.aados.altstore",
+  "sourceURL": "https://raw.githubusercontent.com/ssnanda/AadOS/main/altstore.json",
+  "apps": [
+    {
+      "name": "AadOS",
+      "bundleIdentifier": "com.aadnanda.aados",
+      "developerName": "AadNanda",
+      "subtitle": "Your personal operating system",
+      "localizedDescription": "AadOS provides secure access to your personal email, calendar, tasks, reminders, documents, and AI workspace.",
+      "iconURL": "https://raw.githubusercontent.com/ssnanda/AadOS/main/ios/AadOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "tintColor": "6C4CF1",
+      "category": "utilities",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "0.1.33",
+          "buildVersion": "1",
+          "date": "2026-11-16",
+          "localizedDescription": "Initial AadOS iOS build",
+          "downloadURL": "https://github.com/ssnanda/AadOS/releases/download/ios-latest/aados.ipa",
+          "size": 0,
+          "minOSVersion": "17.0"
+        }
+      ]
+    }
+  ],
+  "news": []
+}

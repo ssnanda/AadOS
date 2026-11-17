@@ -1,0 +1,68 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+		A10000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = { A10000000000000000000002 = { CreatedOnToolsVersion = 26.6; }; };
+			};
+			buildConfigurationList = A10000000000000000000003 /* Build configuration list for PBXProject "AadOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A10000000000000000000004;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A10000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (A10000000000000000000002 /* AadOS */);
+		};
+		A10000000000000000000002 /* AadOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000006 /* Build configuration list for PBXNativeTarget "AadOS" */;
+			buildPhases = (A10000000000000000000007 /* Sources */, A10000000000000000000008 /* Frameworks */, A10000000000000000000009 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			name = AadOS;
+			packageProductDependencies = ();
+			productName = AadOS;
+			productReference = A10000000000000000000010 /* AadOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000004 = {
+			isa = PBXGroup;
+			children = (A10000000000000000000011 /* AadOS */, A10000000000000000000005 /* Products */);
+			sourceTree = "<group>";
+		};
+		A10000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (A10000000000000000000010 /* AadOS.app */);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000011 /* AadOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AadOS;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000010 /* AadOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AadOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000007 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000008 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		A10000000000000000000009 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+
+		A10000000000000000000020 /* Debug project */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; GCC_C_LANGUAGE_STANDARD = gnu17; GCC_OPTIMIZATION_LEVEL = 0; IPHONEOS_DEPLOYMENT_TARGET = 17.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
+		A10000000000000000000021 /* Release project */ = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; VALIDATE_PRODUCT = YES; }; name = Release; };
+		A10000000000000000000022 /* Debug target */ = {isa = XCBuildConfiguration; buildSettings = { ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = D52DXW8E5J; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AadOS/Info.plist; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.aadnanda.aados; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+		A10000000000000000000023 /* Release target */ = {isa = XCBuildConfiguration; buildSettings = { ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = D52DXW8E5J; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = AadOS/Info.plist; MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.aadnanda.aados; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; }; name = Release; };
+		A10000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000020, A10000000000000000000021); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000006 = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000022, A10000000000000000000023); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+	};
+	rootObject = A10000000000000000000001 /* Project object */;
+}
