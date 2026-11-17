@@ -54,7 +54,7 @@
 </script>
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
-<main>
+<main class:previewing={Boolean(viewing)}>
   <header>
     <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply</p></div>
     {#if data.inboxIds.length}<button type="button" class="btn" onclick={() => startFullSync(data.inboxIds)} title="Fetch every email in all inboxes, in the background">⇩ Sync all inboxes</button>{/if}
@@ -78,21 +78,18 @@
     <div class="go"><button class="btn">Apply</button>{#if hasFilters}<a class="link" href={href({ account: '', provider: '', sender: '', from: '', to: '', read: '', category: '', pipeline: '', thread: '', q: '' })}>Clear</a>{/if}</div>
   </form>{/if}
 
-  <section class="scope">
-    <div class="scope-head"><h2>Accounts</h2>{#if data.query.account}<a class="clear" href={href({ account: '' })}>Show all accounts</a>{/if}</div>
-    <nav class="accounts" aria-label="Email accounts">{#each data.accounts as a (a.id)}<a class:on={data.query.account === a.id} href={unreadHref({ account: a.id, pipeline: '' })}><span class="provider {a.provider}">{a.provider === 'gmail' ? 'G' : 'Z'}</span><span><strong>{a.email}</strong><small>{a.unread} unread · {a.total} total</small></span></a>{/each}</nav>
-    <div class="scope-head views-head"><h2>Saved views</h2><a class="clear" href="/settings/emails#views">Manage views</a></div>
-    {#if data.views.length}<nav class="saved" aria-label="Saved email views">{#each data.views as v (v.id)}<a class:on={data.query.pipeline === v.id} href={unreadHref({ pipeline: v.id, account: '' })}><span>{v.parser === 'shop' ? '🛍' : v.parser === 'health' ? '♡' : '✉'}</span><strong>{v.name}</strong><i>{v.unread}</i></a>{/each}</nav>{:else}<p class="no-views">No saved views. <a href="/settings/emails#views">Add one</a></p>{/if}
-  </section>
+  {#if data.query.account}{@const acc = data.accounts.find((a) => a.id === data.query.account)}<div class="scopebar"><span class="provider {acc?.provider}">{acc?.provider === 'gmail' ? 'G' : 'Z'}</span><strong>{acc?.email || data.query.account}</strong><a href={href({ account: '' })} aria-label="Show all inboxes">✕ All inboxes</a></div>{/if}
 
   <nav class="tabs" aria-label="Message status">{#each TABS as [v, label] (v)}<a class:on={data.query.view === v} class:secondary={v === 'inbox' || v === 'all' || v === 'read'} href={viewHref(v)}>{label}<i>{tabCount(v)}</i></a>{/each}</nav>
   {#if data.query.view === 'all'}<details class="categories" open={Boolean(data.query.category)}><summary>Categories{data.query.category ? ` · ${data.query.category}` : ''}</summary><div class="chips">{#each data.categories.filter((c) => data.counts.categories[c]) as c (c)}<a class="chip" class:on={data.query.category === c} href={href({ category: data.query.category === c ? '' : c })}>{c}<i>{data.counts.categories[c]}</i></a>{/each}</div></details>{/if}
 
-  <section>
+  <div class="split">
+  <section class="listcol">
   {#if data.rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button></div>{/if}</div>{/if}
   {#if data.rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages synced yet. Use “Sync all inboxes”.' : 'No messages match.'}</div>{/if}
   <ul class="list">{#each data.rows as r (r.key)}
-    <li class:unread={r.unread} class:selected={selected.includes(r.key)}>
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+    <li class:unread={r.unread} class:selected={selected.includes(r.key)} class:active={viewing?.key === r.key} onclick={(e) => { if (!(e.target as HTMLElement).closest('input,button,a,select,label,form')) viewing = r; }}>
       <div class="email-line"><input class="pick" type="checkbox" checked={selected.includes(r.key)} aria-label={`Select ${r.subject || 'email'}`} onchange={(e) => toggle(r.key, e.currentTarget.checked)}>
       <button type="button" class="row" onclick={() => viewing = r}>
         <span class="from">{#if r.importance === 'high'}<b class="star" title="Important">★</b>{/if}{name(r.sender)}</span>
@@ -113,22 +110,27 @@
         </form>
       </div>
     </li>{/each}</ul></section>
+  {#if viewing}<div class="pane"><EmailViewer embedded item={viewing} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < data.rows.length - 1} /></div>{/if}
+  </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}
 </main>
-{#if viewing}<EmailViewer item={viewing} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < data.rows.length - 1} />{/if}
 </AppShell>
 <style>
-  main{max-width:1100px}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
+  main{max-width:1100px}main.previewing{max-width:none}
+  /* List + preview side by side; the list becomes compact while an email is open. */
+  .split{display:block}main.previewing .split{display:grid;grid-template-columns:minmax(340px,38%) minmax(0,1fr);gap:14px;align-items:start}
+  main.previewing .row{grid-template-columns:minmax(0,1fr) 60px;gap:2px 10px}main.previewing .subj{grid-column:1/-1;grid-row:2}main.previewing .meta .ops,main.previewing .meta .tag:not(.act),main.previewing .aitag{display:none}
+  li{cursor:pointer}li.active{background:#eef3ff;box-shadow:inset 3px 0 0 #3157de}
+  @media(max-width:900px){main.previewing .split{display:block}}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px}.btn:hover{border-color:#8da2f0}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
   .find{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:0 12px;margin-bottom:10px}.find:focus-within{border-color:#8da2f0}.find span{color:#8a95a8;font-size:18px}.find input[type=search]{border:0;outline:0;flex:1;padding:10px 0;font-size:14px;background:transparent}
   .link{border:0;background:none;color:#3157de;font-weight:700;cursor:pointer;padding:0;font-size:12px;text-decoration:none}
   .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:12px;margin-bottom:10px}
   .filters label{display:grid;gap:4px;font-size:11px;font-weight:700;color:#53607a}.filters select,.filters input{border:1px solid #dbe1eb;border-radius:8px;padding:7px;font-size:12px;min-width:0}.go{display:flex;gap:12px;align-items:end}
-  .scope{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:13px;margin-bottom:12px}.scope-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}.scope-head h2{margin:0;font-size:12px;color:#53607a;text-transform:uppercase;letter-spacing:.7px}.scope-head .clear{margin-left:auto;color:#3157de;font-size:11px;font-weight:700;text-decoration:none}.views-head{margin-top:13px;border-top:1px solid #eef0f5;padding-top:12px}
-  .accounts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px}.accounts a{display:flex;align-items:center;gap:9px;border:1px solid #e4e9f2;border-radius:9px;padding:8px 10px;color:#43516c;text-decoration:none;min-width:0}.accounts a:hover,.accounts a.on{border-color:#8da2f0;background:#f7f9ff}.accounts a>span:last-child{min-width:0}.accounts strong,.accounts small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.accounts strong{font-size:12px}.accounts small{font-size:10px;color:#8a95a8;margin-top:2px}.provider{width:27px;height:27px;display:grid!important;place-items:center;border-radius:8px;flex:none;background:#eef1ff;color:#3157de;font-weight:800}.provider.gmail{background:#fff0ee;color:#d94d43}
-  .saved{display:flex;gap:7px;flex-wrap:wrap}.saved a{display:inline-flex;align-items:center;gap:7px;border:1px solid #e4e9f2;border-radius:9px;padding:7px 10px;color:#43516c;text-decoration:none;font-size:12px}.saved a:hover,.saved a.on{border-color:#7c4dde;background:#f5f0ff;color:#6a3fd1}.saved i{font-style:normal;background:#f1ebff;color:#7c4dde;border-radius:99px;padding:1px 6px;font-size:10px}.no-views{margin:0;color:#8a95a8;font-size:12px}.no-views a{color:#3157de;font-weight:700}
+  .scopebar{display:flex;align-items:center;gap:9px;margin-bottom:10px;font-size:13px}.scopebar a{margin-left:4px;color:#3157de;font-size:12px;font-weight:700;text-decoration:none}
+  .provider{width:27px;height:27px;display:grid!important;place-items:center;border-radius:8px;flex:none;background:#eef1ff;color:#3157de;font-weight:800}.provider.gmail{background:#fff0ee;color:#d94d43}
   .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.tabs a{display:inline-flex;gap:7px;align-items:center;padding:7px 12px;border-radius:9px;background:#fff;border:1px solid #e4e9f2;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.tabs a.on{background:#3157de;border-color:#3157de;color:#fff}
   .tabs a.secondary:not(.on){color:#8a95a8;background:transparent}
   .tabs i,.chip i{font-style:normal;font-size:11px;background:#f0f2f7;color:#5b6a86;border-radius:99px;padding:1px 7px}.tabs a.on i,.chip.on i{background:#ffffff33;color:#fff}

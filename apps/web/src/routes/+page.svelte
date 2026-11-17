@@ -23,7 +23,7 @@
 </script>
 <svelte:head><title>Dashboard · AadOS</title></svelte:head>
 <AppShell title="Dashboard">
-  <div class="summary"><span><b>{data.tiles.length}</b> views</span><span><b>{data.unread}</b> unread</span><span><b>{data.accounts}</b> accounts</span><a href="/emails?view=needs-reply"><b>{data.inbox.needsReply}</b> need reply</a><a href="/emails?view=important"><b>{data.inbox.important}</b> important</a><a href="/emails?category=Bills"><b>{data.inbox.bills}</b> bills</a><a href="/emails?category=Renewals"><b>{data.inbox.renewals}</b> renewals</a><a href="/emails?category=Receipts"><b>{data.inbox.receipts}</b> receipts</a><a class="addview" href="/settings/emails#views">＋ Add view</a></div>
+  <div class="summary">{#if data.tiles.length}<span><b>{data.tiles.length}</b> views</span>{/if}{#if data.unread}<span><b>{data.unread}</b> unread</span>{/if}{#if data.accounts}<span><b>{data.accounts}</b> accounts</span>{/if}{#if data.inbox.needsReply}<a href="/emails?view=needs-reply"><b>{data.inbox.needsReply}</b> need reply</a>{/if}{#if data.inbox.important}<a href="/emails?view=important"><b>{data.inbox.important}</b> important</a>{/if}{#if data.inbox.bills}<a href="/emails?category=Bills"><b>{data.inbox.bills}</b> bills</a>{/if}{#if data.inbox.renewals}<a href="/emails?category=Renewals"><b>{data.inbox.renewals}</b> renewals</a>{/if}{#if data.inbox.receipts}<a href="/emails?category=Receipts"><b>{data.inbox.receipts}</b> receipts</a>{/if}<a class="addview" href="/settings/emails#views">＋ Add view</a></div>
   <div class="quick"><a href="/calendar">▣ Open Calendar</a><a href="/tasks">☑ Add Task</a><a href="/reminders">◔ Create Reminder</a><a href="/emails">✉ Open Inbox</a>{#if data.calendar.enabled}<form method="POST" action="/calendar?/sync"><button>⇩ Sync Calendars</button></form>{/if}</div>
   {#if data.briefing.configured}<div class="ai-brief">
     <div class="bh2"><b>✦ AI briefing</b>{#if briefing?.generatedAt}<small>Generated {new Date(briefing.generatedAt).toLocaleString()}{briefing.day && briefing.day !== data.calendar.today ? ' · out of date' : ''}</small>{/if}
@@ -38,23 +38,23 @@
   {#each data.brief.errors as e (e.id)}<div class="alert">{e.label}: {e.message} · <a href="/settings/emails">Fix in Settings</a></div>{/each}
   {#if data.accounts > 0}<div class="brief">
     {#snippet card(title: string, href: string, n: number, items: { key: string; subject: string; sender: string; due: string }[])}<div class="bc"><a class="bh" href={href}>{title}<b>{n}</b></a>{#if items.length}<ul>{#each items as m (m.key)}<li><span>{m.subject || '(no subject)'}</span>{#if m.due}<time>{m.due}</time>{/if}</li>{/each}</ul>{:else}<p class="muted">Nothing here.</p>{/if}</div>{/snippet}
-    <div class="bc"><a class="bh" href="/calendar?view=day">Today<b>{data.calendar.todayEvents.length}</b></a>
+    {#if data.calendar.todayEvents.length}<div class="bc"><a class="bh" href="/calendar?view=day">Today<b>{data.calendar.todayEvents.length}</b></a>
       {#if !data.calendar.enabled}<p class="muted">Calendar not connected. <a href="/settings/emails">Enable</a></p>
       {:else}{#if data.calendar.next}<p class="next">Next: <strong>{data.calendar.next.title}</strong> · {stamp(data.calendar.next.start)}</p>{/if}
-        {#if data.calendar.todayEvents.length}<ul>{#each data.calendar.todayEvents.slice(0, 5) as e (e.key)}<li><span>{e.title}</span><time>{e.allDay ? 'All day' : time(e.start)}</time></li>{/each}</ul>{:else}<p class="muted">No events today.</p>{/if}{/if}</div>
-    <div class="bc"><a class="bh" href="/calendar?view=week">Next 7 days<b>{data.calendar.weekTotal}</b></a>
-      {#if data.calendar.enabled}<ul class="wk">{#each data.calendar.week as d (d.date)}<li><a href="/calendar?view=day&date={d.date}">{dayName(d.date)}</a><time>{d.count ? `${d.count} event${d.count === 1 ? '' : 's'}` : '—'}</time></li>{/each}</ul>{:else}<p class="muted">Nothing here.</p>{/if}</div>
-    <div class="bc"><a class="bh" href="/reminders">Reminders<b>{data.reminders.waiting}</b></a>
-      {#if data.reminders.items.length}<ul>{#each data.reminders.items as r (r.id)}<li class:late={r.fired}><span>{r.title}</span><time>{stamp(r.at)}</time></li>{/each}</ul>{:else}<p class="muted">No reminders.</p>{/if}</div>
-    {@render card('Needs reply', '/emails?view=needs-reply', data.brief.counts.needsReply, data.brief.needsReply)}
-    {@render card('Important unread', '/emails?view=important', data.brief.counts.important, data.brief.important)}
-    {@render card('Bills & renewals', '/emails?category=Bills', data.brief.counts.billsRenewals, data.brief.billsRenewals)}
-    {@render card('Upcoming deadlines', '/emails?view=all', data.brief.counts.upcoming, data.brief.upcoming)}
-    <div class="bc"><a class="bh" href="/tasks?f=today">Tasks<b>{data.brief.tasksToday.length + data.brief.tasksOverdue.length}</b></a>
-      {#if data.brief.tasksOverdue.length + data.brief.tasksToday.length}<ul>{#each data.brief.tasksOverdue as t (t.id)}<li class="late"><span>{t.title}</span><time>{t.due}</time></li>{/each}{#each data.brief.tasksToday as t (t.id)}<li><span>{t.title}</span><time>Today</time></li>{/each}</ul>{:else}<p class="muted">Nothing due today.</p>{/if}</div>
+        {#if data.calendar.todayEvents.length}<ul>{#each data.calendar.todayEvents.slice(0, 5) as e (e.key)}<li><span>{e.title}</span><time>{e.allDay ? 'All day' : time(e.start)}</time></li>{/each}</ul>{:else}<p class="muted">No events today.</p>{/if}{/if}</div>{/if}
+    {#if data.calendar.weekTotal}<div class="bc"><a class="bh" href="/calendar?view=week">Next 7 days<b>{data.calendar.weekTotal}</b></a>
+      {#if data.calendar.enabled}<ul class="wk">{#each data.calendar.week as d (d.date)}<li><a href="/calendar?view=day&date={d.date}">{dayName(d.date)}</a><time>{d.count ? `${d.count} event${d.count === 1 ? '' : 's'}` : '—'}</time></li>{/each}</ul>{:else}<p class="muted">Nothing here.</p>{/if}</div>{/if}
+    {#if data.reminders.waiting}<div class="bc"><a class="bh" href="/reminders">Reminders<b>{data.reminders.waiting}</b></a>
+      {#if data.reminders.items.length}<ul>{#each data.reminders.items as r (r.id)}<li class:late={r.fired}><span>{r.title}</span><time>{stamp(r.at)}</time></li>{/each}</ul>{:else}<p class="muted">No reminders.</p>{/if}</div>{/if}
+    {#if data.brief.counts.needsReply}{@render card('Needs reply', '/emails?view=needs-reply', data.brief.counts.needsReply, data.brief.needsReply)}{/if}
+    {#if data.brief.counts.important}{@render card('Important unread', '/emails?view=important', data.brief.counts.important, data.brief.important)}{/if}
+    {#if data.brief.counts.billsRenewals}{@render card('Bills & renewals', '/emails?category=Bills', data.brief.counts.billsRenewals, data.brief.billsRenewals)}{/if}
+    {#if data.brief.counts.upcoming}{@render card('Upcoming deadlines', '/emails?view=all', data.brief.counts.upcoming, data.brief.upcoming)}{/if}
+    {#if data.brief.tasksToday.length + data.brief.tasksOverdue.length}<div class="bc"><a class="bh" href="/tasks?f=today">Tasks<b>{data.brief.tasksToday.length + data.brief.tasksOverdue.length}</b></a>
+      {#if data.brief.tasksOverdue.length + data.brief.tasksToday.length}<ul>{#each data.brief.tasksOverdue as t (t.id)}<li class="late"><span>{t.title}</span><time>{t.due}</time></li>{/each}{#each data.brief.tasksToday as t (t.id)}<li><span>{t.title}</span><time>Today</time></li>{/each}</ul>{:else}<p class="muted">Nothing due today.</p>{/if}</div>{/if}
   </div>{/if}
   <div class="tiles">
-    {#each data.tiles as t (t.id)}
+    {#each data.tiles.filter((t) => t.count > 0) as t (t.id)}
       <a class="tile {tone(t.parser)}" href={`/pipelines/${t.id}`}>
         <div class="top"><span class="icon">{icon(t.parser)}</span><div><h2>{t.name}</h2><small>{t.account || t.source}</small></div><span class="count" title={`${t.count} unread email${t.count === 1 ? '' : 's'}`}>{t.count}</span></div>
         {#if t.kinds.length}<div class="kinds">{#each t.kinds as [kind, n]}<span>{kind} {n}</span>{/each}</div>{/if}

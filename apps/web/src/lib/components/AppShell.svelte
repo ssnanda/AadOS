@@ -17,6 +17,10 @@
   }
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number }[]);
+  let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number }[]);
+  const inEmails = $derived(page.url.pathname === '/emails' || page.url.pathname.startsWith('/pipelines/'));
+  const currentAccount = $derived(page.url.pathname === '/emails' ? page.url.searchParams.get('account') || '' : null);
+  const totalUnread = $derived(accounts.reduce((n, a) => n + a.unread, 0));
   let notifications = $derived(Number(page.data.shell?.notifications ?? 0));
   // Report the browser's time zone once, so server-side reminders and calendar days match the owner's clock.
   $effect(() => {
@@ -33,7 +37,8 @@
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
-    <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails</a>
+    <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails{#if !inEmails && totalUnread}<b>{totalUnread}</b>{/if}</a>
+    {#if inEmails && accounts.length}<div class="inboxes" aria-label="Inboxes"><a class="ibx" class:on={currentAccount === ''} href="/emails">All inboxes{#if totalUnread}<b>{totalUnread}</b>{/if}</a>{#each accounts as a (a.id)}<a class="ibx" class:on={currentAccount === a.id} href={`/emails?account=${encodeURIComponent(a.id)}`} title={a.email}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i><span>{a.email}</span>{#if a.unread}<b>{a.unread}</b>{/if}</a>{/each}</div>{/if}
     <a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a>
     <a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>
     <a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>
@@ -61,6 +66,10 @@
   .violet{--c:#7c4dde;--bg:#f1ebff}.blue{--c:#2f6fe4;--bg:#e8f1ff}.pink{--c:#d6477f;--bg:#ffedf4}.teal{--c:#139488;--bg:#e3f6f3}
   .nav b{margin-left:auto;font-size:10px;background:var(--bg);border-radius:6px;padding:3px 7px;color:var(--c)}
   .nav.sub{height:36px;font-size:12px}.nav.sub span{width:22px;height:22px;font-size:12px}
+  .inboxes{display:grid;gap:1px;margin:2px 0 6px 24px;padding-left:8px;border-left:1px solid #e9ecf4}
+  .ibx{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border-radius:7px;color:#56627c;font-size:12px;font-weight:600;text-decoration:none;min-width:0}.ibx:hover{background:#f6f7fb}.ibx.on{background:#e8f1ff;color:#2f6fe4}
+  .ibx span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}.ibx i{font-style:normal;width:18px;height:18px;flex:none;display:grid;place-items:center;border-radius:5px;font-size:10px;font-weight:800;background:#eef1ff;color:#3157de}.ibx i.gmail{background:#fff0ee;color:#d94d43}
+  .ibx b{margin-left:auto;font-size:10px;background:#e8f1ff;border-radius:6px;padding:2px 6px;color:#2f6fe4}
   .heading{padding:16px 12px 6px;color:#a3adbf;font-size:10px;font-weight:750;letter-spacing:1.3px}
   .main{flex:1;min-width:0}
   .topbar{height:62px;background:#fff;border-bottom:1px solid #e9ecf4;display:flex;align-items:center;gap:12px;padding:0 32px}
