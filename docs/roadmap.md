@@ -34,7 +34,7 @@
 
 Keep scope small: deliver useful inbox access before extending to household tasks, calendars, finance, health, files or smart-home integrations.
 
-## Phase 2 — Calendar, Tasks & Reminders (v0.1.29)
+## Phase 2 — Calendar, Tasks & Reminders (v0.1.29 – v0.1.30)
 - [x] Google + Zoho Calendar (read-only): consent flow, discovery, per-calendar enable, incremental sync, recurrence/DST, attendees, meeting links (mock-tested; live verification pending owner consent)
 - [x] Calendar UI: month / week / day / agenda, filters, colours, event panel
 - [x] Tasks: notes, due time, tags, search, email/event links, duplicate prevention

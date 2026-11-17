@@ -1,6 +1,6 @@
 # Development handoff
 
-## Phase 2 - Calendar, Tasks, Reminders (v0.1.29)
+## Phase 2 - Calendar, Tasks, Reminders (v0.1.29 - v0.1.30)
 **Verified locally (Docker), then CI on the release commit:** `bin/dev-local.sh test` = Svelte check 0 errors, 82 Node tests (6 on real Postgres), 22 Elixir tests. Real stack: all pages 200, task/reminder flows written to Postgres, restart recovery (no lost or duplicated reminders). Throwaway stack with mock events (`apps/web/scripts/e2e-mock-calendar.mjs`): month/week/day/agenda, filters, detail data, dashboard, failed-sync-keeps-events, event reminders.
 **Not live-verified:** any Google/Zoho Calendar API call (owner has not granted calendar scope yet), and nothing was looked at in a real browser (HTML checked with curl only).
 
