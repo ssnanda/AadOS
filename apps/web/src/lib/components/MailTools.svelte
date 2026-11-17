@@ -1,7 +1,9 @@
 <script lang="ts">
   // Reader tools for one email. Nothing is sent unless the owner presses Send in the compose form.
+  // The viewer puts its title (`header`) and its own buttons (`lead` first, `trail` last) in the same row.
+  import type { Snippet } from 'svelte';
   type Item = { key: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; unread?: boolean };
-  let { item, accountId = '', aiAvailable = false, onfind, onopen }: { item: Item; accountId?: string; aiAvailable?: boolean; onfind?: (term: string) => void; onopen?: (item: Item) => void } = $props();
+  let { item, accountId = '', aiAvailable = false, onfind, header, lead, trail, moreOpen = false, onmore }: { item: Item; accountId?: string; aiAvailable?: boolean; onfind?: (term: string) => void; header?: Snippet; lead?: Snippet; trail?: Snippet; moreOpen?: boolean; onmore?: () => void } = $props();
 
   type Details = { from: string; to: string; cc: string; account: string; provider: string; unsubscribe: { url: string; mailto: string }; canSend: boolean; canFilter: boolean };
   let info = $state<Details | null>(null);
@@ -15,10 +17,6 @@
   let rulesOpen = $state(false);
   let rulesData = $state<{ filters: { id: string; criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }[]; labels: { id: string; name: string }[] } | null>(null);
   let rule = $state({ field: 'from' as 'from' | 'subject', text: '', labelId: '', markRead: false, archive: false });
-  let moreOpen = $state(false);
-  let scope = $state<'sender' | 'domain'>('sender');
-  let sameSubject = $state(false);
-  let more = $state<{ sender: string; domain: string; total: number; rows: Item[] } | null>(null);
 
   async function call(op: string, payload: Record<string, unknown> = {}, path = '/emails/tools') {
     const res = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op, key: item.key, ...payload }) });
@@ -32,7 +30,7 @@
   }
   $effect(() => {
     const k = item.key;
-    info = null; compose = null; more = null; moreOpen = false; rulesOpen = false; note = ''; error = ''; term = ''; findOpen = false; onfind?.('');
+    info = null; compose = null; rulesOpen = false; note = ''; error = ''; term = ''; findOpen = false; onfind?.('');
     call('details').then((d) => { if (k === item.key) info = d; }).catch(() => undefined);
   });
   const copy = async (text: string, label: string) => { await navigator.clipboard.writeText(text); note = `${label} copied.`; setTimeout(() => (note = ''), 1500); };
@@ -68,23 +66,15 @@
     if (!confirm('Delete this Gmail filter?')) return;
     if (await run('rule', () => call('deleteRule', { accountId, id }))) rulesData = await run('rules', () => call('rules', { accountId }));
   }
-  async function loadMore() { more = await run('more', () => call('related', { scope, sameSubject })); }
   const labelName = (id: string) => rulesData?.labels.find((l) => l.id === id)?.name || id;
   const describe = (f: { criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }) =>
     `${Object.entries(f.criteria).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;
-  const when = (iso: string) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 </script>
 
 <section class="tools">
-  {#if info}
-    <div class="who">
-      <span><b>From:</b> {info.from}<button class="cp" title="Copy" onclick={() => copy(info!.from, 'From')}>⧉</button></span>
-      {#if info.to}<span><b>To:</b> {info.to}<button class="cp" title="Copy" onclick={() => copy(info!.to, 'To')}>⧉</button></span>{/if}
-      {#if info.cc}<span><b>Cc:</b> {info.cc}</span>{/if}
-      {#if info.unsubscribe.url}<a class="unsub" href={info.unsubscribe.url} target="_blank" rel="noopener noreferrer">✉ Unsubscribe from this sender</a>{:else if info.unsubscribe.mailto}<a class="unsub" href={info.unsubscribe.mailto}>✉ Unsubscribe (email)</a>{/if}
-    </div>
-  {/if}
+  <div class="top">{@render header?.()}
   <div class="bar">
+    {@render lead?.()}
     <div class="menuwrap">
       <button onclick={() => (menu = !menu)} aria-haspopup="menu" aria-expanded={menu}>↩ Reply ▾</button>
       {#if menu}<div class="menu" role="menu">
@@ -96,10 +86,20 @@
     </div>
     {#if info?.provider === 'gmail'}<button onclick={openRules} class:on={rulesOpen}>☰ Rules</button>{/if}
     <button onclick={() => { findOpen = !findOpen; if (!findOpen) { term = ''; onfind?.(''); } }} class:on={findOpen}>⌕ Find</button>
-    <button onclick={() => { moreOpen = !moreOpen; if (moreOpen && !more) loadMore(); }} class:on={moreOpen}>More from sender</button>
+    {#if onmore}<button onclick={onmore} class:on={moreOpen}>More from sender</button>{/if}
     {#if busy}<span class="busy">{busy === 'send' ? 'Sending…' : 'Working…'}</span>{/if}
     {#if note}<span class="ok">{note}</span>{/if}
+    {@render trail?.()}
   </div>
+  </div>
+  {#if info}
+    <div class="who">
+      <span><b>From:</b> {info.from}<button class="cp" title="Copy" onclick={() => copy(info!.from, 'From')}>⧉</button></span>
+      {#if info.to}<span><b>To:</b> {info.to}<button class="cp" title="Copy" onclick={() => copy(info!.to, 'To')}>⧉</button></span>{/if}
+      {#if info.cc}<span><b>Cc:</b> {info.cc}</span>{/if}
+      {#if info.unsubscribe.url}<a class="unsub" href={info.unsubscribe.url} target="_blank" rel="noopener noreferrer">✉ Unsubscribe from this sender</a>{:else if info.unsubscribe.mailto}<a class="unsub" href={info.unsubscribe.mailto}>✉ Unsubscribe (email)</a>{/if}
+    </div>
+  {/if}
   {#if error}<p class="err">{error}{#if /Allow changes/.test(error)} <a href="/settings/emails">Open Settings</a>{/if}</p>{/if}
 
   {#if findOpen}<div class="find"><input bind:value={term} placeholder="Find in this email" aria-label="Find in this email" oninput={() => onfind?.(term)}></div>{/if}
@@ -137,22 +137,13 @@
     </div>
   {/if}
 
-  {#if moreOpen}
-    <div class="panel">
-      <h4>More from {scope === 'domain' && more?.domain ? `@${more.domain}` : more?.sender || item.sender}
-        <span class="opts"><label class="chk"><input type="radio" name="scope" value="sender" bind:group={scope} onchange={loadMore}> Sender</label><label class="chk"><input type="radio" name="scope" value="domain" bind:group={scope} onchange={loadMore}> Domain</label><label class="chk"><input type="checkbox" bind:checked={sameSubject} onchange={loadMore}> Same subject only</label></span></h4>
-      {#if more}{#if !more.rows.length}<p class="muted">No other messages.</p>{/if}
-        <ul>{#each more.rows as r (r.key)}<li><button class="rel" class:unread={r.unread} onclick={() => onopen?.(r)}><span>{r.subject || '(no subject)'}</span><time>{when(r.receivedAt)}</time></button></li>{/each}</ul>
-        {#if more.total > more.rows.length}<small class="muted">Showing 50 of {more.total}</small>{/if}{/if}
-    </div>
-  {/if}
 </section>
 
 <style>
   .tools{border-bottom:1px solid #e4e9f2;padding:8px 18px;font-size:12px;background:#fff}
-  .who{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:#53607a;margin-bottom:6px}.who b{color:#8a95a8;font-weight:700}.cp{border:0;background:none;color:#8a95a8;cursor:pointer;padding:0 0 0 4px;font-size:12px}.cp:hover{color:#3157de}
+  .who{display:flex;gap:14px;flex-wrap:wrap;align-items:center;color:#53607a}.who b{color:#8a95a8;font-weight:700}.cp{border:0;background:none;color:#8a95a8;cursor:pointer;padding:0 0 0 4px;font-size:12px}.cp:hover{color:#3157de}
   .unsub{color:#3157de;font-weight:700;text-decoration:none}
-  .bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+  .top{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px}.bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-left:auto}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}button.on{background:#eef1ff;border-color:#8da2f0;color:#3157de}
   .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}
   .busy{color:#8a95a8}.ok{color:#0f7f74}.err{color:#a5414d;margin:6px 0 0}.err a{color:#a5414d;font-weight:700}.muted{color:#8a95a8}
@@ -163,8 +154,7 @@
   .compose input,.compose textarea{border:1px solid #e4e9f2;border-radius:7px;padding:6px 8px;font:inherit;font-size:13px;min-width:0}.compose textarea{resize:vertical}
   .quoted{white-space:pre-wrap;font:12px/1.45 system-ui,sans-serif;color:#6b7690;background:#fff;border:1px solid #eef0f5;border-radius:7px;padding:8px;max-height:220px;overflow:auto;margin:0}
   .actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.send{background:#3157de;border-color:#3157de;color:#fff}.send:hover{color:#fff}.sp{flex:1}.chk{display:inline-flex;gap:4px;align-items:center;color:#53607a;font-weight:600}
-  .panel{margin-top:8px;border:1px solid #e4e9f2;border-radius:10px;padding:9px 11px;max-height:260px;overflow:auto}.panel h4{margin:0 0 6px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.panel h4 small{font-weight:400;color:#8a95a8}.opts{display:flex;gap:10px;font-weight:400}
+  .panel{margin-top:8px;border:1px solid #e4e9f2;border-radius:10px;padding:9px 11px;max-height:260px;overflow:auto}.panel h4{margin:0 0 6px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.panel h4 small{font-weight:400;color:#8a95a8}
   .rule{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.rule input,.rule select{border:1px solid #e4e9f2;border-radius:6px;padding:4px 6px;font-size:12px}
   .panel ul{list-style:none;margin:0;padding:0;display:grid;gap:3px}.panel li{display:flex;gap:8px;justify-content:space-between;align-items:center}
-  .rel{border:0;background:none;width:100%;display:flex;gap:10px;justify-content:space-between;padding:4px 6px;border-radius:6px;text-align:left;font-weight:500}.rel:hover{background:#f4f6fb}.rel span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rel.unread span{font-weight:800}.rel time{color:#8a95a8;flex:none}
 </style>

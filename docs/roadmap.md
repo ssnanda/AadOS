@@ -72,3 +72,32 @@ Keep scope small: deliver useful inbox access before extending to household task
 5. [x] Preview: mailbox call outside the state lock; body cache; next email prefetched
 6. [x] Delete: row disappears at once; 1 read + 1 write; parallel provider calls
 7. [ ] One row per email in PostgreSQL instead of the single `app_state` blob (needs migration + backup; owner approval)
+8. [x] Preview: one action row (Delete, Mark read/unread, Keep unread ↓, Reply, Rules, Find, More from sender, ↑ ↓)
+9. [x] "More from sender" as a right-side column with per-row and bulk read/delete
+10. [x] Narrower list while previewing; bigger ✉/🗑 row icons
+
+### Toolbox features chosen for AadOS (2026-11-17)
+11. [ ] AI triage bar (Urgent / Delete / Mark read suggestions, review, apply, Re-run)
+12. [ ] Auto-read senders
+13. [ ] Auto-delete senders
+14. [ ] Block sender
+15. [ ] Spam / Not spam
+16. [ ] Conversation mode + delete whole conversation
+17. [ ] Group by sender + delete group
+18. [ ] Day headers + Newest/Oldest sort
+19. [ ] Canned replies
+20. [ ] Send-as + signatures
+21. [x] Email → Asana task: preview button, AI draft (title/due/project/notes), attachments, marks email read
+22. [ ] Zoho shared mailboxes
+
+### Asana module (live from Asana, token encrypted; nothing mirrored)
+23. [x] Connect with personal access token; Refresh; Disconnect
+24. [x] My Tasks: Incoming/Overdue/Today (+Upcoming/No date with Show all), complete with Undo, Acknowledge (+all), due badges, Add/Edit time, next-7-days + Next month reschedule chips with day load, repeat chip editor, bulk actions
+25. [x] Board: My Tasks sections as columns, drag & drop (Done completes), Start / Start timer / Done, collapsible columns
+26. [x] Calendar: month grid, drag to reschedule
+27. [x] People & Teams: everyone in my teams with overdue/today/upcoming/no-date counts and task lists
+28. [x] Recurring: repeating tasks with editable rule
+29. [x] New Task (name, description, project, due day/time, repeat)
+30. [x] Timers: Start/Stop, work note, time logged to the task as a comment
+31. [x] AI: Plan my day, Summarize view, Help me do this
+32. [x] Show all; "Dashboard due tasks only" (home dashboard Asana card)

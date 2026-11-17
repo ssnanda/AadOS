@@ -5,6 +5,7 @@
   import AppShell from '$lib/components/AppShell.svelte';
   import EmailViewer from '$lib/components/EmailViewer.svelte';
   import { startAutoSync } from '$lib/sync';
+  import { mailAction } from '$lib/mail-action';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let viewing = $state<PageData['rows'][number] | null>(null);
@@ -58,14 +59,10 @@
     if (deleting && keys.length > 1 && !confirm(`Move ${keys.length} emails to Trash in Gmail/Zoho?`)) return false;
     if (deleting) { hidden = [...hidden, ...keys]; selected = selected.filter((key) => !keys.includes(key)); }
     else acting = true;
-    const body = new FormData(); for (const key of keys) body.append('keys', key); body.set('op', op);
-    const res = await fetch('?/mark', { method: 'POST', body, headers: { accept: 'application/json' } }).catch(() => null);
+    const result = await mailAction(op, keys);
     if (!deleting) acting = false;
-    const out = res ? await res.json().catch(() => ({})) : { type: 'error' };
-    // SvelteKit actions answer {type, data}; data is devalue-encoded: pull the readable message out of it.
-    const message = (() => { try { const d = JSON.parse(out.data || '[]'); const o = d[0] || {}; const pick = (k: string) => (k in o ? d[o[k]] : ''); return String(pick('error') || pick('warning') || ''); } catch { return ''; } })();
-    notice = message || (res ? '' : 'Could not reach AadOS.');
-    if (out.type !== 'success') { if (deleting) hidden = hidden.filter((key) => !keys.includes(key)); return false; }
+    notice = result.message;
+    if (!result.ok) { if (deleting) hidden = hidden.filter((key) => !keys.includes(key)); return false; }
     selected = selected.filter((key) => !keys.includes(key));
     if (deleting) void invalidateAll(); else await invalidateAll();
     return true;
@@ -78,10 +75,17 @@
     viewing = replacement;
     if (!(await act('delete', [current.key]))) viewing = current;
   }
+  // Opening marks an email seen; this leaves it unread (also in the mailbox) and moves on.
+  async function keepUnreadNext() {
+    if (!viewing) return;
+    const current = viewing;
+    viewing = rows[viewingIndex + 1] ?? null;
+    await act('mark-unread', [current.key]);
+  }
 </script>
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
-<main class:previewing={Boolean(viewing)}>
+<main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
   <header>
     <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply</p></div>
   </header>
@@ -137,16 +141,16 @@
         </form>
       </div>
     </li>{/each}</ul></section>
-  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
+  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} onkeepunread={keepUnreadNext} onchanged={() => invalidateAll()} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
   </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}
 </main>
 </AppShell>
 <style>
-  main{max-width:1100px}main.previewing{max-width:none}
+  main{max-width:1100px}main.previewing{max-width:none}main.previewing.scoped .acct{display:none} /* one account on screen: its pill is redundant */
   /* List + preview side by side; the list becomes compact while an email is open. */
-  .split{display:block}main.previewing .split{display:grid;grid-template-columns:minmax(340px,38%) minmax(0,1fr);gap:14px;align-items:start}
+  .split{display:block}main.previewing .split{display:grid;grid-template-columns:minmax(260px,24%) minmax(0,1fr);gap:14px;align-items:start}
   main.previewing .row{grid-template-columns:minmax(0,1fr) 60px;gap:2px 10px}main.previewing .subj{grid-column:1/-1;grid-row:2}main.previewing .meta .ops,main.previewing .meta .tag:not(.act),main.previewing .aitag{display:none}
   li{cursor:pointer}li.active{background:#eef3ff;box-shadow:inset 3px 0 0 #3157de}
   @media(max-width:900px){main.previewing .split{display:block}}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
@@ -165,7 +169,7 @@
   .categories{margin-bottom:14px}.categories summary{cursor:pointer;color:#53607a;font-size:12px;font-weight:700}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
   .bulk{display:flex;align-items:center;gap:12px;min-height:34px;margin-bottom:7px;padding:7px 10px;border:1px solid #e4e9f2;border-radius:10px;background:#fff;color:#53607a;font-size:12px}.bulk label{display:flex;align-items:center;gap:7px;font-weight:700}.bulk strong{color:#3157de}.bulk-actions{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}.bulk button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:5px 9px;color:#43516c;font-size:11px;font-weight:700;cursor:pointer}.bulk button:hover{border-color:#8da2f0;color:#3157de}.bulk button:disabled{opacity:.5}.bulk button.danger{color:#b53c50}
   .list{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e4e9f2;border-radius:12px;overflow:hidden}
-  li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:24px 24px 20px minmax(0,1fr);gap:7px;align-items:center}.ic{border:0;background:none;padding:2px;border-radius:6px;cursor:pointer;font-size:15px;line-height:1;color:#53607a;opacity:.75}.ic:hover{opacity:1;background:#eef1f8}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
+  li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:32px 32px 20px minmax(0,1fr);gap:6px;align-items:center}.ic{border:0;background:none;padding:3px;border-radius:6px;cursor:pointer;font-size:21px;line-height:1;color:#53607a;opacity:.85}.ic:hover{opacity:1;background:#eef1f8}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
   .row{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;gap:14px;align-items:baseline;width:100%;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:#29344c}
   .from{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}li.unread .from,li.unread .subj strong{font-weight:800}.star{color:#e0a21b;margin-right:4px}
   .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.subj strong{font-weight:600}.subj em{font-style:normal;color:#8a95a8;margin-left:8px;font-size:12px}time{font-size:11px;color:#8a95a8;text-align:right}

@@ -9,6 +9,8 @@ import { validZone } from '$lib/calendar/model';
 import { todayIn } from '$lib/calendar/view';
 import { cachedBriefing } from '$lib/server/ai/briefing-service';
 import { aiConfigured } from '$lib/server/ai/service';
+import * as asanaApi from '$lib/server/asana';
+import { dayIn, dueDay, dueShort, stageOf } from '$lib/asana-model';
 
 export const load: PageServerLoad = async () => {
   const state = await readState();
@@ -34,7 +36,17 @@ export const load: PageServerLoad = async () => {
   const calendarAccounts = state.accounts.filter((a) => a.calendar);
   const slim = (list: typeof rows) => list.map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, due: r.due, account: r.accountEmail }));
   const inbox = { unread: counts.unread, needsReply: counts.needsReply, important: counts.important, bills: counts.categories['Bills'] || 0, renewals: counts.categories['Renewals'] || 0, receipts: counts.categories['Receipts'] || 0 };
+  // Asana card, streamed (not awaited) so the dashboard never waits on Asana. "Dashboard due tasks only" (Asana page)
+  // limits it to today/overdue; otherwise Incoming tasks show too.
+  const asana = asanaApi.connectedState(state) ? (async () => {
+    const today = dayIn(new Date(), tz), dueOnly = Boolean(state.prefs.asanaDashboardDueOnly);
+    const all = await asanaApi.myTasks(await asanaApi.connection());
+    const list = all.filter((t) => { const d = dueDay(t, tz); return (d && d <= today) || (!dueOnly && stageOf(t.sectionName) === 'incoming'); })
+      .sort((a, b) => (dueDay(a, tz) || '9999').localeCompare(dueDay(b, tz) || '9999'));
+    return { total: list.length, items: list.slice(0, 8).map((t) => ({ gid: t.gid, name: t.name, due: dueShort(t, today, tz), link: t.permalink })) };
+  })().catch(() => null) : null;
   return {
+    asana,
     tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
     tz,
     briefing: { cached: await cachedBriefing(), aiEnabled: state.ai.enabled, configured: aiConfigured(state) },

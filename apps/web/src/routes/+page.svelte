@@ -52,6 +52,8 @@
     {#if data.brief.counts.upcoming}{@render card('Upcoming deadlines', '/emails?view=all', data.brief.counts.upcoming, data.brief.upcoming)}{/if}
     {#if data.brief.tasksToday.length + data.brief.tasksOverdue.length}<div class="bc"><a class="bh" href="/tasks?f=today">Tasks<b>{data.brief.tasksToday.length + data.brief.tasksOverdue.length}</b></a>
       {#if data.brief.tasksOverdue.length + data.brief.tasksToday.length}<ul>{#each data.brief.tasksOverdue as t (t.id)}<li class="late"><span>{t.title}</span><time>{t.due}</time></li>{/each}{#each data.brief.tasksToday as t (t.id)}<li><span>{t.title}</span><time>Today</time></li>{/each}</ul>{:else}<p class="muted">Nothing due today.</p>{/if}</div>{/if}
+    {#if data.asana}{#await data.asana then a}{#if a?.total}<div class="bc"><a class="bh" href="/asana">Asana<b>{a.total}</b></a>
+      <ul>{#each a.items as t (t.gid)}<li class:late={t.due.tone === 'overdue'}><span>{t.name}</span><time>{t.due.text || 'Incoming'}</time></li>{/each}</ul></div>{/if}{/await}{/if}
   </div>{/if}
   <div class="tiles">
     {#each data.tiles.filter((t) => t.count > 0) as t (t.id)}
