@@ -101,3 +101,18 @@ Keep scope small: deliver useful inbox access before extending to household task
 30. [x] Timers: Start/Stop, work note, time logged to the task as a comment
 31. [x] AI: Plan my day, Summarize view, Help me do this
 32. [x] Show all; "Dashboard due tasks only" (home dashboard Asana card)
+
+### Phase 5 — Finance & Investments (AJAdvisor port) — see docs/finance.md
+39. [x] PostgreSQL `fin_*` schema (Ecto migration), NUMERIC money, ids preserved, source tracking
+40. [x] Finance model ported (cost-basis rules, buckets, auto categories, insights engine, real estate, CSV, ranges) + tests
+41. [x] Prices (Yahoo, previous-session close), earnings, stale/missing flags, benchmarks, daily snapshots
+42. [x] Dashboard: net worth, investments, cash, RE equity, gains, allocation (type/owner/category/asset class), history chart + ranges, period changes
+43. [x] Accounts & holdings CRUD, owners/types/brokerages/categories, CSV import/export
+44. [x] Watchlist, investment plans, decision journal (open/scheduled/completed/dismissed), insights + muting
+45. [x] Real estate: properties, equity, cash flow, valuation history
+46. [x] E*TRADE OAuth 1.0a read-only sync (sandbox/production) — needs owner keys to verify live
+47. [x] Plaid Link, items, reconnect, unlink, duplicate protection — needs owner keys to verify live
+48. [x] Finance alerts through AadOS notifications on the existing scheduler, configurable
+49. [x] AI assistant finance facts behind explicit consent
+50. [x] AJAdvisor migration: dry run, idempotent apply, rollback, reconciliation report (dry run verified on real data; apply pending deploy)
+51. [x] Navigation, Finance permission, iOS via WebView shell, docs
