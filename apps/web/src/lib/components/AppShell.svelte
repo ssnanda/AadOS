@@ -16,10 +16,15 @@
     syncing = false;
   }
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
-  let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number }[]);
+  let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number; total: number }[]);
   let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number }[]);
-  const inEmails = $derived(page.url.pathname === '/emails' || page.url.pathname.startsWith('/pipelines/'));
-  const currentAccount = $derived(page.url.pathname === '/emails' ? page.url.searchParams.get('account') || '' : null);
+  // Email mode (/emails): unread by default, only inboxes with unread mail; "All" shows every inbox and message.
+  // View mode (/pipelines/<id>): custom views always show all their emails.
+  const inEmails = $derived(page.url.pathname === '/emails');
+  const currentAccount = $derived(inEmails ? page.url.searchParams.get('account') || '' : null);
+  const mailAll = $derived(inEmails && page.url.searchParams.get('view') === 'all');
+  const shownAccounts = $derived(mailAll ? accounts : accounts.filter((a) => a.unread > 0 || a.id === currentAccount));
+  const mailHref = (account: string, all = mailAll) => { const q = new URLSearchParams(); if (account) q.set('account', account); if (all) q.set('view', 'all'); const s = q.toString(); return s ? `/emails?${s}` : '/emails'; };
   const totalUnread = $derived(accounts.reduce((n, a) => n + a.unread, 0));
   let notifications = $derived(Number(page.data.shell?.notifications ?? 0));
   // Report the browser's time zone once, so server-side reminders and calendar days match the owner's clock.
@@ -38,13 +43,13 @@
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
     <a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails{#if !inEmails && totalUnread}<b>{totalUnread}</b>{/if}</a>
-    {#if inEmails && accounts.length}<div class="inboxes" aria-label="Inboxes"><a class="ibx" class:on={currentAccount === ''} href="/emails">All inboxes{#if totalUnread}<b>{totalUnread}</b>{/if}</a>{#each accounts as a (a.id)}<a class="ibx" class:on={currentAccount === a.id} href={`/emails?account=${encodeURIComponent(a.id)}`} title={a.email}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i><span>{a.email}</span>{#if a.unread}<b>{a.unread}</b>{/if}</a>{/each}</div>{/if}
+    {#if inEmails && accounts.length}<div class="inboxes" aria-label="Inboxes"><div class="mode" role="group" aria-label="Show"><a class:on={!mailAll} href={mailHref(currentAccount || '', false)}>Unread</a><a class:on={mailAll} href={mailHref(currentAccount || '', true)}>All</a></div><a class="ibx" class:on={currentAccount === ''} href={mailHref('')}>All inboxes{#if totalUnread}<b>{totalUnread}</b>{/if}</a>{#each shownAccounts as a (a.id)}<a class="ibx" class:on={currentAccount === a.id} href={mailHref(a.id)} title={a.email}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i><span>{a.email}</span>{#if a.unread}<b>{a.unread}</b>{/if}</a>{/each}{#if !shownAccounts.length}<small class="none">No unread mail</small>{/if}</div>{/if}
     <a class="nav teal" class:active={here('/tasks')} href="/tasks"><span>☑</span>Tasks</a>
     <a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar</a>
     <a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>
     <a class="nav teal" class:active={page.url.pathname.startsWith('/documents')} href="/documents"><span>▤</span>Documents</a>
     <a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>
-    {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}<b>{v.count}</b></a>{/each}{/if}
+    {#if views.length}<div class="heading">VIEWS</div>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`} title={`${v.total} emails · ${v.count} unread`}><span>{icon(v.parser)}</span>{v.name}{#if v.total}<b>{v.total}</b>{/if}</a>{/each}{/if}
     <small class="ver">v{__APP_VERSION__}</small>
   </aside>
   <main class="main">
@@ -70,6 +75,8 @@
   .ibx{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px;border-radius:7px;color:#56627c;font-size:12px;font-weight:600;text-decoration:none;min-width:0}.ibx:hover{background:#f6f7fb}.ibx.on{background:#e8f1ff;color:#2f6fe4}
   .ibx span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}.ibx i{font-style:normal;width:18px;height:18px;flex:none;display:grid;place-items:center;border-radius:5px;font-size:10px;font-weight:800;background:#eef1ff;color:#3157de}.ibx i.gmail{background:#fff0ee;color:#d94d43}
   .ibx b{margin-left:auto;font-size:10px;background:#e8f1ff;border-radius:6px;padding:2px 6px;color:#2f6fe4}
+  .mode{display:flex;gap:2px;margin:0 0 3px;padding:2px;background:#f2f4f9;border-radius:8px}.mode a{flex:1;text-align:center;padding:4px 0;border-radius:6px;font-size:11px;font-weight:700;color:#6b778f;text-decoration:none}.mode a.on{background:#fff;color:#2f6fe4;box-shadow:0 1px 2px #0000001a}
+  .none{padding:4px 8px;color:#8a95a8;font-size:11px}
   .heading{padding:16px 12px 6px;color:#a3adbf;font-size:10px;font-weight:750;letter-spacing:1.3px}
   .main{flex:1;min-width:0}
   .topbar{height:62px;background:#fff;border-bottom:1px solid #e9ecf4;display:flex;align-items:center;gap:12px;padding:0 32px}

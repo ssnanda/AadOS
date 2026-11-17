@@ -18,8 +18,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
   const kind = url.searchParams.get('kind') || '';
   const store = url.searchParams.get('store') || '';
   const q = (url.searchParams.get('q') || '').trim();
-  // Unread-only by default; ?view=all shows everything.
-  const view = url.searchParams.get('view') === 'all' ? 'all' : 'unread';
+  // View mode shows every email in the view by default; ?view=unread narrows to unread.
+  const view = url.searchParams.get('view') === 'unread' ? 'unread' : 'all';
   const unread = view === 'unread';
   const matching = filterItems(all, { q });
   const unreadCount = matching.filter(isUnread).length;

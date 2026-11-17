@@ -6,7 +6,7 @@
   const meta = kindMeta;
   const href = (kind: string, store: string, withQuery = true, view = data.view) => {
     const q = new URLSearchParams();
-    if (view === 'all') q.set('view', 'all');
+    if (view === 'unread') q.set('view', 'unread');
     if (kind) q.set('kind', kind);
     if (store) q.set('store', store);
     if (withQuery && data.q) q.set('q', data.q);
@@ -24,8 +24,8 @@
   {#if form && 'reparsed' in form}<div class="ok">Re-parsed {data.total} emails · {form.reparsed} changed category.</div>{/if}
 
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
-  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'all'}<input type="hidden" name="view" value="all">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
-  <div class="views"><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a></div>
+  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'unread'}<input type="hidden" name="view" value="unread">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
+  <div class="views"><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a></div>
   <div class="tiles">
     <a class="tile all" class:on={!data.kind && !data.store} href={href('', '')}><span class="ico">▦</span><b>{data.searched}</b><small>All</small></a>
     {#each data.kinds as [kind, n] (kind)}{@const m = meta(kind)}<a class="tile {m.tone}" class:on={data.kind === kind} href={href(kind, data.store)}><span class="ico">{m.icon}</span><b>{n}</b><small>{m.label}</small></a>{/each}

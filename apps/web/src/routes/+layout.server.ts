@@ -11,5 +11,5 @@ export const load: LayoutServerLoad = async ({ locals }) => {
   const unreadKeys = new Map<string, Set<string>>();
   for (const i of state.items) if (isUnread(i)) { const a = i.accountId || ownerOf.get(i.pipelineId) || ''; let set = unreadKeys.get(a); if (!set) unreadKeys.set(a, (set = new Set())); set.add(i.messageId); }
   const accounts = state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, unread: unreadKeys.get(a.id)?.size || 0 }));
-  return { shell: { accounts, notifyBrowser: state.notify.browser, notifications: state.reminders.filter((r) => r.status === 'fired' && !r.readAt).length, timeZone: state.prefs.timeZone, views: visiblePipelines(state).map((p) => ({ id: p.id, name: p.name, parser: p.parser, count: state.items.filter((i) => i.pipelineId === p.id && isUnread(i)).length })) } };
+  return { shell: { accounts, notifyBrowser: state.notify.browser, notifications: state.reminders.filter((r) => r.status === 'fired' && !r.readAt).length, timeZone: state.prefs.timeZone, views: visiblePipelines(state).map((p) => ({ id: p.id, name: p.name, parser: p.parser, count: state.items.filter((i) => i.pipelineId === p.id && isUnread(i)).length, total: state.items.filter((i) => i.pipelineId === p.id).length })) } };
 };
