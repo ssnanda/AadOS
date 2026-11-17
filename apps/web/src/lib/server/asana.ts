@@ -97,7 +97,7 @@ export async function attachments(c: Conn, gid: string) { return (await all(c.to
 export async function uploadAttachment(c: Conn, gid: string, filename: string, mime: string, bytes: Uint8Array) {
   const form = new FormData();
   form.set('parent', gid);
-  form.set('file', new Blob([bytes], { type: mime || 'application/octet-stream' }), filename);
+  form.set('file', new Blob([new Uint8Array(bytes)], { type: mime || 'application/octet-stream' }), filename); // copy: Blob needs an ArrayBuffer-backed view
   await call(c.token, 'POST', '/attachments', { form });
 }
 

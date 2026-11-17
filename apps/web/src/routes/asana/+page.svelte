@@ -272,7 +272,7 @@
 <style>
   main{padding:4px 0 60px;font-size:13px;color:#29344c}
   .connect{max-width:560px;background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:20px;display:grid;gap:10px}.connect h1{margin:0}.connect form{display:flex;gap:8px}.connect input{flex:1}
-  input,select{border:1px solid #d9dfeb;border-radius:7px;padding:6px 8px;font:inherit}
+  input{border:1px solid #d9dfeb;border-radius:7px;padding:6px 8px;font:inherit}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:700;color:#43516c;cursor:pointer}button:disabled{opacity:.5;cursor:default}
   .primary{background:#3157de;border-color:#3157de;color:#fff}.ghost{background:#f2f3f6;border-color:#e4e7ee;color:#6b7690;font-weight:600}.link{border:0;background:none;color:#3157de;padding:0}.danger{color:#b53c50}
   .topline{display:flex;gap:8px;align-items:center;margin-bottom:6px}.chk{display:flex;gap:6px;align-items:center}.sp{flex:1}.muted{color:#8a95a8}.err{color:#a5414d}

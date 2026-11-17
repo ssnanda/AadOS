@@ -1,9 +1,11 @@
 <script lang="ts">
   // Repeat rule editor (Asana's undocumented `recurrence`): never / daily / weekly / monthly / yearly.
+  import { untrack } from 'svelte';
   import { recurrenceSummary, type Recurrence } from '$lib/asana-model';
   let { value, onsave, oncancel }: { value: Recurrence; onsave: (r: Recurrence) => void; oncancel?: () => void } = $props();
-  const d0 = value.data || {};
-  let type = $state<Recurrence['type']>(value.type === 'periodically' ? 'daily' : value.type || 'never');
+  // The editor starts from the rule it was opened with (a fresh editor is mounted per edit).
+  const v0 = untrack(() => value), d0 = v0.data || {};
+  let type = $state<Recurrence['type']>(v0.type === 'periodically' ? 'daily' : v0.type || 'never');
   let frequency = $state(Math.max(1, d0.frequency || 1));
   let days = $state<number[]>(d0.days_of_week?.length ? [...d0.days_of_week] : [1]);
   let byWeekday = $state(Boolean(d0.nth_weekday));
