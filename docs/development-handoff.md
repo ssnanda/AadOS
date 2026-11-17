@@ -1,5 +1,34 @@
 # Development handoff
 
+## Phase 2 - Calendar, Tasks, Reminders (v0.1.29)
+**Verified locally (Docker):** `bin/dev-local.sh test` = Svelte check 0 errors, 82 Node tests (6 on real Postgres), 22 Elixir tests. Real stack: all pages 200, task/reminder flows written to Postgres, restart recovery (no lost or duplicated reminders). Throwaway stack with mock events (`apps/web/scripts/e2e-mock-calendar.mjs`): month/week/day/agenda, filters, detail data, dashboard, failed-sync-keeps-events, event reminders.
+**Not live-verified:** any Google/Zoho Calendar API call (owner has not granted calendar scope yet), and nothing was looked at in a real browser (HTML checked with curl only).
+
+### Calendar
+- Model (`lib/calendar/model.ts`): organizer, attendees, meetingUrl (provider conference data or a known meeting link in location/description), htmlLink; recurrence, exceptions, all-day/multi-day, DST.
+- Providers: Google (`google.ts`) calendarList + events.list with pageToken/syncToken, 410 -> full resync. Zoho (`zoho.ts`) checked against Zoho's API docs: `GET /api/v1/calendars`, `GET /api/v1/calendars/<uid>/events?range={start,end}` (max 31 days; we use 30-day windows), `dateandtime{start,end,timezone}`, `organizer` (string), `attendees[{email,status}]`, `rrule`, `Accept: application/json+large` for descriptions. Zoho `location`/description field names and cancelled-event representation are not shown in the docs: unverified.
+- Sync (`calendar-sync.ts`): scheduler + manual; per-calendar enable/disable (`state.calendarDisabled`; disabled = listed, not synced, events dropped); a failed sync never deletes events; permission errors produce a "use Enable calendar again" message per account.
+- UI (`/calendar`): month/week/day/agenda, Today, prev/next, account + per-calendar filters (URL params, preserved across navigation), provider colours, event panel (time, zone, location, description as plain text, organizer, attendees, meeting link, recurrence), "Add task" / "Remind me" from an event. View maths in `lib/calendar/view.ts` (viewer time zone, DST-safe).
+- Time zone: `prefs.timeZone` is set once from the browser (`POST /settings/timezone`), editable in Settings -> General.
+
+### Tasks
+Notes, due time, tags, search, tag filter, links to the originating email and/or calendar event, duplicate prevention (same title+due, or same linked email/event; "Add anyway" overrides), delete confirmation. Stored in the state document (PostgreSQL when `AADOS_STORAGE=postgres`).
+
+### Reminders (`lib/server/reminders.ts`, `/reminders`)
+- Durable, server-side: `reminder-scheduler.ts` runs `tick` every 60 s (dry run first; writes only when something changes). All state is in the database, every automatic reminder has a stable `dedupeKey`, so restarts/redeploys/missed minutes neither lose nor duplicate reminders.
+- Sources: tasks with a due date (+ time, or `prefs.taskReminderTime`), calendar events (`prefs.eventLeadMinutes` before start, next 2 days, not all-day), custom.
+- Lifecycle: scheduled -> fired (notification center, unread badge in the sidebar) -> snoozed / dismissed / done (done on a task reminder completes the task). History kept 90 days.
+- In-app only; no external notification service.
+
+### Dashboard
+Today's events, next appointment, next-7-days counts, reminders, plus the existing email/task cards; quick actions (Open Calendar, Add Task, Create Reminder, Open Inbox, Sync Calendars); calendar/account errors.
+
+### Phase 3 starting point
+1. Owner clicks "Enable calendar" per account -> live-verify Google and Zoho sync; fix Zoho field names if they differ.
+2. Browser pass over Calendar/Tasks/Reminders/Dashboard (visual/mobile).
+3. Normalise calendar events, tasks and reminders into relational tables (currently in the `app_state` jsonb document) and move sync + reminder ticks to Oban.
+4. AJMCP (AI triage/drafts) and RustFS (attachments/documents) integrations; browser/push notifications for reminders.
+
 ## Calendar (read-only) - session 4
 - **Consent flow:** Settings -> Emails -> account row -> "Enable calendar" re-authorizes with the extra scope (Google `calendar.readonly` via incremental auth + PKCE + `login_hint`; Zoho `ZohoCalendar.calendar.READ,ZohoCalendar.event.READ`). `account.calendar` is true only when the provider's token response actually lists the scope. A plain Gmail reconnect keeps the grant (`include_granted_scopes`); a Zoho reconnect re-requests calendar scopes if any Zoho account has them.
 - **Sync** (`lib/server/calendar-sync.ts`): scheduler (every 15 min, skips paused accounts, off the state lock via the detached path) + "Calendar sync" per account + "Sync calendars" on /calendar. Google: calendarList + events.list with `syncToken` (410 -> full resync), deletions applied. Zoho: calendars + 30-day `range` windows (-7d..+90d), full replace per calendar. Per-account errors are shown, never thrown; data is kept on failure. "Clear calendar" forgets an account's calendar data locally.

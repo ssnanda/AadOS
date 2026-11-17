@@ -33,3 +33,18 @@
 - [ ] Backup/restore, monitoring, OpenShift GitOps and staged promotion
 
 Keep scope small: deliver useful inbox access before extending to household tasks, calendars, finance, health, files or smart-home integrations.
+
+## Phase 2 — Calendar, Tasks & Reminders (v0.1.29)
+- [x] Google + Zoho Calendar (read-only): consent flow, discovery, per-calendar enable, incremental sync, recurrence/DST, attendees, meeting links (mock-tested; live verification pending owner consent)
+- [x] Calendar UI: month / week / day / agenda, filters, colours, event panel
+- [x] Tasks: notes, due time, tags, search, email/event links, duplicate prevention
+- [x] Reminders: durable server-side scheduling, snooze/dismiss/done, notification center, history
+- [x] Dashboard: today, next appointment, 7-day schedule, reminders, quick actions
+- [x] PostgreSQL primary storage (local Docker), vault-encrypted credentials
+- [ ] Live Google/Zoho calendar verification and browser review
+- [ ] Relational tables + Oban jobs for calendar/tasks/reminders
+
+## Phase 3 — AI and documents
+- [ ] AJMCP integration (triage, summaries, draft suggestions with human review)
+- [ ] RustFS (S3) integration for attachments and documents
+- [ ] Push/browser notifications for reminders
