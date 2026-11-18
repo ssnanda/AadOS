@@ -9,7 +9,12 @@ const mailHost = (dc: string) => `https://mail.zoho.${dc || 'com'}`;
 
 async function jsonResponse(response: Response) {
   const body = await response.json().catch(() => ({}));
-  if (!response.ok || (body.status?.code && Number(body.status.code) >= 400)) throw new Error(body.error || body.message || body.status?.description || `Zoho HTTP ${response.status}`);
+  if (!response.ok || (body.status?.code && Number(body.status.code) >= 400)) {
+    // Zoho puts the useful part (which field is wrong) in data.moreInfo / data.errorCode; "Invalid Input" alone says nothing.
+    const base = body.error || body.message || body.status?.description || `Zoho HTTP ${response.status}`;
+    const more = [body.data?.errorCode, body.data?.moreInfo].filter(Boolean).join(': ');
+    throw new Error(more ? `${base} (${more})` : base);
+  }
   return body;
 }
 
@@ -346,8 +351,8 @@ async function zohoPost(state: AadOSState, account: MailAccount, path: string, b
 }
 /** Documented: POST /accounts/{id}/messages (new message, used for forwards). */
 export async function sendZoho(state: AadOSState, account: MailAccount, m: ZohoOutgoing): Promise<void> { await zohoPost(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages`, zohoBody(m)); }
-/** Documented: POST /accounts/{id}/messages/{messageId} with action "Reply" (reply-all = reply with the other recipients in To/Cc). */
+/** Documented: POST /accounts/{id}/messages/{messageId} with action "reply" (lower case, per the API docs; reply-all = reply with the other recipients in To/Cc). */
 export async function replyZoho(state: AadOSState, account: MailAccount, messageId: string, m: ZohoOutgoing): Promise<void> {
   if (!/^\d{1,20}$/.test(messageId)) throw new Error('Unexpected Zoho message id');
-  await zohoPost(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/${messageId}`, { ...zohoBody(m), action: 'Reply' });
+  await zohoPost(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/${messageId}`, { ...zohoBody(m), action: 'reply' });
 }

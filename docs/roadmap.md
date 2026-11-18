@@ -137,3 +137,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 68. [ ] Messages SMS on macOS 26: AppleScript into the merged chat sends iMessage. sendSms now uses the BlueBubbles Private API when on, else /chat/new service SMS, then SMS;-; id; warns when SMS was not forced; Settings → Messages → Test shows Private API status. Untested.
 69. [ ] Messages: senders reported to 7726 go to Spam reports at send time; existing reports backfilled from the numbers you texted 7726. Untested.
 70. [ ] Messages folders match the Mac: Messages · Unknown Senders (BlueBubbles isFiltered) · Spam · Spam reports, + Unread only. Loads 1000 chats (BB lastmessage sort is not newest-first; 150 dropped known senders → "Needs you 0"). Badge = known-sender unread. Untested.
+71. [ ] Zoho reply "Invalid Input": action sent as "Reply" → now "reply"; Zoho errors show errorCode/moreInfo. Untested (no test send by agent).
