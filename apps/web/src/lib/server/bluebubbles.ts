@@ -3,7 +3,7 @@
 // was last opened (for unread). Endpoints follow the BlueBubbles REST API (/api/v1, `password` query auth).
 import { randomBytes } from 'node:crypto';
 import { readState, updateState, type AadOSState } from './aados-store';
-import { addressKey, toChat, toMessage, type Chat, type Message } from '$lib/messages-model';
+import { addressKey, smsGuid, toChat, toMessage, type Chat, type Message } from '$lib/messages-model';
 import { googleContactNames } from './contacts';
 
 export class BBError extends Error { constructor(message: string, public status = 0) { super(message); } }
@@ -61,6 +61,18 @@ export async function sendText(c: BBConn, chatGuid: string, text: string): Promi
   // "apple-script" works on every server; "private-api" adds reactions/typing when the owner enabled it on the Mac.
   const data = await call(c, 'POST', '/message/text', { body: { chatGuid, tempGuid: `aados-${randomBytes(8).toString('hex')}`, message: text, method: 'apple-script' }, timeoutMs: 30_000 });
   return data?.guid ? toMessage(data, chatGuid) : null;
+}
+
+/** Send as SMS to one person. The "SMS;-;<number>" chat may not exist (newer macOS files 1:1 chats as "any;-;…"), so
+ *  fall back to starting the chat with service SMS. */
+export async function sendSms(c: BBConn, address: string, text: string): Promise<Message | null> {
+  try { return await sendText(c, smsGuid(address), text); }
+  catch (first) {
+    try {
+      const data = await call(c, 'POST', '/chat/new', { body: { addresses: [address.trim()], message: text, service: 'SMS', method: 'apple-script' }, timeoutMs: 30_000 });
+      return data?.lastMessage ? toMessage(data.lastMessage, String(data.guid || smsGuid(address))) : null;
+    } catch { throw first; }
+  }
 }
 
 /** Start a conversation with one address (phone/email). Needs the Private API on most servers. */

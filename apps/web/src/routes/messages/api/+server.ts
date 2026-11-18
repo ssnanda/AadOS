@@ -4,7 +4,7 @@ import * as bb from '$lib/server/bluebubbles';
 import { chat as aiChat, aiConfigured } from '$lib/server/ai/service';
 import { describeError } from '$lib/server/ai/ajmcp';
 import { extractJson } from '$lib/server/ai/email-ai';
-import { addressKey, matchSpamTemplate, prettyAddress, reportsSpam, smsGuid, DEFAULT_TEMPLATES, SPAM_REPORT_NUMBER, type Message } from '$lib/messages-model';
+import { addressKey, matchSpamTemplate, prettyAddress, reportsSpam, DEFAULT_TEMPLATES, SPAM_REPORT_NUMBER, type Message } from '$lib/messages-model';
 import { randomBytes } from 'node:crypto';
 
 // Messages actions: open a thread, mark read, send, start a chat, AI summary, AI draft of an Asana task from a message.
@@ -90,8 +90,7 @@ export const POST = async ({ request }) => {
         // SMS threads (and "Retry as SMS") go out explicitly as SMS: a service-neutral id lets Messages pick iMessage,
         // which fails for numbers that are not on iMessage.
         const address = s(b.address, 120).trim();
-        const target = b.sms === true && address ? smsGuid(address) : chatGuid;
-        const message = await bb.sendText(c, target, text);
+        const message = b.sms === true && address ? await bb.sendSms(c, address, text) : await bb.sendText(c, chatGuid, text);
         // Sending a spam reply (e.g. stop-solicitation) moves the conversation to Spam, and — when the reply is set to report —
         // forwards the sender's text to the carrier spam line 7726, then their number (which AT&T asks for) — two separate
         // texts. The 7726 thread (reports + AT&T's replies) lives in its own Spam reports folder, never in the main view.
@@ -104,10 +103,9 @@ export const POST = async ({ request }) => {
           if (report) {
             reported = true;
             const spamText = s(b.reportText, 1500).trim() || 'Unsolicited text message';
-            const reportTo = smsGuid(SPAM_REPORT_NUMBER);
-            void bb.sendText(c, reportTo, spamText)
+            void bb.sendSms(c, SPAM_REPORT_NUMBER, spamText)
               .then(() => new Promise((r) => setTimeout(r, 20_000)))
-              .then(() => bb.sendText(c, reportTo, addrs[0]))
+              .then(() => bb.sendSms(c, SPAM_REPORT_NUMBER, addrs[0]))
               .catch((e) => console.warn('[aados] 7726 spam report failed:', e instanceof Error ? e.message : e));
           }
         }

@@ -73,6 +73,13 @@
   async function saveTemplate() { const t = editTpl; if (!t) return; try { templates = (await api('templates.save', t)).templates; editTpl = null; } catch (e) { notice = (e as Error).message; } }
   async function deleteTemplate(id: string) { if (!confirm('Delete this reply?')) return; try { templates = (await api('templates.delete', { id })).templates; } catch (e) { notice = (e as Error).message; } }
   const open = $derived(rows.find((r) => r.guid === openGuid));
+  // Send as SMS: an SMS thread, or the last message I sent failed / went as SMS (a number not on iMessage). The composer
+  // chip overrides it per conversation.
+  let smsPick = $state<Record<string, boolean>>({});
+  let retrying = $state('');
+  const lastMine = $derived([...messages].reverse().find((m) => m.fromMe));
+  const oneToOne = $derived(Boolean(open && !open.group && open.participants.length === 1));
+  const asSms = $derived(oneToOne && open ? (smsPick[open.guid] ?? (open.sms || Boolean(lastMine?.error) || /^(SMS|RCS)$/i.test(lastMine?.service || ''))) : false);
   /** For an ungrouped open conversation: the group it probably belongs to (same brand), or a new one to create. */
   const openHint = $derived.by(() => { if (!open || open.groupId || open.group) return null; const b = brandOf(open.last?.text || ''); if (!b) return null; const g = groups.find((x) => brandKey(x.name) === brandKey(b)); return { name: g?.name || `${b} notifications`, id: g?.id || '' }; });
   const needsAll = $derived(tile(''));
@@ -103,7 +110,7 @@
     const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: target, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false, read: true };
     messages = [...messages, temp]; draft = ''; await toBottom();
     // SMS threads (one person) are sent explicitly as SMS.
-    const smsTo = open && !open.group && open.sms && open.participants.length === 1 ? open.participants[0] : '';
+    const smsTo = asSms && open ? open.participants[0] : '';
     // For a spam reply that reports to 7726, the server forwards their latest text there too.
     const reportText = [...messages].reverse().find((m) => !m.fromMe && m.text.trim())?.text || '';
     try { const r = await api('send', { chatGuid: target, text, sms: Boolean(smsTo), address: smsTo, addresses: open?.group ? [] : open?.participants || [], reportText });
@@ -113,10 +120,17 @@
   }
   /** Resend a failed message as SMS (e.g. iMessage could not deliver to a non-iPhone number). */
   async function retrySms(m: Message) {
-    const to = open && !open.group ? open.participants[0] : '';
-    if (!to) { notice = 'Retry as SMS works for one-to-one conversations.'; return; }
-    try { const r = await api('send', { chatGuid: m.chatGuid || primary(open), text: m.text, sms: true, address: to }); messages = [...messages, r.message || { ...m, guid: `temp-${Date.now()}`, error: false, at: Date.now(), service: 'SMS' }]; notice = 'Sent as SMS.'; await toBottom(); }
-    catch (e) { notice = (e as Error).message; }
+    const to = oneToOne && open ? open.participants[0] : '';
+    if (!to || !open) { notice = 'Retry as SMS works for one-to-one conversations.'; return; }
+    if (retrying) return;
+    retrying = m.guid; notice = 'Sending as SMS…';
+    const rowGuid = open.guid;
+    smsPick = { ...smsPick, [rowGuid]: true }; // later replies in this conversation go as SMS too
+    try { const r = await api('send', { chatGuid: m.chatGuid || primary(open), text: m.text, sms: true, address: to }); messages = [...messages, r.message || { ...m, guid: `temp-${Date.now()}`, error: false, at: Date.now(), service: 'SMS' }]; notice = 'Sent as SMS — checking delivery…'; await toBottom();
+      // Delivery failures arrive after the send; reload the conversation to show them.
+      setTimeout(() => { if (openGuid === rowGuid) void select(rowGuid).then(() => { if (lastMine?.error) notice = 'SMS also failed. On the Mac: iPhone → Settings → Messages → Text Message Forwarding must include this Mac.'; }); }, 8000); }
+    catch (e) { notice = `SMS failed: ${(e as Error).message}`; }
+    finally { retrying = ''; }
   }
   async function startChat() {
     try { await api('newChat', { address: newTo, text: newText }); composing = false; newTo = ''; newText = ''; await invalidateAll(); } catch (e) { notice = (e as Error).message; }
@@ -213,7 +227,7 @@
               {#if open.group && !m.fromMe && (i === 0 || messages[i - 1].sender !== m.sender)}<small class="who">{nameOf(m.sender)}</small>{/if}
               {#each m.attachments as a (a.guid)}{#if a.mime.startsWith('image/') && !/heic/i.test(a.mime)}<a href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener"><img src={`/messages/attachment/${encodeURIComponent(a.guid)}`} alt={a.name} loading="lazy"></a>{:else}<a class="file" href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener">📎 {a.name}</a>{/if}{/each}
               {#if m.text.replace(/￼/g, '').trim()}<p>{m.text.replace(/￼/g, '')}</p>{/if}
-              {#if m.error}<small class="who">Not delivered{#if m.fromMe && !open.group} · <button class="retry" onclick={() => retrySms(m)}>Retry as SMS</button>{/if}</small>{/if}
+              {#if m.error}<small class="who">Not delivered{#if m.fromMe && !open.group} · <button class="retry" disabled={Boolean(retrying)} onclick={() => retrySms(m)}>{retrying === m.guid ? 'Sending…' : 'Retry as SMS'}</button>{/if}</small>{/if}
               {#if data.asana && m.text}<button class="toasana" title="Create an Asana task from this message" onclick={() => toAsana(m)}>→ Asana</button>{/if}
             </div>
           {/each}
@@ -224,7 +238,7 @@
           {#if data.aiAvailable}<button onclick={suggest} disabled={suggesting} title="AI reads the conversation, picks a matching canned reply or drafts one">✦ {suggesting ? 'Thinking…' : 'Suggest reply'}</button>{/if}
           <button class="link" onclick={() => (managing = true)}>Manage replies</button>
         </div>
-        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows={draft.includes('\n') || draft.length > 90 ? 6 : 1} placeholder={open.sms ? 'Text Message · SMS' : 'iMessage'} onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea><button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
+        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows={draft.includes('\n') || draft.length > 90 ? 6 : 1} placeholder={asSms ? 'Text Message · SMS' : 'iMessage'} onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>{#if oneToOne}<button type="button" class="svc" class:on={asSms} title="Send as iMessage or SMS (click to switch)" onclick={() => open && (smsPick = { ...smsPick, [open.guid]: !asSms })}>{asSms ? 'SMS' : 'iMessage'}</button>{/if}<button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
       {/if}
     </section>
   </div>
@@ -267,7 +281,7 @@
   .pickbar{display:flex;gap:8px;align-items:center;padding:0 10px 8px;font-size:12px;font-weight:600}.small{padding:4px 9px;font-size:11px}
   .showall{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:13px}.showall label{display:flex;gap:6px;align-items:center;font-weight:600}.showall small{color:#8a95a8;font-weight:500}
   .similar{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:8px 12px;margin-bottom:8px;display:grid;gap:6px}.srow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.srow small{color:#8a95a8}
-  .hint{margin:0;padding:7px 14px;background:#f4f1ff;border-bottom:1px solid #e6defc;font-size:12px;color:#53607a}.retry{border:0;background:#fff;color:#a5414d;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:800;cursor:pointer}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
+  .hint{margin:0;padding:7px 14px;background:#f4f1ff;border-bottom:1px solid #e6defc;font-size:12px;color:#53607a}.svc{align-self:flex-end;border:1px solid #d6dbe6;background:#fff;color:#2f7cf6;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:800;cursor:pointer}.svc.on{color:#2a8a55;background:#e6f6ea;border-color:#bfe5cb}.retry{border:0;background:#fff;color:#a5414d;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:800;cursor:pointer}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
   .thread header{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #eef0f5}.thread header div{display:grid;flex:1;min-width:0}.thread header small{color:#8a95a8}.back{display:none}
   .summary{display:flex;gap:8px;background:#faf7ff;border-bottom:1px solid #ece3ff;padding:8px 14px}.summary pre{margin:0;flex:1;white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif}
   .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px}
