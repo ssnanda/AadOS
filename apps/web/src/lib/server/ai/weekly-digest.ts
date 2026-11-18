@@ -98,7 +98,7 @@ export function combineParts(parts: { relevant: Relevance; reason: string; items
 }
 
 /** Which emails need an AI review now: new, changed (incl. focus edited), or failed with attempts left. */
-export function needsReview(emails: { key: string; fp: string }[], reviews: Record<string, EmailReview>) {
+export function needsReview<T extends { key: string; fp: string }>(emails: T[], reviews: Record<string, EmailReview>): T[] {
   return emails.filter((e) => { const r = reviews[e.key]; return !r || r.fp !== e.fp || (r.error && (r.attempts || 0) < MAX_ATTEMPTS); });
 }
 

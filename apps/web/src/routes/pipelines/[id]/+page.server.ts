@@ -44,11 +44,11 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
 
 export const actions: Actions = {
   // Weekly review: start in the background (the page polls progress); only new/changed emails are read.
-  review: async ({ params }) => { void runDigest(params.id); return { reviewing: true }; },
+  review: async ({ params }) => { void runDigest(params.id ?? ''); return { reviewing: true }; },
   reviewMark: async ({ params, request }) => {
     const f = await request.formData(), op = String(f.get('op') || '') as 'done' | 'dismissed' | 'clear' | 'task';
     if (!['done', 'dismissed', 'clear', 'task'].includes(op)) return fail(400, { error: 'Unknown action.' });
-    try { const task = await markDigestItem(params.id, String(f.get('item') || ''), op); return { marked: op, task }; }
+    try { const task = await markDigestItem(params.id ?? '', String(f.get('item') || ''), op); return { marked: op, task }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Update failed.' }); }
   },
   // Re-run the parser over stored fields (subject, sender, summary) without re-syncing.

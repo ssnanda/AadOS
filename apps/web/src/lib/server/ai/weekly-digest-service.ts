@@ -234,13 +234,14 @@ export async function markDigestItem(pipelineId: string, itemId: string, op: 'do
     const d = (s.digests ||= {})[pipelineId] ||= emptyDigest();
     if (op === 'clear') { delete d.marks[itemId]; return; }
     if (op !== 'task') { d.marks[itemId] = op; return; }
-    const item = [...Object.values(digestView(s, p).digest).flatMap((v) => (Array.isArray(v) ? v : []))].find((i: any) => i.id === itemId) as any;
+    const v = digestView(s, p).digest;
+    const item = [...v.actions, ...v.dates, ...v.updates, ...v.fyi].find((i) => i.id === itemId);
     if (!item) throw new Error('Item not found.');
     const title = `${p.name}: ${item.title}`.slice(0, 200);
     const dup = findDuplicate(s.tasks, { title, due: item.due || '' });
     if (dup) { d.tasks[itemId] = dup.id; created = dup.id; return; }
     const id = `digest-${pipelineId}-${itemId}`.slice(0, 80);
-    s.tasks.push({ id, title, due: item.due || '', done: false, createdAt: new Date().toISOString(), notes: [item.detail, ...item.sources.map((x: DigestEmail) => `${x.subject} (${x.receivedAt.slice(0, 10)})`)].filter(Boolean).join('\n').slice(0, 2000), tags: ['school'] });
+    s.tasks.push({ id, title, due: item.due || '', done: false, createdAt: new Date().toISOString(), notes: [item.detail, ...item.sources.map((x) => `${x.subject} (${x.receivedAt.slice(0, 10)})`)].filter(Boolean).join('\n').slice(0, 2000), tags: ['school'] });
     d.tasks[itemId] = id; created = id;
   });
   return created;
