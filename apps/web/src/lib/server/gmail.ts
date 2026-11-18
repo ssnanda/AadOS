@@ -151,10 +151,16 @@ export async function searchGmail(state: AadOSState, account: MailAccount, pipel
   return { added: fresh.length, found: rows.length };
 }
 
-/** Align stored read state with Gmail's UNREAD list for this label (all pages, or nothing is applied). */
+// Unread mail older than the stored window is fetched too, so the unread list is complete (capped per run).
+const UNREAD_FETCH = 200;
+
+/**
+ * Align stored read state with Gmail's UNREAD list for this label (all pages, or nothing is applied), store unread
+ * mail AadOS never fetched (older than the newest page), and record the label's unread count for the sidebar.
+ */
 export async function reconcileGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
-  const unread = new Set<string>();
+  const unread = new Map<string, string>();
   let pageToken = '';
   for (let n = 0; n < MAX_PAGES; n++) {
     const query = new URLSearchParams({ maxResults: '500' });
@@ -162,10 +168,21 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
     if (folderId !== 'UNREAD') query.append('labelIds', 'UNREAD');
     if (pageToken) query.set('pageToken', pageToken);
     const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${query}`, { headers }));
-    for (const row of Array.isArray(list.messages) ? list.messages : []) unread.add(String(row.id || ''));
+    for (const row of Array.isArray(list.messages) ? list.messages : []) if (row.id) unread.set(String(row.id), String(row.threadId || ''));
     pageToken = String(list.nextPageToken || '');
-    if (!pageToken) { applyUnread(state, pipeline, folderId, unread, account.id); return; }
+    if (pageToken) continue;
+    const known = knownMessageIds(state, pipeline.id);
+    const fresh = [...unread.keys()].filter((id) => !known.has(id)).slice(0, UNREAD_FETCH);
+    for (let i = 0; i < fresh.length; i += CONCURRENCY) {
+      const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
+      for (const item of items) { item.accountId = account.id; item.folderId = folderId; item.threadId = unread.get(item.messageId) || undefined; }
+      state.items.push(...items);
+    }
+    applyUnread(state, pipeline, folderId, new Set(unread.keys()), account.id);
+    account.folders = (account.folders || []).map((f) => (f.id === folderId ? { ...f, unread: unread.size } : f));
+    return { added: fresh.length };
   }
+  return { added: 0 };
 }
 
 /** Mailbox-wide history cursor (users.getProfile.historyId). */
@@ -224,11 +241,10 @@ export async function liveGmailLabel(state: AadOSState, account: MailAccount, pi
   const startId = history ? '' : await currentHistoryId({ Authorization: `Bearer ${await token(state, account)}` }).catch(() => '');
   const page = await syncGmailPage(state, account, pipeline, folderId, '0', LIVE_BATCH);
   const removed = (history?.removed || 0) + pruneFolderWindow(state, pipeline, folderId, account.id, page.ids || [], !page.next);
-  if (!history) {
-    await reconcileGmailUnread(state, account, pipeline, folderId);
-    if (startId) (account.historyIds ||= {})[folderId] = startId;
-  }
-  return { scanned: page.scanned, added: (history?.added || 0) + page.added, removed };
+  // Every refresh: the label's full unread list (one cheap call for most inboxes), so older unread mail shows and counts.
+  const unread = await reconcileGmailUnread(state, account, pipeline, folderId);
+  if (!history && startId) (account.historyIds ||= {})[folderId] = startId;
+  return { scanned: page.scanned, added: (history?.added || 0) + page.added + unread.added, removed };
 }
 
 // Incremental: history API when a checkpoint exists, else walk from the newest page and stop at the first page that is already known.
