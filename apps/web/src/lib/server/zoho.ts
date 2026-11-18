@@ -168,24 +168,39 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
 const SKIP_UNREAD = /^(trash|spam|sent|drafts|outbox|templates|snoozed)$/i;
 
 /**
- * Unread mail in every folder (not just Inbox), like Zoho's own "Unread" view: one folder-list call gives each folder's
- * unread count, then the unread page of each folder that has any is pulled into the account's inbox feed (tagged with its
- * folder). A folder whose whole unread list fit on one page also has its read state aligned (read elsewhere → read here).
+ * Unread mail in every folder (not just Inbox), like Zoho's own "Unread" view (and the Toolbox). Zoho's folder list has
+ * NO unread count, so each folder is asked for its unread messages (status=unread), 3 folders at a time to stay under
+ * Zoho's rolling rate limit. Unread messages are stored in the account's inbox feed tagged with their folder; the count
+ * per folder (up to 200, then "200+") feeds the sidebar. A folder whose whole unread list was read also has its read
+ * state aligned (read elsewhere → read here). Full scans run at most every 10 minutes per account.
  */
-export async function liveZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline) {
+declare global { var __aadosZohoUnreadScan: Map<string, number> | undefined; }
+const UNREAD_SCAN_MS = 10 * 60_000, UNREAD_PAGES = 4;
+export async function liveZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, force = false) {
+  const scans = (globalThis.__aadosZohoUnreadScan ??= new Map());
+  if (!force && Date.now() - (scans.get(account.id) || 0) < UNREAD_SCAN_MS) return { added: 0 };
+  scans.set(account.id, Date.now());
   const list = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders`);
-  let added = 0;
-  // Keep Zoho's own unread count per folder for the sidebar (shows folders with unread mail even before it is stored).
-  const counts = new Map<string, number>((Array.isArray(list.data) ? list.data : []).map((f: Record<string, unknown>) => [String(f.folderId || ''), Number(f.unreadCount || 0)]));
+  const folders = (Array.isArray(list.data) ? list.data : []).map((f: Record<string, unknown>) => ({ id: String(f.folderId || ''), name: String(f.folderName || ''), type: String(f.folderType || '') }))
+    .filter((f: { id: string; name: string; type: string }) => f.id && !SKIP_UNREAD.test(f.type) && !SKIP_UNREAD.test(f.name));
+  let added = 0, next = 0;
+  const counts = new Map<string, number>();
+  await Promise.all(Array.from({ length: Math.min(3, folders.length) }, async () => {
+    while (next < folders.length) {
+      const f = folders[next++];
+      try {
+        const ids: string[] = []; let complete = false;
+        for (let page = 0; page < UNREAD_PAGES; page++) {
+          const r = await syncZohoPage(state, account, pipeline, f.id, String(page), 50, true);
+          added += r.added; ids.push(...(r.ids || []));
+          if (!r.next) { complete = true; break; }
+        }
+        counts.set(f.id, ids.length);
+        if (complete) applyUnread(state, pipeline, f.id, new Set(ids), account.id);
+      } catch { /* one folder failing (or rate-limited) never stops the others */ }
+    }
+  }));
   account.folders = account.folders.map((f) => (counts.has(f.id) ? { ...f, unread: counts.get(f.id) } : f));
-  for (const f of Array.isArray(list.data) ? list.data : []) {
-    const folderId = String(f.folderId || ''), unread = Number(f.unreadCount || 0);
-    if (!folderId || SKIP_UNREAD.test(String(f.folderType || f.folderName || '')) || SKIP_UNREAD.test(String(f.folderName || ''))) continue;
-    if (unread === 0) { applyUnread(state, pipeline, folderId, new Set(), account.id); continue; }
-    const page = await syncZohoPage(state, account, pipeline, folderId, '0', 50, true);
-    added += page.added;
-    if (!page.next) applyUnread(state, pipeline, folderId, new Set(page.ids || []), account.id);
-  }
   return { added };
 }
 

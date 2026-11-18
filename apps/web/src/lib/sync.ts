@@ -27,7 +27,7 @@ export function startAutoSync(scope: () => LiveScope, onChange: () => unknown, e
 
 /** Delete every stored email in AadOS (the mailboxes are not touched). Asks first. Open folders refill on their own. */
 export async function purgeEmails(): Promise<boolean> {
-  if (!confirm('Purge all emails stored in AadOS? Your mailboxes are not changed; open folders re-sync automatically.')) return false;
+  if (!confirm('Purge emails?\n\nThis clears the email copies stored in AadOS. Your Gmail and Zoho mailboxes are NOT changed, and open folders re-sync automatically.\nMessages, calendar, tasks and finance are not affected.')) return false;
   const response = await fetch('/sync/purge', { method: 'POST' });
   return response.ok;
 }

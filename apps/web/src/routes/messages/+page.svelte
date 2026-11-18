@@ -14,8 +14,9 @@
   let scroller: HTMLDivElement | undefined = $state();
   let cat = $state(''), suggesting = $state(false), suggestion = $state<{ category: string; why: string; template: string | null } | null>(null);
   let templates = $state<Template[]>([]), managing = $state(false), editTpl = $state<Template | null>(null), refreshing = $state(false);
+  let spamSet = $state(new Set<string>());
   let groups = $state<MsgGroup[]>([]), picked = $state<string[]>([]), selecting = $state(false), similarOpen = $state(false);
-  $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; } }); });
+  $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; spamSet = new Set((d as { spam?: string[] }).spam ?? []); } }); });
 
   // Rows: a sender group ("Atrium notifications") collapses its conversations into one row; others are one row each.
   type Row = Chat & { members: string[]; groupId?: string };
@@ -33,6 +34,14 @@
     return out.sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
   });
   const rowUnread = (r: Row) => r.members.some((g) => unread.includes(g));
+  /** Spam: senders you sent the stop-solicitation reply to (or moved by hand). Never in the main view. */
+  const isSpamRow = (r: Row) => !r.group && !isReportRow(r) && r.participants.some((p) => spamSet.has(addressKey(p)));
+  /** The carrier spam-report thread (7726): your reports and AT&T's replies, kept in their own folder. */
+  const isReportRow = (r: Row) => !r.group && r.participants.some((p) => addressKey(p) === '7726');
+  async function setSpam(r: Row, spam: boolean) {
+    const addresses = r.participants.map(addressKey);
+    try { spamSet = new Set((await api('spam.set', { addresses, spam })).spam); notice = spam ? 'Moved to Spam.' : 'Moved back to your conversations.'; if (spam && cat !== 'spam') openGuid = ''; } catch (e) { notice = (e as Error).message; }
+  }
   /** Chat to send to / summarize for a row: its most recent member conversation. */
   const primary = (r: Row | undefined) => (r ? [...r.members].sort((a, b) => (chats.find((c) => c.guid === b)?.last?.at || 0) - (chats.find((c) => c.guid === a)?.last?.at || 0))[0] : '');
   const similar = $derived(data.connected ? suggestGroups(chats, groups, data.people) : []);
@@ -53,7 +62,7 @@
   const REPLY_WINDOW = 30 * 86_400_000;
   /** Waiting on you to answer: a person wrote last (automated short codes and grouped notification senders never count). */
   const awaiting = (r: Row) => Boolean(r.last && !r.last.fromMe && !r.groupId && !isShortCode(r.participants[0] || '') && Date.now() - r.last.at < REPLY_WINDOW);
-  const needsYou = (r: Row) => data.showAll || rowUnread(r) || awaiting(r);
+  const needsYou = (r: Row) => !isSpamRow(r) && !isReportRow(r) && (data.showAll || rowUnread(r) || awaiting(r));
   const rowCat = (r: Row) => catOf(r.members[0]);
   const tile = (id: string) => { const list = rows.filter((r) => (!id || rowCat(r) === id) && needsYou(r)); return { total: list.length, unread: list.filter(rowUnread).length }; };
   async function refreshNow() { refreshing = true; await invalidateAll(); refreshing = false; }
@@ -67,7 +76,9 @@
   /** For an ungrouped open conversation: the group it probably belongs to (same brand), or a new one to create. */
   const openHint = $derived.by(() => { if (!open || open.groupId || open.group) return null; const b = brandOf(open.last?.text || ''); if (!b) return null; const g = groups.find((x) => brandKey(x.name) === brandKey(b)); return { name: g?.name || `${b} notifications`, id: g?.id || '' }; });
   const needsAll = $derived(tile(''));
-  const shown = $derived(rows.filter((c) => (!cat || rowCat(c) === cat) && needsYou(c) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
+  const spamRows = $derived(rows.filter(isSpamRow));
+  const reportRows = $derived(rows.filter(isReportRow));
+  const shown = $derived(rows.filter((c) => (cat === 'spam' ? isSpamRow(c) : cat === 'reports' ? isReportRow(c) : (!cat || rowCat(c) === cat) && needsYou(c)) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
   const today = new Date().toISOString().slice(0, 10);
   const when = (ms: number) => { if (!ms) return ''; const d = new Date(ms); return Date.now() - ms < 86_400_000 && d.getDate() === new Date().getDate() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
   const stamp = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -91,9 +102,21 @@
     sending = true; notice = '';
     const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: target, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false, read: true };
     messages = [...messages, temp]; draft = ''; await toBottom();
-    try { const r = await api('send', { chatGuid: target, text }); if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); }
+    // SMS threads (one person) are sent explicitly as SMS.
+    const smsTo = open && !open.group && open.sms && open.participants.length === 1 ? open.participants[0] : '';
+    // For a spam reply that reports to 7726, the server forwards their latest text there too.
+    const reportText = [...messages].reverse().find((m) => !m.fromMe && m.text.trim())?.text || '';
+    try { const r = await api('send', { chatGuid: target, text, sms: Boolean(smsTo), address: smsTo, addresses: open?.group ? [] : open?.participants || [], reportText });
+      if (r.spammed && open) { for (const p of open.participants) spamSet.add(addressKey(p)); spamSet = new Set(spamSet); notice = r.reported ? 'Sent — moved to Spam and reported to 7726 (their text now, their number in ~20 s).' : 'Sent — conversation moved to Spam.'; } if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); }
     catch (e) { notice = (e as Error).message; messages = messages.map((m) => (m.guid === temp.guid ? { ...m, error: true } : m)); draft = text; }
     finally { sending = false; }
+  }
+  /** Resend a failed message as SMS (e.g. iMessage could not deliver to a non-iPhone number). */
+  async function retrySms(m: Message) {
+    const to = open && !open.group ? open.participants[0] : '';
+    if (!to) { notice = 'Retry as SMS works for one-to-one conversations.'; return; }
+    try { const r = await api('send', { chatGuid: m.chatGuid || primary(open), text: m.text, sms: true, address: to }); messages = [...messages, r.message || { ...m, guid: `temp-${Date.now()}`, error: false, at: Date.now(), service: 'SMS' }]; notice = 'Sent as SMS.'; await toBottom(); }
+    catch (e) { notice = (e as Error).message; }
   }
   async function startChat() {
     try { await api('newChat', { address: newTo, text: newText }); composing = false; newTo = ''; newText = ''; await invalidateAll(); } catch (e) { notice = (e as Error).message; }
@@ -119,6 +142,9 @@
     // From Contacts: /messages?to=+1… opens New message for that number.
     const to = new URL(location.href).searchParams.get('to');
     if (to) { composing = true; newTo = to; }
+    // From the Dashboard: /messages?chat=<guid> opens that conversation.
+    const chat = new URL(location.href).searchParams.get('chat');
+    if (chat) void select(chat);
     const es = new EventSource('/messages/stream');
     es.onopen = () => (live = true);
     es.onerror = () => (live = false);
@@ -149,6 +175,8 @@
   <div class="tiles">
     <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')} title="Unread, or waiting for your reply (last 30 days)"><span>💬</span><b>{needsAll.total}</b><small>Needs you{needsAll.unread ? ` · ${needsAll.unread} unread` : ''}</small></button>
     {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} class:zero={!n.total} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
+    <button class="tilebtn spam" class:on={cat === 'spam'} class:zero={!spamRows.length} onclick={() => (cat = cat === 'spam' ? '' : 'spam')} title="Senders you told to stop (never shown in the main view)"><span>🚫</span><b>{spamRows.length}</b><small>Spam</small></button>
+    <button class="tilebtn spam" class:on={cat === 'reports'} class:zero={!reportRows.length} onclick={() => (cat = cat === 'reports' ? '' : 'reports')} title="Your reports to the carrier spam line 7726 and AT&amp;T's replies"><span>📨</span><b>{reportRows.length}</b><small>Spam reports (7726)</small></button>
 
   </div>
   <div class="showall"><label><input type="checkbox" checked={data.showAll} onchange={(e) => goto(e.currentTarget.checked ? '?all=1' : '?', { keepFocus: true, noScroll: true })}> Show all conversations <small>(not only unread / awaiting reply · searches older history)</small></label>
@@ -172,6 +200,7 @@
       {#if !open}<p class="muted pad">Pick a conversation.</p>
       {:else}
         <header><button class="back" onclick={() => (openGuid = '')} aria-label="Back">‹</button><div><strong>{open.title}</strong>{#if open.group}<small>{open.participants.map(nameOf).join(', ')}</small>{:else}<small>{open.participants.map((p) => (nameOf(p) !== prettyAddress(p) ? `${nameOf(p)} · ${prettyAddress(p)}` : prettyAddress(p))).join(', ')}</small>{/if}</div>
+          {#if !open.group && !isReportRow(open)}{#if isSpamRow(open)}<button onclick={() => open && setSpam(open, false)}>Not spam</button>{:else}<button onclick={() => open && setSpam(open, true)} title="Move to Spam: never shown in your main view">🚫 Spam</button>{/if}{/if}
           {#if open.groupId}<button onclick={() => open?.groupId && ungroup(open.groupId)}>Ungroup</button>{:else if !open.group}<button onclick={() => { const n = prompt('Save this sender as (existing or new contact name):', openHint?.name || groups[0]?.name || ''); if (n && open) addToGroup(n, addrsOf(open.members), groups.find((g) => g.name.toLowerCase() === n.toLowerCase())?.id || ''); }}>🏷 Name sender…</button>{/if}
           {#if data.aiAvailable}<button onclick={summarize} disabled={summarizing}>✦ {summarizing ? 'Summarizing…' : 'Summarize'}</button>{/if}</header>
         {#if openHint}<div class="hint">Looks like <b>{openHint.name}</b>. <button class="primary small" onclick={() => open && openHint && addToGroup(openHint.name, addrsOf(open.members), openHint.id)}>{openHint.id ? `Add to ${openHint.name}` : `Create “${openHint.name}”`}</button> <span class="muted">— then Find similar to add the rest.</span></div>{/if}
@@ -184,7 +213,7 @@
               {#if open.group && !m.fromMe && (i === 0 || messages[i - 1].sender !== m.sender)}<small class="who">{nameOf(m.sender)}</small>{/if}
               {#each m.attachments as a (a.guid)}{#if a.mime.startsWith('image/') && !/heic/i.test(a.mime)}<a href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener"><img src={`/messages/attachment/${encodeURIComponent(a.guid)}`} alt={a.name} loading="lazy"></a>{:else}<a class="file" href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener">📎 {a.name}</a>{/if}{/each}
               {#if m.text.replace(/￼/g, '').trim()}<p>{m.text.replace(/￼/g, '')}</p>{/if}
-              {#if m.error}<small class="who">Not delivered</small>{/if}
+              {#if m.error}<small class="who">Not delivered{#if m.fromMe && !open.group} · <button class="retry" onclick={() => retrySms(m)}>Retry as SMS</button>{/if}</small>{/if}
               {#if data.asana && m.text}<button class="toasana" title="Create an Asana task from this message" onclick={() => toAsana(m)}>→ Asana</button>{/if}
             </div>
           {/each}
@@ -195,14 +224,14 @@
           {#if data.aiAvailable}<button onclick={suggest} disabled={suggesting} title="AI reads the conversation, picks a matching canned reply or drafts one">✦ {suggesting ? 'Thinking…' : 'Suggest reply'}</button>{/if}
           <button class="link" onclick={() => (managing = true)}>Manage replies</button>
         </div>
-        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows={draft.includes('\n') || draft.length > 90 ? 6 : 1} placeholder="iMessage" onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea><button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
+        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows={draft.includes('\n') || draft.length > 90 ? 6 : 1} placeholder={open.sms ? 'Text Message · SMS' : 'iMessage'} onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea><button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
       {/if}
     </section>
   </div>
   {/if}
   {#if managing}<div class="backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { managing = false; editTpl = null; } }}><div class="sheet"><h3>Canned replies</h3>
-    {#each templates as t (t.id)}<div class="tpl"><div class="tplh"><b>{t.title}</b><span class="sp"></span><button class="link" onclick={() => (editTpl = { ...t })}>Edit</button><button class="link danger" onclick={() => deleteTemplate(t.id)}>Delete</button></div><pre>{t.text}</pre></div>{:else}<p class="muted">No canned replies.</p>{/each}
-    {#if editTpl}<form class="tplform" onsubmit={(e) => { e.preventDefault(); saveTemplate(); }}><input bind:value={editTpl.title} placeholder="Title" aria-label="Title"><textarea bind:value={editTpl.text} rows="8" placeholder="Reply text"></textarea><div class="end"><button type="button" onclick={() => (editTpl = null)}>Cancel</button><button class="primary">Save reply</button></div></form>
+    {#each templates as t (t.id)}<div class="tpl"><div class="tplh"><b>{t.title}</b>{#if t.spam ?? t.id === 'stop-solicitation'}<em class="spamtag">→ Spam{(t.report ?? t.id === 'stop-solicitation') ? ' + 7726' : ''}</em>{/if}<span class="sp"></span><button class="link" onclick={() => (editTpl = { ...t, spam: t.spam ?? t.id === 'stop-solicitation', report: t.report ?? t.id === 'stop-solicitation' })}>Edit</button><button class="link danger" onclick={() => deleteTemplate(t.id)}>Delete</button></div><pre>{t.text}</pre></div>{:else}<p class="muted">No canned replies.</p>{/each}
+    {#if editTpl}<form class="tplform" onsubmit={(e) => { e.preventDefault(); saveTemplate(); }}><input bind:value={editTpl.title} placeholder="Title" aria-label="Title"><textarea bind:value={editTpl.text} rows="8" placeholder="Reply text"></textarea><label class="chkl"><input type="checkbox" bind:checked={editTpl.spam}> Sending this reply moves the conversation to Spam</label>{#if editTpl.spam}<label class="chkl"><input type="checkbox" checked={editTpl.report ?? editTpl.id === 'stop-solicitation'} onchange={(e) => editTpl && (editTpl.report = e.currentTarget.checked)}> Also report the sender to 7726 (forwards their text, then their number)</label>{/if}<div class="end"><button type="button" onclick={() => (editTpl = null)}>Cancel</button><button class="primary">Save reply</button></div></form>
     {:else}<div class="end"><button onclick={() => (editTpl = { id: '', title: '', text: '' })}>＋ New reply</button><button class="primary" onclick={() => (managing = false)}>Done</button></div>{/if}</div></div>{/if}
   {#if asanaFor}<div class="backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) asanaFor = null; }}>
     <form class="sheet" onsubmit={(e) => { e.preventDefault(); createAsana(); }}><h3>Create Asana task</h3>
@@ -216,7 +245,7 @@
   main{color:#29344c;font-size:13px}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:22px;max-width:560px;display:grid;gap:8px}.empty h1{margin:0}
   .alert{background:#fff3f3;border:1px solid #f3c9cf;color:#a5414d;border-radius:10px;padding:8px 12px;margin-bottom:8px}.alert.soft{background:#eef1ff;border-color:#cfd8ff;color:#3157de}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.spam b{color:#8a95a8}.chkl{display:flex;gap:6px;align-items:center;font-size:12px;color:#53607a}.spamtag{font-style:normal;font-size:10px;font-weight:800;color:#b53c50;background:#fdeceb;border-radius:5px;padding:1px 6px}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
   .statusbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8a95a8;margin-bottom:8px}.statusbar .on{color:#2a9d5c}.statusbar a{color:#3157de;font-weight:600}.sp{flex:1}.err{color:#a5414d}
   .replybar{display:flex;gap:8px;align-items:center;padding:6px 10px 0;flex-wrap:wrap}.replybar select{border:1px solid #d9dfeb;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px}
   .suggest{margin:0 10px;padding:6px 10px;background:#faf7ff;border:1px solid #ece3ff;border-radius:8px;font-size:12px;color:#6a3fd6}
@@ -238,7 +267,7 @@
   .pickbar{display:flex;gap:8px;align-items:center;padding:0 10px 8px;font-size:12px;font-weight:600}.small{padding:4px 9px;font-size:11px}
   .showall{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:13px}.showall label{display:flex;gap:6px;align-items:center;font-weight:600}.showall small{color:#8a95a8;font-weight:500}
   .similar{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:8px 12px;margin-bottom:8px;display:grid;gap:6px}.srow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.srow small{color:#8a95a8}
-  .hint{margin:0;padding:7px 14px;background:#f4f1ff;border-bottom:1px solid #e6defc;font-size:12px;color:#53607a}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
+  .hint{margin:0;padding:7px 14px;background:#f4f1ff;border-bottom:1px solid #e6defc;font-size:12px;color:#53607a}.retry{border:0;background:#fff;color:#a5414d;border-radius:6px;padding:1px 6px;font-size:10px;font-weight:800;cursor:pointer}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
   .thread header{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #eef0f5}.thread header div{display:grid;flex:1;min-width:0}.thread header small{color:#8a95a8}.back{display:none}
   .summary{display:flex;gap:8px;background:#faf7ff;border-bottom:1px solid #ece3ff;padding:8px 14px}.summary pre{margin:0;flex:1;white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif}
   .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px}

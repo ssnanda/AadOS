@@ -65,13 +65,15 @@
     out.push({ day: addMonth(today), label: 'Next Mo' });
     return out.map((c) => ({ ...c, md: `${Number(c.day.slice(5, 7))}/${Number(c.day.slice(8))}` }));
   });
-  const detail = $derived(tasks.find((t) => t.gid === detailGid));
+  // A subtask opened from the detail panel isn't in My Tasks; keep it alongside.
+  let opened = $state<Task | null>(null);
+  const detail = $derived(tasks.find((t) => t.gid === detailGid) ?? (opened?.gid === detailGid ? opened : undefined));
   const hhmm = (t: Task) => t.dueAt ? new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(t.dueAt)) : '';
   const clock = (iso: string) => { const s = Math.max(0, Math.floor((now - Date.parse(iso)) / 1000)); return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
   const stageTitle = (s: Stage) => STAGES.find((x) => x.id === s)?.title || '';
 
   const patch = (gid: string, fields: Partial<Task>) => (tasks = tasks.map((t) => (t.gid === gid ? { ...t, ...fields } : t)));
-  const replace = (t: Task) => (tasks = tasks.map((x) => (x.gid === t.gid ? t : x)));
+  const replace = (t: Task) => { tasks = tasks.map((x) => (x.gid === t.gid ? t : x)); if (opened?.gid === t.gid) opened = t; };
   const fail = (e: unknown) => (notice = e instanceof Error ? e.message : 'Asana request failed.');
 
   async function complete(gids: string[]) {
@@ -261,7 +263,7 @@
       </li>{:else}<li class="muted">No repeating tasks.</li>{/each}</ul>
   {/if}
   </div>
-  {#if detail}<TaskDetail task={detail} {sections} timeZone={tz} timer={timers[detail.gid]} {now} aiAvailable={data.aiAvailable} onchange={replace} onremove={(g) => { tasks = tasks.filter((t) => t.gid !== g); detailGid = ''; }} onclose={() => (detailGid = '')} ontimer={(g, tm) => { const nt = { ...timers }; if (tm) nt[g] = tm; else delete nt[g]; timers = nt; }} />{/if}
+  {#if detail}<TaskDetail task={detail} onopen={(t) => { opened = t; detailGid = t.gid; }} {sections} timeZone={tz} timer={timers[detail.gid]} {now} aiAvailable={data.aiAvailable} onchange={replace} onremove={(g) => { tasks = tasks.filter((t) => t.gid !== g); detailGid = ''; }} onclose={() => (detailGid = '')} ontimer={(g, tm) => { const nt = { ...timers }; if (tm) nt[g] = tm; else delete nt[g]; timers = nt; }} />{/if}
   </div>
   {/if}
   {#if undo}<div class="toast">{undo.label}<button onclick={reopen}>Undo</button></div>{/if}

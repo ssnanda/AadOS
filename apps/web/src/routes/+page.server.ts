@@ -11,6 +11,15 @@ import { cachedBriefing } from '$lib/server/ai/briefing-service';
 import { aiConfigured } from '$lib/server/ai/service';
 import * as asanaApi from '$lib/server/asana';
 import { calendarAccounts as visibleCalendarAccounts, scopeState } from '$lib/server/scope';
+import { hasDatabase } from '$lib/server/aados-store';
+import * as bb from '$lib/server/bluebubbles';
+import { addressKey, categorize, isUnread as isUnreadChat, preview, SPAM_REPORT_NUMBER } from '$lib/messages-model';
+import { db as financeDb, loadAll, portfolioSeries } from '$lib/server/finance/db';
+import { currentSignals } from '$lib/server/finance/refresh';
+import { billScore, type Attention } from '$lib/attention';
+
+// A slow provider (BlueBubbles over the tunnel, Postgres) resolves to null instead of hanging the streamed card.
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> => Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 import { can } from '$lib/server/auth';
 import { dayIn, dueDay, dueShort, stageOf } from '$lib/asana-model';
 
@@ -36,7 +45,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Deduplicated across accounts and views; the page size of 1 keeps this cheap (only counts are used).
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
   const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 });
-  const brief = overview({ rows, tasks: state.tasks, accounts: state.accounts, today: todayIn(state.prefs.timeZone) });
+  const brief = overview({ rows, tasks: state.tasks, accounts: state.accounts, today: todayIn(state.prefs.timeZone) }, 8);
   const tz = validZone(state.prefs.timeZone) ? state.prefs.timeZone : 'UTC';
   const cal = dailyCalendar(state.events, tz, Date.now(), state.calendarDisabled);
   const names = new Map(state.calendars.map((c) => [c.id, c.name]));
@@ -52,9 +61,56 @@ export const load: PageServerLoad = async ({ locals }) => {
     const all = await asanaApi.myTasks(await asanaApi.connection());
     const list = all.filter((t) => { const d = dueDay(t, tz); return (d && d <= today) || (!dueOnly && stageOf(t.sectionName) === 'incoming'); })
       .sort((a, b) => (dueDay(a, tz) || '9999').localeCompare(dueDay(b, tz) || '9999'));
-    return { total: list.length, items: list.slice(0, 8).map((t) => ({ gid: t.gid, name: t.name, due: dueShort(t, today, tz), link: t.permalink })) };
+    const attention: Attention[] = list.map((t) => ({ t, due: dueShort(t, today, tz) })).filter((x) => x.due.tone === 'overdue' || x.due.tone === 'today')
+      .map(({ t, due }) => ({ id: `asana:${t.gid}`, source: 'asana', title: t.name, why: due.tone === 'overdue' ? `Overdue · was due ${due.text}` : `Due ${due.text}`, href: t.permalink || '/asana', external: Boolean(t.permalink), score: due.tone === 'overdue' ? 82 : 64 }));
+    return { total: list.length, items: list.slice(0, 8).map((t) => ({ gid: t.gid, name: t.name, due: dueShort(t, today, tz), link: t.permalink })), attention };
   })().catch(() => null) : null;
+  // ── Needs your attention: everything ranked in one list (synchronous sources here; Messages, Asana and Finance stream in).
+  const today = cal.today;
+  const emailHref = (r: { subject: string }) => `/emails?view=all&q=${encodeURIComponent(r.subject || '')}`;
+  const attention: Attention[] = [
+    ...rem.active.filter((r) => r.status === 'fired').map((r) => ({ id: `rem:${r.id}`, source: 'reminder' as const, title: r.title, why: 'Reminder went off', href: '/reminders', score: 88, at: effectiveAt(r) })),
+    ...brief.tasksOverdue.map((t) => ({ id: `task:${t.id}`, source: 'task' as const, title: t.title, why: `Overdue · due ${t.due}`, href: '/tasks?f=overdue', score: 80 })),
+    ...brief.tasksToday.map((t) => ({ id: `task:${t.id}`, source: 'task' as const, title: t.title, why: 'Due today', href: '/tasks?f=today', score: 62 })),
+    ...brief.billsRenewals.map((r) => ({ id: `email:${r.key}`, source: 'bill' as const, title: r.subject || '(no subject)', why: `${r.due ? `Due ${r.due}` : 'Bill / renewal'} · ${r.sender}`, href: emailHref(r), score: billScore(r.due, today), at: r.receivedAt })),
+    ...brief.needsReply.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Waiting on your reply · ${r.sender}`, href: emailHref(r), score: 66, at: r.receivedAt })),
+    ...brief.important.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Important · ${r.sender}`, href: emailHref(r), score: 56, at: r.receivedAt })),
+    ...brief.upcoming.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Deadline ${r.due || 'soon'} · ${r.sender}`, href: emailHref(r), score: billScore(r.due, today) - 6, at: r.receivedAt })),
+    ...[...brief.errors, ...calendarAccounts.filter((a) => a.calendarError).map((a) => ({ id: `cal-${a.id}`, label: `Calendar · ${a.email}`, message: a.calendarError! }))]
+      .map((e) => ({ id: `sys:${e.id}`, source: 'system' as const, title: `${e.label} isn't syncing`, why: e.message.slice(0, 140), href: '/settings/emails', score: 50 }))
+  ];
+  // Messages (BlueBubbles): unread texts from real people first, then threads you read but never answered (3 days).
+  // Spam, the 7726 report thread, codes and marketing never show here.
+  const messages = can(user, 'messages') && bb.bbConfigured(full) ? withTimeout((async () => {
+    const { chats, names } = await bb.chatsWithNames(await bb.bbConnection(), 80);
+    const spam = new Set(full.messageSpam ?? []), readAt = full.messagesRead || {};
+    const out: Attention[] = [];
+    for (const c of chats) {
+      if (!c.last || c.last.fromMe || c.participants.some((p) => spam.has(addressKey(p)) || addressKey(p) === SPAM_REPORT_NUMBER)) continue;
+      const cat = categorize(c, names), unread = isUnreadChat(c, readAt), age = Date.now() - c.last.at;
+      if (cat === 'marketing' || cat === 'codes' || cat === 'unknown' && !unread) continue;
+      const text = preview(c.last).slice(0, 120);
+      if (unread) out.push({ id: `msg:${c.guid}`, source: 'message', title: c.title, why: text, href: `/messages?chat=${encodeURIComponent(c.guid)}`, score: cat === 'personal' ? 84 : cat === 'health' ? 70 : cat === 'groups' ? 52 : 46, at: new Date(c.last.at).toISOString() });
+      else if (cat === 'personal' && age < 3 * 86_400_000) out.push({ id: `msg:${c.guid}`, source: 'message', title: c.title, why: `You haven't replied · ${text}`, href: `/messages?chat=${encodeURIComponent(c.guid)}`, score: 60, at: new Date(c.last.at).toISOString() });
+    }
+    return out;
+  })(), 9000) : null;
+  // Finance pulse + insights (owner's finance permission only); never blocks the page.
+  const finance = can(user, 'finance') && hasDatabase() ? withTimeout((async () => {
+    const q = await financeDb(), data = await loadAll(q);
+    if (!data.holdings.length && !data.properties.length) return null;
+    const [{ signals, summary }, series] = await Promise.all([currentSignals(q, data), portfolioSeries(q)]);
+    const prev = summary.netWorth - summary.dayChange;
+    return {
+      netWorth: summary.netWorth, dayChange: summary.dayChange, dayPct: prev > 0 ? (summary.dayChange / prev) * 100 : 0,
+      spark: series.slice(-30).map((p) => p.total),
+      attention: signals.filter((x) => x.score >= 40).sort((a, b) => b.score - a.score).slice(0, 4)
+        .map((x) => ({ id: `fin:${x.id}`, source: 'finance' as const, title: x.title, why: x.next || x.why, href: '/finance', score: Math.round(30 + x.score * 0.4) }))
+    };
+  })(), 9000) : null;
   return {
+    attention, messages, finance,
+    greetingName: user?.name || '',
     asana,
     tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
     tz,

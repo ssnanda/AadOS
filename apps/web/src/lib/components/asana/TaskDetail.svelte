@@ -5,19 +5,21 @@
   import { dueDay, recurrenceSummary, stageOf, type Task } from '$lib/asana-model';
   import RecurrenceEditor from './RecurrenceEditor.svelte';
   type Timer = { name: string; startedAt: string; note: string };
-  let { task, sections, timeZone, timer, now, aiAvailable = false, onchange, onremove, onclose, ontimer }: {
+  let { task, sections, timeZone, timer, now, aiAvailable = false, onchange, onremove, onclose, ontimer, onopen }: {
     task: Task; sections: { gid: string; name: string }[]; timeZone: string; timer?: Timer; now: number; aiAvailable?: boolean;
+    /** Open a subtask in this panel. */ onopen?: (t: Task) => void;
     onchange: (t: Task) => void; onremove: (gid: string) => void; onclose: () => void; ontimer: (gid: string, timer: Timer | null) => void;
   } = $props();
 
   let name = $state(''), notes = $state(''), day = $state(''), time = $state('');
-  let detail = $state<{ subtasks: { gid: string; name: string; completed: boolean }[]; comments: { gid: string; text: string; at: string; by: string }[]; attachments: { gid: string; name: string; url: string }[] } | null>(null);
+  type Sub = { gid: string; name: string; completed: boolean; dueOn?: string | null; dueAt?: string | null; assignee?: string };
+  let detail = $state<{ subtasks: Sub[]; comments: { gid: string; text: string; at: string; by: string }[]; attachments: { gid: string; name: string; url: string }[] } | null>(null);
   let newSub = $state(''), newComment = $state(''), error = $state(''), editingRepeat = $state(false), help = $state(''), helping = $state(false), timerNote = $state('');
   $effect(() => {
     const t = task;
     untrack(() => {
       name = t.name; notes = t.notes; day = dueDay(t, timeZone) || ''; time = t.dueAt ? new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(t.dueAt)) : '';
-      detail = null; error = ''; help = ''; editingRepeat = false; timerNote = timer?.note || '';
+      detail = null; picked = []; moving = false; error = ''; help = ''; editingRepeat = false; timerNote = timer?.note || '';
       asanaApi('detail', { gid: t.gid }).then((d) => { if (task.gid === t.gid) detail = d; }).catch((e) => (error = e.message));
     });
   });
@@ -29,7 +31,35 @@
     if (s && stageOf(s.name) === 'done') { if (await run(() => asanaApi('complete', { gid: task.gid }))) onremove(task.gid); return; }
     if (await run(() => asanaApi('section', { gid: task.gid, section }))) onchange({ ...task, sectionGid: section, sectionName: s?.name || null });
   }
-  async function addSub() { const n = newSub.trim(); if (!n) return; const r = await run(() => asanaApi('create', { name: n, parent: task.gid })); if (r?.task && detail) { detail.subtasks = [...detail.subtasks, { gid: r.task.gid, name: n, completed: false }]; newSub = ''; } }
+  async function addSub() { const n = newSub.trim(); if (!n) return; const r = await run(() => asanaApi('create', { name: n, parent: task.gid })); if (r?.task && detail) { detail.subtasks = [...detail.subtasks, { gid: r.task.gid, name: n, completed: false, assignee: r.task.assignee?.name || '' }]; newSub = ''; } }
+  // Subtasks: the checkbox selects (bulk bar: complete / move under another task / delete); the circle completes one.
+  let picked = $state<string[]>([]), moving = $state(false), moveQ = $state(''), moveHits = $state<{ gid: string; name: string }[]>([]), moveBusy = $state(false);
+  let moveTimer: ReturnType<typeof setTimeout> | undefined;
+  const pick = (gid: string, on: boolean) => (picked = on ? [...new Set([...picked, gid])] : picked.filter((g) => g !== gid));
+  const subDue = (s: Sub) => { const d = s.dueAt ? new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date(s.dueAt)) : s.dueOn; return d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : ''; };
+  async function bulkComplete() {
+    const list = detail?.subtasks.filter((s) => picked.includes(s.gid) && !s.completed) ?? [];
+    if (list.length && await run(() => asanaApi('complete', { gids: list.map((s) => s.gid), completed: true }))) { for (const s of list) s.completed = true; picked = []; }
+  }
+  async function bulkDelete() {
+    if (!picked.length || !confirm(`Delete ${picked.length} subtask${picked.length === 1 ? '' : 's'} in Asana?`)) return;
+    const gids = [...picked];
+    if (await run(() => asanaApi('delete', { gids })) && detail) { detail.subtasks = detail.subtasks.filter((s) => !gids.includes(s.gid)); picked = []; }
+  }
+  async function deleteSub(s: Sub) { if (!confirm(`Delete “${s.name}” in Asana?`)) return; if (await run(() => asanaApi('delete', { gid: s.gid })) && detail) { detail.subtasks = detail.subtasks.filter((x) => x.gid !== s.gid); picked = picked.filter((g) => g !== s.gid); } }
+  // "Move under…": sibling subtasks match instantly; the rest of the workspace via Asana search.
+  const localHits = $derived(moveQ.trim() ? (detail?.subtasks ?? []).filter((s) => !picked.includes(s.gid) && s.name.toLowerCase().includes(moveQ.trim().toLowerCase())).map((s) => ({ gid: s.gid, name: s.name })) : []);
+  const hits = $derived([...localHits, ...moveHits.filter((h) => h.gid !== task.gid && !picked.includes(h.gid) && !localHits.some((l) => l.gid === h.gid))].slice(0, 12));
+  function searchMove() {
+    clearTimeout(moveTimer); const q = moveQ.trim();
+    if (q.length < 2) { moveHits = []; return; }
+    moveTimer = setTimeout(async () => { moveBusy = true; const r = await asanaApi<{ tasks: { gid: string; name: string }[] }>('search', { q }).catch(() => null); moveBusy = false; if (moveQ.trim() === q) moveHits = r?.tasks ?? []; }, 250);
+  }
+  async function moveUnder(parent: { gid: string; name: string }) {
+    const gids = [...picked];
+    if (await run(() => asanaApi('setParent', { gids, parent: parent.gid })) && detail) { detail.subtasks = detail.subtasks.filter((s) => !gids.includes(s.gid)); picked = []; moving = false; moveQ = ''; moveHits = []; }
+  }
+  async function openSub(s: Sub) { const r = await run(() => asanaApi<{ task: Task }>('task', { gid: s.gid })); if (r?.task) onopen?.(r.task); }
   async function toggleSub(s: { gid: string; completed: boolean }) { s.completed = !s.completed; if (!(await run(() => asanaApi('complete', { gid: s.gid, completed: s.completed })))) s.completed = !s.completed; }
   async function addComment() { const t = newComment.trim(); if (!t) return; if (await run(() => asanaApi('comment', { gid: task.gid, text: t })) && detail) { detail.comments = [...detail.comments, { gid: String(Date.now()), text: t, at: new Date().toISOString(), by: 'You' }]; newComment = ''; } }
   async function remove() { if (!confirm(`Delete “${task.name}” in Asana?`)) return; if (await run(() => asanaApi('delete', { gid: task.gid }))) onremove(task.gid); }
@@ -57,7 +87,22 @@
   <textarea id="notes" rows="6" bind:value={notes} onblur={() => notes !== task.notes && save({ notes })}></textarea>
   {#if aiAvailable}<div class="row"><button class="ai" onclick={askHelp} disabled={helping}>✦ {helping ? 'Thinking…' : 'Help me do this'}</button></div>{#if help}<pre class="help">{help}</pre>{/if}{/if}
   <h4>Subtasks</h4>
-  {#if detail}<ul class="subs">{#each detail.subtasks as s (s.gid)}<li><input type="checkbox" checked={s.completed} onchange={() => toggleSub(s)}><span class:doneTxt={s.completed}>{s.name}</span></li>{/each}</ul>{:else}<small class="muted">Loading…</small>{/if}
+  {#if detail}
+    {#if picked.length}<div class="bulk"><b>{picked.length} selected</b><span class="sp"></span>
+      <button onclick={bulkComplete}>Mark complete</button>
+      <span class="rel"><button onclick={() => { moving = !moving; moveQ = ''; moveHits = []; }}>Move under…</button>
+        {#if moving}<div class="movepop"><b>Move under another task</b><small class="muted">Type to search — moves all {picked.length} selected.</small>
+          <!-- svelte-ignore a11y_autofocus --><input autofocus bind:value={moveQ} oninput={searchMove} onkeydown={(e) => { if (e.key === 'Escape') moving = false; if (e.key === 'Enter' && hits[0]) moveUnder(hits[0]); }} placeholder="Task name">
+          {#each hits as h (h.gid)}<button class="hit" onclick={() => moveUnder(h)}>{h.name}</button>{:else}{#if moveQ.trim().length >= 2}<small class="muted">{moveBusy ? 'Searching…' : 'No matching tasks.'}</small>{/if}{/each}
+        </div>{/if}</span>
+      <button class="del" onclick={bulkDelete}>Delete</button><button class="link" onclick={() => { picked = []; moving = false; }}>Clear</button></div>{/if}
+    <ul class="subs">{#each detail.subtasks as s (s.gid)}<li class:sel={picked.includes(s.gid)}>
+      <input type="checkbox" checked={picked.includes(s.gid)} onchange={(e) => pick(s.gid, e.currentTarget.checked)} aria-label="Select">
+      <button class="circ" class:on={s.completed} onclick={() => toggleSub(s)} aria-label={s.completed ? 'Mark incomplete' : 'Complete'}>✓</button>
+      <span class="sn" class:doneTxt={s.completed}>{s.name}</span>
+      {#if subDue(s)}<small>{subDue(s)}</small>{/if}{#if s.assignee}<small>{s.assignee.split(' ')[0]}</small>{/if}
+      <button class="icon del" onclick={() => deleteSub(s)} aria-label="Delete subtask">🗑</button>{#if onopen}<button class="icon" onclick={() => openSub(s)} aria-label="Open subtask">›</button>{/if}
+    </li>{/each}</ul>{:else}<small class="muted">Loading…</small>{/if}
   <form class="row" onsubmit={(e) => { e.preventDefault(); addSub(); }}><input bind:value={newSub} placeholder="Add subtask"><button>Add</button></form>
   {#if detail?.attachments.length}<h4>Attachments</h4><ul class="atts">{#each detail.attachments as a (a.gid)}<li><a href={a.url} target="_blank" rel="noopener noreferrer">📎 {a.name}</a></li>{/each}</ul>{/if}
   <h4>Comments</h4>
@@ -77,7 +122,12 @@
   .chip{background:#eef3ff;border-color:#cfdcff;color:#3157de}.done{background:#2a9d5c;border-color:#2a9d5c;color:#fff}.danger{color:#b53c50}.ai{background:#f3edff;border-color:#d9c9ff;color:#6a3fd6}
   .link{border:0;background:none;color:#3157de;padding:0}.clock{font-variant-numeric:tabular-nums;color:#3157de}
   .lbl,h4{margin:4px 0 0;font-size:11px;font-weight:800;text-transform:uppercase;color:#8a95a8}
-  ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}.subs li{display:flex;gap:7px;align-items:center}.doneTxt{text-decoration:line-through;color:#8a95a8}
+  ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}.subs li{display:flex;gap:7px;align-items:center;background:#f7f8fb;border-radius:8px;padding:4px 6px}.subs li.sel{background:#eef3ff}.sn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subs small{color:#8a95a8;font-size:11px;flex:none}
+  .circ{width:20px;height:20px;border-radius:50%;padding:0;font-size:11px;color:transparent;border:1.5px solid #b6bfd0;flex:none}.circ:hover{color:#2a9d5c;border-color:#2a9d5c}.circ.on{background:#3157de;border-color:#3157de;color:#fff}
+  .icon{border:0;background:none;padding:0 3px;font-size:13px;color:#8a95a8;flex:none}.icon.del{opacity:.6}.icon.del:hover{opacity:1}
+  .bulk{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#eef1ff;border:1px solid #cfd8fb;border-radius:9px;padding:6px 8px}.bulk b{color:#53607a;font-size:12px}.bulk .del{background:#3157de;border-color:#3157de;color:#fff}
+  .movepop{position:absolute;right:0;top:32px;z-index:30;width:280px;background:#fff;border:1px solid #d9dfeb;border-radius:12px;box-shadow:0 10px 30px #1f2a4426;padding:10px;display:grid;gap:5px}.movepop input{width:100%;box-sizing:border-box}
+  .hit{border:0;text-align:left;font-weight:500;padding:6px 7px;border-radius:7px}.hit:hover{background:#eef3ff}.doneTxt{text-decoration:line-through;color:#8a95a8}
   .comments li{background:#f7f8fb;border-radius:8px;padding:6px 8px}.comments small{color:#8a95a8}.comments p{margin:2px 0 0;white-space:pre-wrap}
   .help{white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif;background:#faf7ff;border:1px solid #ece3ff;border-radius:8px;padding:8px;margin:0}
   .err{color:#a5414d;margin:0}.muted{color:#8a95a8}footer{display:flex;align-items:center;gap:8px;border-top:1px solid #eef0f5;padding-top:8px}footer a{color:#3157de;font-weight:700;text-decoration:none}.sp{flex:1}

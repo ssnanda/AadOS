@@ -88,7 +88,18 @@ export async function createTask(c: Conn, t: { name: string; notes?: string; due
   if (t.projects?.length) body.projects = t.projects;
   return toTask((await call(c.token, 'POST', '/tasks', { body, query: { opt_fields: TASK_FIELDS } })).data);
 }
-export async function subtasks(c: Conn, gid: string) { return (await all(c.token, `/tasks/${gid}/subtasks`, { opt_fields: 'name,completed' })).map((x) => ({ gid: String(x.gid), name: String(x.name), completed: Boolean(x.completed) })); }
+export async function subtasks(c: Conn, gid: string) {
+  return (await all(c.token, `/tasks/${gid}/subtasks`, { opt_fields: 'name,completed,due_on,due_at,assignee.name' }))
+    .map((x) => ({ gid: String(x.gid), name: String(x.name), completed: Boolean(x.completed), dueOn: x.due_on ? String(x.due_on) : null, dueAt: x.due_at ? String(x.due_at) : null, assignee: x.assignee?.name ? String(x.assignee.name) : '' }));
+}
+export async function getTask(c: Conn, gid: string) { return toTask((await call(c.token, 'GET', `/tasks/${gid}`, { query: { opt_fields: TASK_FIELDS } })).data); }
+/** Make a task a subtask of another (Asana "setParent"). */
+export async function setParent(c: Conn, gid: string, parent: string) { await call(c.token, 'POST', `/tasks/${gid}/setParent`, { body: { parent } }); }
+/** Task name search across the workspace (Asana typeahead), for "Move under…". */
+export async function searchTasks(c: Conn, query: string) {
+  const r = await call(c.token, 'GET', `/workspaces/${c.workspace}/typeahead`, { query: { resource_type: 'task', query, count: '15', opt_fields: 'name,completed' } });
+  return ((r.data || []) as any[]).filter((x) => !x.completed).map((x) => ({ gid: String(x.gid), name: String(x.name) }));
+}
 export async function comments(c: Conn, gid: string) {
   return (await all(c.token, `/tasks/${gid}/stories`, { opt_fields: 'type,text,created_at,created_by.name' })).filter((x) => x.type === 'comment').map((x) => ({ gid: String(x.gid), text: String(x.text || ''), at: String(x.created_at), by: String(x.created_by?.name || '') }));
 }

@@ -43,3 +43,14 @@ test('brands from notification texts, and grouping suggestions', async () => {
   const existing = suggestGroups(chats, [{ id: 'g', name: 'Atrium notifications', addresses: ['604931'] }], {});
   assert.equal(existing[0].groupId, 'g'); assert.deepEqual(existing[0].guids.sort(), ['b', 'c']);
 });
+
+test('spam replies: stop-solicitation moves to Spam and reports to 7726 by default', async () => {
+  const { DEFAULT_TEMPLATES, isSpamReply, matchSpamTemplate, reportsSpam, isSmsChat } = await import('../src/lib/messages-model.ts');
+  const sent = DEFAULT_TEMPLATES[0].text.replace('immediately.', 'immediately!');
+  assert.equal(isSpamReply(sent, DEFAULT_TEMPLATES), true);
+  assert.equal(reportsSpam(matchSpamTemplate(sent, DEFAULT_TEMPLATES)!), true);
+  assert.equal(isSpamReply('Sounds good, see you then!', DEFAULT_TEMPLATES), false);
+  assert.equal(isSpamReply(sent, [{ ...DEFAULT_TEMPLATES[0], spam: false }]), false);
+  assert.equal(isSmsChat({ guid: 'any;-;+19102422985', participants: [{ address: '+19102422985', service: 'SMS' }] }), true);
+  assert.equal(isSmsChat({ guid: 'iMessage;-;+19102422985' }), false);
+});

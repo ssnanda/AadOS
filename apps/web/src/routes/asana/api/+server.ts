@@ -108,6 +108,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       }
       case 'delete': await each(gidsOf(b), (g) => asana.deleteTask(c, g)); return json({ ok: true });
       case 'detail': { const g = gidsOf(b)[0]; const [subtasks, comments, attachments] = await Promise.all([asana.subtasks(c, g), asana.comments(c, g), asana.attachments(c, g).catch(() => [])]); return json({ subtasks, comments, attachments }); }
+      case 'task': return json({ task: await asana.getTask(c, gidsOf(b)[0]) });
+      case 'setParent': { const parent = str(b.parent, 40); if (!/^\d+$/.test(parent)) return json({ error: 'Pick a task.' }, { status: 400 }); await each(gidsOf(b).filter((g) => g !== parent), (g) => asana.setParent(c, g, parent)); return json({ ok: true }); }
+      case 'search': return json({ tasks: await asana.searchTasks(c, str(b.q, 200)) });
       case 'comment': await asana.addComment(c, gidsOf(b)[0], str(b.text, 20_000)); return json({ ok: true });
       case 'timerStart': {
         const g = gidsOf(b)[0];

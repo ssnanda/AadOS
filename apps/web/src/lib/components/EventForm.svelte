@@ -3,7 +3,7 @@
   // New / edit event. Times are the owner's zone; saved straight to Google or Zoho, then the calendar re-syncs.
   type Cal = { id: string; name: string; provider: string; color: string; writable: boolean; primary: boolean };
   type Existing = { eventId: string; calendarId: string; title: string; start: string; end: string; allDay: boolean; location: string; rawDescription: string; recurring: boolean };
-  let { calendars, tz, date, existing, onsaved, onclose }: { calendars: Cal[]; tz: string; date: string; existing?: Existing | null; onsaved: () => void; onclose: () => void } = $props();
+  let { calendars, tz, date, existing, calendar = '', startTime: start0 = '', onsaved, onclose }: { calendars: Cal[]; tz: string; date: string; existing?: Existing | null; /** preselected calendar for a new event */ calendar?: string; /** preselected start HH:MM */ startTime?: string; onsaved: () => void; onclose: () => void } = $props();
 
   const local = (iso: string) => {
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
@@ -15,9 +15,9 @@
   const s0 = e && !e.allDay ? local(e.start) : null, e0 = e && !e.allDay ? local(e.end) : null;
   let title = $state(e?.title || ''), location = $state(e?.location || ''), description = $state(e?.rawDescription || '');
   let allDay = $state(e?.allDay ?? false);
-  let startDate = $state(e ? (e.allDay ? e.start : s0!.date) : d0), startTime = $state(s0?.time || '09:00');
-  let endDate = $state(e ? (e.allDay ? prevDay(e.end) : e0!.date) : d0), endTime = $state(e0?.time || '10:00');
-  let calendarId = $state(e?.calendarId || '');
+  let startDate = $state(e ? (e.allDay ? e.start : s0!.date) : d0), startTime = $state(s0?.time || untrack(() => start0) || '09:00');
+  let endDate = $state(e ? (e.allDay ? prevDay(e.end) : e0!.date) : d0), endTime = $state(e0?.time || (untrack(() => start0) ? `${String(Math.min(23, Number(untrack(() => start0).slice(0, 2)) + 1)).padStart(2, '0')}:${untrack(() => start0).slice(3)}` : '10:00'));
+  let calendarId = $state(e?.calendarId || untrack(() => calendar) || '');
   $effect(() => { if (!calendarId) calendarId = (writable.find((c) => c.primary) || writable[0])?.id || ''; });
   let busy = $state(false), error = $state('');
   const locked = Boolean(e?.recurring);

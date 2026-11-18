@@ -4,7 +4,7 @@ import * as bb from '$lib/server/bluebubbles';
 import { chat as aiChat, aiConfigured } from '$lib/server/ai/service';
 import { describeError } from '$lib/server/ai/ajmcp';
 import { extractJson } from '$lib/server/ai/email-ai';
-import { prettyAddress, DEFAULT_TEMPLATES, type Message } from '$lib/messages-model';
+import { addressKey, matchSpamTemplate, prettyAddress, reportsSpam, smsGuid, DEFAULT_TEMPLATES, SPAM_REPORT_NUMBER, type Message } from '$lib/messages-model';
 import { randomBytes } from 'node:crypto';
 
 // Messages actions: open a thread, mark read, send, start a chat, AI summary, AI draft of an Asana task from a message.
@@ -37,6 +37,13 @@ export const POST = async ({ request }) => {
     });
     return json({ groups });
   }
+  // Spam list: these senders never show in the main view (Spam tile only).
+  if (op === 'spam.set') {
+    const addrs: string[] = (Array.isArray(b.addresses) ? b.addresses : []).map((a: unknown) => addressKey(s(a, 120))).filter(Boolean);
+    let spam: string[] = [];
+    await updateState((st) => { const cur = new Set(st.messageSpam ?? []); for (const a of addrs) { if (b.spam === false) cur.delete(a); else cur.add(a); } st.messageSpam = [...cur]; spam = st.messageSpam; });
+    return json({ spam });
+  }
   // Canned replies (stored with AadOS state; no BlueBubbles needed).
   if (op === 'templates.save' || op === 'templates.delete') {
     const id = s(b.id, 60), title = s(b.title, 120).trim(), text = s(b.text, 5000).trim();
@@ -44,7 +51,7 @@ export const POST = async ({ request }) => {
     let list: { id: string; title: string; text: string }[] = [];
     await updateState((st) => {
       const cur = st.messageTemplates ?? [...DEFAULT_TEMPLATES];
-      st.messageTemplates = op === 'templates.delete' ? cur.filter((t) => t.id !== id) : cur.some((t) => t.id === id) ? cur.map((t) => (t.id === id ? { id, title, text } : t)) : [...cur, { id: id || randomBytes(6).toString('hex'), title, text }];
+      st.messageTemplates = op === 'templates.delete' ? cur.filter((t) => t.id !== id) : cur.some((t) => t.id === id) ? cur.map((t) => (t.id === id ? { id, title, text, spam: b.spam === true, report: b.spam === true && b.report === true } : t)) : [...cur, { id: id || randomBytes(6).toString('hex'), title, text, spam: b.spam === true, report: b.spam === true && b.report === true }];
       list = st.messageTemplates;
     });
     return json({ templates: list });
@@ -78,7 +85,34 @@ export const POST = async ({ request }) => {
         void bb.markRead(c, chatGuid);
         return json({ ok: true });
       }
-      case 'send': { const text = s(b.text, 10_000).trim(); if (!text) return json({ error: 'Type a message.' }, { status: 400 }); return json({ message: await bb.sendText(c, chatGuid, text) }); }
+      case 'send': {
+        const text = s(b.text, 10_000).trim(); if (!text) return json({ error: 'Type a message.' }, { status: 400 });
+        // SMS threads (and "Retry as SMS") go out explicitly as SMS: a service-neutral id lets Messages pick iMessage,
+        // which fails for numbers that are not on iMessage.
+        const address = s(b.address, 120).trim();
+        const target = b.sms === true && address ? smsGuid(address) : chatGuid;
+        const message = await bb.sendText(c, target, text);
+        // Sending a spam reply (e.g. stop-solicitation) moves the conversation to Spam, and — when the reply is set to report —
+        // forwards the sender's text to the carrier spam line 7726, then their number (which AT&T asks for) — two separate
+        // texts. The 7726 thread (reports + AT&T's replies) lives in its own Spam reports folder, never in the main view.
+        let spammed = false, reported = false;
+        const tpl = matchSpamTemplate(text, (await readState()).messageTemplates ?? DEFAULT_TEMPLATES);
+        if (tpl) {
+          const addrs: string[] = (Array.isArray(b.addresses) ? b.addresses : address ? [address] : []).map((a: unknown) => addressKey(s(a, 120))).filter(Boolean);
+          const report = reportsSpam(tpl) && addrs.length === 1 && /^\d{10}$/.test(addrs[0]);
+          if (addrs.length) { await updateState((st) => { st.messageSpam = [...new Set([...(st.messageSpam ?? []), ...addrs])]; }); spammed = true; }
+          if (report) {
+            reported = true;
+            const spamText = s(b.reportText, 1500).trim() || 'Unsolicited text message';
+            const reportTo = smsGuid(SPAM_REPORT_NUMBER);
+            void bb.sendText(c, reportTo, spamText)
+              .then(() => new Promise((r) => setTimeout(r, 20_000)))
+              .then(() => bb.sendText(c, reportTo, addrs[0]))
+              .catch((e) => console.warn('[aados] 7726 spam report failed:', e instanceof Error ? e.message : e));
+          }
+        }
+        return json({ message, spammed, reported });
+      }
       case 'newChat': { const address = s(b.address, 200).trim(), text = s(b.text, 10_000).trim(); if (!address || !text) return json({ error: 'Enter a phone number or email and a message.' }, { status: 400 }); await bb.newChat(c, address, text); return json({ ok: true }); }
       case 'summary':
       case 'asanaDraft': {
