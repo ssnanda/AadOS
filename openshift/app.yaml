@@ -304,6 +304,13 @@ objects:
                 # Document uploads up to 25 MB (adapter-node default is 512 KB).
                 - name: BODY_SIZE_LIMIT
                   value: '27M'
+                # AJMCP runs in this cluster: call its Service directly (no public router hop, which timed out).
+                # Overrides the Settings → AI URL; the site token saved in Settings is still used. Plain HTTP is
+                # allowed only for this in-cluster host.
+                - name: AADOS_AJMCP_URL
+                  value: http://ajmcp-server.ajmcp.svc
+                - name: AADOS_ALLOW_HTTP_HOSTS
+                  value: ajmcp-server.ajmcp.svc
                 - name: AADOS_INTERNAL_API_TOKEN
                   valueFrom:
                     secretKeyRef:

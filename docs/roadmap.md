@@ -130,3 +130,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 61. [x] Compose: "Draft with AI" polishes the owner's typed text instead of replacing it ("Polish with AI") — awaiting owner test
 62. [x] Triage "Run now" message names the real blocker (gateway vs. PostgreSQL storage) — awaiting owner test
 63. [x] Production PostgreSQL: `aados-db` (PG16, 5 Gi) + api migrations + web `AADOS_STORAGE=postgres`; secret keys postgres-password / credential-encryption-key / internal-api-token added by hand — `bin/oc-deploy.sh` should create them on fresh namespaces (owner edit)
+64. [x] AJMCP via in-cluster Service (http://ajmcp-server.ajmcp.svc) instead of the public host — public route timed out from pods
