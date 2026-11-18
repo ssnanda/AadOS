@@ -1,6 +1,6 @@
 import { pipelineFolders, type AadOSState, type Pipeline } from './aados-store';
-import { liveZohoFolder, liveZohoUnread, syncPipeline } from './zoho';
-import { liveGmailLabel, syncGmailPipeline } from './gmail';
+import { liveZohoFolder, liveZohoUnread, searchZoho, syncPipeline } from './zoho';
+import { liveGmailLabel, searchGmail, syncGmailPipeline } from './gmail';
 
 /**
  * Sync the folders of a view across its accounts and providers; records per-account health.
@@ -21,7 +21,7 @@ export async function syncView(state: AadOSState, pipeline: Pipeline, options: {
   }
 }
 
-export type LiveScope = { account?: string; folder?: string; pipeline?: string };
+export type LiveScope = { account?: string; folder?: string; pipeline?: string; /** search text: also searched in the mailboxes themselves */ q?: string };
 type LiveTarget = { pipeline: Pipeline; accountId: string; folderId: string };
 
 /**
@@ -68,8 +68,17 @@ export async function syncLive(state: AadOSState, scope: LiveScope, allowed?: Se
       account.lastError = cause instanceof Error ? cause.message : 'Sync failed';
     }
   }
+  // Searching: ask the mailboxes too (old mail AadOS never stored), and store the matches so the list shows them.
+  const q = (scope.q || '').trim();
+  if (q.length >= 2) {
+    for (const account of state.accounts.filter((a) => !a.paused && (!allowed || allowed.has(a.id)) && (!scope.account || scope.account === a.id))) {
+      const inbox = state.pipelines.find((p) => p.system && p.accountId === account.id);
+      if (!inbox) continue;
+      try { added += (account.provider === 'gmail' ? await searchGmail(state, account, inbox, q) : await searchZoho(state, account, inbox, q)).added; } catch { failed++; }
+    }
+  }
   // Unread views (all inboxes, or one account) also pick up unread mail in every Zoho folder, not only Inbox.
-  if (!scope.folder && !scope.pipeline) {
+  if (!scope.folder && !scope.pipeline && !q) {
     for (const account of state.accounts.filter((a) => a.provider === 'zoho' && !a.paused && (!allowed || allowed.has(a.id)) && (!scope.account || scope.account === a.id))) {
       const inbox = state.pipelines.find((p) => p.system && p.accountId === account.id);
       if (!inbox) continue;

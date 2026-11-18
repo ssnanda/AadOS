@@ -135,6 +135,22 @@ export async function syncGmailPage(state: AadOSState, account: MailAccount, pip
   return { scanned: rows.length, added: fresh.length, unknown: unknownIds.length, next: String(list.nextPageToken || ''), ids: rows.map((row) => String(row.id || '')).filter(Boolean) };
 }
 
+/** Search the whole Gmail mailbox (Gmail search syntax, excluding Trash/Spam) and store up to 50 matches in the inbox feed. */
+export async function searchGmail(state: AadOSState, account: MailAccount, pipeline: Pipeline, q: string) {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  const known = knownMessageIds(state, pipeline.id);
+  const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({ q, maxResults: '50' })}`, { headers }));
+  const rows: Record<string, unknown>[] = Array.isArray(list.messages) ? list.messages : [];
+  const fresh = rows.map((r) => String(r.id || '')).filter((id) => id && !known.has(id));
+  const threads = new Map(rows.map((row) => [String(row.id || ''), String(row.threadId || '')]));
+  for (let i = 0; i < fresh.length; i += CONCURRENCY) {
+    const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
+    for (const item of items) { item.accountId = account.id; item.folderId ||= 'INBOX'; item.threadId = threads.get(item.messageId) || undefined; }
+    state.items.push(...items);
+  }
+  return { added: fresh.length, found: rows.length };
+}
+
 /** Align stored read state with Gmail's UNREAD list for this label (all pages, or nothing is applied). */
 export async function reconcileGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };

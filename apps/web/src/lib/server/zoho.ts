@@ -204,11 +204,43 @@ export async function liveZohoUnread(state: AadOSState, account: MailAccount, pi
   return { added };
 }
 
+/**
+ * Search the whole Zoho mailbox (not only mail stored in AadOS) and store the matches in the account's inbox feed,
+ * so the normal inbox search finds old mail too. Zoho search syntax: entire:<text> matches subject, sender and body.
+ */
+export async function searchZoho(state: AadOSState, account: MailAccount, pipeline: Pipeline, q: string) {
+  const query = new URLSearchParams({ searchKey: `entire:${q.replace(/::/g, ' ')}`, limit: '50', start: '1' });
+  const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/search?${query}`);
+  const rows: Record<string, unknown>[] = (Array.isArray(response.data) ? response.data : []).filter((r: Record<string, unknown>) => r.messageId && r.folderId);
+  const mine = new Map(state.items.filter((i) => (i.accountId || pipeline.accountId) === account.id).map((i) => [i.messageId, i]));
+  for (const row of rows) { const item = mine.get(String(row.messageId)); if (item) item.unread = String(row.status) === '0'; }
+  const fresh = rows.filter((r) => !mine.has(String(r.messageId))).slice(0, 50);
+  for (let i = 0; i < fresh.length; i += CONCURRENCY) {
+    const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((row) => zohoItem(state, account, pipeline, String(row.folderId), row)));
+    for (const item of items) item.accountId = account.id;
+    state.items.push(...items);
+  }
+  return { added: fresh.length, found: rows.length };
+}
+
 /** Live sync of one open folder: the newest page only (new mail, read state, anything that left the folder). */
 export async function liveZohoFolder(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
   const page = await syncZohoPage(state, account, pipeline, folderId, '0');
   const removed = pruneFolderWindow(state, pipeline, folderId, account.id, page.ids || [], !page.next);
-  return { scanned: page.scanned, added: page.added, removed };
+  // Opening a folder also re-counts its unread mail (Zoho's folder list has no count), so the sidebar number and
+  // read state are current on every click / reload, not only after the 10-minute all-folder scan.
+  let added = page.added;
+  try {
+    const ids: string[] = []; let complete = false;
+    for (let p = 0; p < UNREAD_PAGES; p++) {
+      const r = await syncZohoPage(state, account, pipeline, folderId, String(p), 50, true);
+      added += r.added; ids.push(...(r.ids || []));
+      if (!r.next) { complete = true; break; }
+    }
+    if (complete) applyUnread(state, pipeline, folderId, new Set(ids), account.id);
+    account.folders = account.folders.map((f) => (f.id === folderId ? { ...f, unread: ids.length } : f));
+  } catch { /* the page above already synced; the count catches up on the next scan */ }
+  return { scanned: page.scanned, added, removed };
 }
 
 /**

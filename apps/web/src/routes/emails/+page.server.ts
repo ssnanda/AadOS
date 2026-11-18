@@ -65,6 +65,18 @@ export const actions: Actions = {
         const wanted = new Set(applyKeys);
         const copies = state.items.filter((item) => wanted.has(`${account(state, item)}:${item.messageId}`));
         if (!keys.length || !copies.length) throw new Error('Choose at least one email.');
+        // Keep the sidebar's per-folder unread counts (the provider's count, refreshed by the unread scan) in step right away.
+        if (op === 'delete' || op === 'mark-read' || op === 'mark-unread') {
+          const delta = op === 'mark-unread' ? 1 : -1, seen = new Set<string>();
+          for (const item of copies) {
+            const k = `${account(state, item)}:${item.messageId}`;
+            if (seen.has(k) || !item.folderId || (op === 'mark-unread' ? isUnread(item) : !isUnread(item))) continue;
+            seen.add(k);
+            const acct = state.accounts.find((a) => a.id === account(state, item));
+            const f = acct?.folders?.find((x) => x.id === item.folderId);
+            if (f && typeof f.unread === 'number') f.unread = Math.max(0, f.unread + delta);
+          }
+        }
         if (op === 'delete') {
           const gone = new Set(copies.map((item) => item.id));
           state.items = state.items.filter((item) => !gone.has(item.id));

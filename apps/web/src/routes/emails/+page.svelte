@@ -20,11 +20,11 @@
   // Auto sync of the open folder/inbox: on open, on folder change, every 2 minutes while visible.
   let auto: ReturnType<typeof startAutoSync> | undefined;
   onMount(() => {
-    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline }), () => (acting ? undefined : invalidateAll()));
+    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, q: data.query.q }), () => (acting ? undefined : invalidateAll()));
     void auto.run();
     return () => auto?.stop();
   });
-  $effect(() => { void [data.query.account, data.query.folder, data.query.pipeline]; untrack(() => void auto?.run()); });
+  $effect(() => { void [data.query.account, data.query.folder, data.query.pipeline, data.query.q]; untrack(() => void auto?.run()); });
   // While reading, load the next email's body ahead of time (not marked seen), so ↓ opens instantly.
   $effect(() => { const next = viewing ? rows[viewingIndex + 1] : undefined; if (next) untrack(() => void fetch(`/pipelines/${next.pipelineId}/message/${encodeURIComponent(next.messageId)}?prefetch=1`).catch(() => undefined)); });
 
@@ -116,7 +116,7 @@
 
   <div class="split">
   <section class="listcol">
-  {#if rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button></div>{/if}</div>{/if}
+  {#if rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button></div>{/if}</div>{/if}
   {#if rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages yet.' : 'No messages match.'}</div>{/if}
   <ul class="list">{#each rows as r (r.key)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
@@ -167,7 +167,7 @@
   .tabs a.secondary:not(.on){color:#8a95a8;background:transparent}
   .tabs i,.chip i{font-style:normal;font-size:11px;background:#f0f2f7;color:#5b6a86;border-radius:99px;padding:1px 7px}.tabs a.on i,.chip.on i{background:#ffffff33;color:#fff}
   .categories{margin-bottom:14px}.categories summary{cursor:pointer;color:#53607a;font-size:12px;font-weight:700}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-radius:99px;padding:4px 10px;font-size:12px;font-weight:700;color:#43516c;text-decoration:none}.chip.on{background:#3157de;border-color:#3157de;color:#fff}
-  .bulk{display:flex;align-items:center;gap:12px;min-height:34px;margin-bottom:7px;padding:7px 10px;border:1px solid #e4e9f2;border-radius:10px;background:#fff;color:#53607a;font-size:12px}.bulk label{display:flex;align-items:center;gap:7px;font-weight:700}.bulk strong{color:#3157de}.bulk-actions{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}.bulk button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:5px 9px;color:#43516c;font-size:11px;font-weight:700;cursor:pointer}.bulk button:hover{border-color:#8da2f0;color:#3157de}.bulk button:disabled{opacity:.5}.bulk button.danger{color:#b53c50}
+  .bulk{display:flex;align-items:center;gap:12px;min-height:34px;margin-bottom:7px;padding:7px 10px;border:1px solid #e4e9f2;border-radius:10px;background:#fff;color:#53607a;font-size:12px}.bulk label{display:flex;align-items:center;gap:7px;font-weight:700}.bulk strong{color:#3157de}.bulk-actions{display:flex;gap:5px;flex-wrap:wrap}.bulk button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:5px 9px;color:#43516c;font-size:11px;font-weight:700;cursor:pointer}.bulk button:hover{border-color:#8da2f0;color:#3157de}.bulk button:disabled{opacity:.5}.bulk button.danger{color:#b53c50}
   .list{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e4e9f2;border-radius:12px;overflow:hidden}
   li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:32px 32px 20px minmax(0,1fr);gap:6px;align-items:center}.ic{border:0;background:none;padding:3px;border-radius:6px;cursor:pointer;font-size:21px;line-height:1;color:#53607a;opacity:.85}.ic:hover{opacity:1;background:#eef1f8}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
   .row{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;gap:14px;align-items:baseline;width:100%;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:#29344c}

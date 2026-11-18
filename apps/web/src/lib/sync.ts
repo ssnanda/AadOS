@@ -13,11 +13,14 @@ export async function liveSync(scope: LiveScope, endpoint = '/sync/live'): Promi
 
 /** Browser only (call from onMount). `run()` syncs now (e.g. after switching folder); `stop()` on unmount. */
 export function startAutoSync(scope: () => LiveScope, onChange: () => unknown, endpoint = '/sync/live') {
-  let busy = false;
-  const run = async () => {
-    if (busy || document.visibilityState !== 'visible') return;
+  let busy = false, again = false;
+  // A folder click while a sync is running is not dropped: it runs right after, for the folder now on screen.
+  const run = async (): Promise<void> => {
+    if (document.visibilityState !== 'visible') return;
+    if (busy) { again = true; return; }
     busy = true;
     try { if (await liveSync(scope(), endpoint)) await onChange(); } finally { busy = false; }
+    if (again) { again = false; return run(); }
   };
   const timer = setInterval(run, AUTO_SYNC_MS);
   const visible = () => { if (document.visibilityState === 'visible') void run(); };
