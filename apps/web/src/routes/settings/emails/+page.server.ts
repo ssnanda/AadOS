@@ -17,7 +17,8 @@ export const actions: Actions = {
     const picks = form.getAll('folder').map(String).filter(Boolean).map((value) => { const at = value.indexOf('|'); return { accountId: value.slice(0, at), folderId: value.slice(at + 1) }; });
     const parser = String(form.get('parser') || '') as PipelineParser;
     const name = String(form.get('name') || '').trim();
-    if (!['shop', 'health', 'generic'].includes(parser)) return fail(400, { error: 'Choose a view type.' });
+    const focus = String(form.get('focus') || '').trim().slice(0, 400);
+    if (!['shop', 'health', 'generic', 'digest'].includes(parser)) return fail(400, { error: 'Choose a view type.' });
     try { await updateState((state) => {
       const selected = picks.map((pick) => {
         const account = state.accounts.find((item) => item.id === pick.accountId);
@@ -30,7 +31,7 @@ export const actions: Actions = {
       const id = slug(`${accountIds.size > 1 ? 'multi' : first.accountId}-${name || parser}`);
       if (state.pipelines.some((item) => item.id === id)) throw new Error('That view name is already configured.');
       const defaultName = parser === 'shop' ? 'Shopping' : parser === 'health' ? 'Health' : first.name;
-      state.pipelines.push({ id, name: name || defaultName, source: first.source, accountId: first.accountId, folderId: first.id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, enabled: true, cursor: 0, lastSync: '', lastError: '' });
+      state.pipelines.push({ id, name: name || defaultName, source: first.source, accountId: first.accountId, folderId: first.id, folderName: selected.map((folder) => folder.name).join(', '), folders: selected, parser, ...(parser === 'digest' && focus ? { focus } : {}), enabled: true, cursor: 0, lastSync: '', lastError: '' });
     }); return { created: true }; }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not create workflow.' }); }
   },
@@ -39,6 +40,30 @@ export const actions: Actions = {
     try { await updateState((state) => { const workflow = state.pipelines.find((item) => item.id === id); if (!workflow) throw new Error('Email workflow not found.'); workflow.enabled = !workflow.enabled; }); }
     catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not update workflow.' }); }
     return { toggled: id };
+  },
+  // Remove a view from AadOS: its stored copies, remembered deletions and review results. Mailboxes are not touched.
+  remove: async ({ request }) => {
+    const id = String((await request.formData()).get('id') || '');
+    let removed = 0;
+    try { await updateState((state) => {
+      const workflow = state.pipelines.find((item) => item.id === id && !item.system);
+      if (!workflow) throw new Error('Email view not found.');
+      state.pipelines = state.pipelines.filter((item) => item.id !== id);
+      const before = state.items.length;
+      state.items = state.items.filter((item) => item.pipelineId !== id);
+      removed = before - state.items.length;
+      state.dismissed = state.dismissed.filter((d) => !d.startsWith(`${id}:`));
+      if (state.digests) delete state.digests[id];
+    }); }
+    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not remove view.' }); }
+    return { removedView: id, removed };
+  },
+  // Weekly review views: edit what the AI keeps (cached reviews re-run when this changes).
+  focus: async ({ request }) => {
+    const form = await request.formData(), id = String(form.get('id') || ''), focus = String(form.get('focus') || '').trim().slice(0, 400);
+    try { await updateState((state) => { const w = state.pipelines.find((item) => item.id === id && item.parser === 'digest'); if (!w) throw new Error('Weekly review view not found.'); if (focus) w.focus = focus; else delete w.focus; }); }
+    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Could not save.' }); }
+    return { focused: id };
   },
   saveZoho: async ({ request }) => { const f=await request.formData(), id=String(f.get('clientId')||'').trim(), secret=String(f.get('clientSecret')||'').trim(); if(!id)return fail(400,{error:'Zoho Client ID is required.'}); await updateState((s)=>{s.zoho.clientId=id;if(secret)s.zoho.clientSecret=secret;s.zoho.dataCenter=String(f.get('dataCenter')||'com');}); return {saved:'zoho'}; },
   connectZoho: async ({ url }) => { let target=''; await updateState((s)=>{if(!s.zoho.clientId||!s.zoho.clientSecret)throw new Error('Save Zoho credentials first.');target=beginZoho(s,`${url.origin}/oauth/zoho/callback`,{calendar:s.accounts.some((a)=>a.provider==='zoho'&&a.calendar)});}); throw redirect(303,target); },

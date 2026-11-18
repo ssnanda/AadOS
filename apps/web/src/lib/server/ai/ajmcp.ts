@@ -43,7 +43,16 @@ const FRIENDLY: Record<AiErrorKind, string> = {
   too_large: 'The request was too large for AJMCP.', invalid_request: 'AJMCP rejected the request.',
   timeout: 'AJMCP did not answer in time.', unavailable: 'AJMCP is unavailable.', invalid_response: 'AJMCP returned an unexpected response.', cancelled: 'Cancelled.'
 };
-export const describeError = (e: unknown) => e instanceof AiError ? FRIENDLY[e.kind] : 'AI request failed.';
+// Server/network failures keep AJMCP's short error code and status (never the token) so the owner can tell
+// "gateway down" from "site has no assistant/provider" from "AadOS can't reach the host".
+const DETAILED = new Set<AiErrorKind>(['unavailable', 'invalid_request']);
+export const describeError = (e: unknown) => {
+  if (!(e instanceof AiError)) return 'AI request failed.';
+  const detail = [e.status ? `HTTP ${e.status}` : '', e.message && e.message !== `HTTP ${e.status}` && e.message !== 'no attempt' ? e.message : ''].filter(Boolean).join(' · ');
+  return DETAILED.has(e.kind) && detail ? `${FRIENDLY[e.kind].replace(/\.$/, '')} (${detail.slice(0, 120)}).` : FRIENDLY[e.kind];
+};
+/** ENOTFOUND / ECONNREFUSED / CERT_… from Node's fetch, when present. */
+const netCode = (e: unknown): string => { const c = (e as { cause?: { code?: unknown } })?.cause?.code; return typeof c === 'string' ? c.slice(0, 40) : ''; };
 const RETRYABLE = new Set<AiErrorKind>(['busy', 'unavailable', 'timeout']);
 
 function classify(status: number, code: string): AiError {
@@ -95,7 +104,7 @@ export function createAjmcpClient(opts: ClientOptions) {
         return { body, latencyMs: Date.now() - started };
       } catch (cause) {
         if (signal?.aborted) throw new AiError('cancelled', 'cancelled');
-        last = cause instanceof AiError ? cause : timeout.aborted ? new AiError('timeout', `no answer within ${timeoutMs} ms`) : new AiError('unavailable', 'network error');
+        last = cause instanceof AiError ? cause : timeout.aborted ? new AiError('timeout', `no answer within ${timeoutMs} ms`) : new AiError('unavailable', `network error${netCode(cause) ? `: ${netCode(cause)}` : ''}`);
         if (!RETRYABLE.has(last.kind) || attempt === retries) throw last;
         await sleep(Math.min(1000 * 2 ** attempt, 8000));
       }

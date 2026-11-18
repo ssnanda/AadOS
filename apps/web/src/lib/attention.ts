@@ -1,6 +1,6 @@
 // "Needs your attention" items on the Dashboard: one ranked list across email, Messages, tasks, Asana, reminders,
 // bills and finance. Higher score = sooner. Rough bands: 80+ act now, 60–79 today, 40–59 worth a look.
-export type AttentionSource = 'message' | 'email' | 'bill' | 'task' | 'asana' | 'reminder' | 'finance' | 'system';
+export type AttentionSource = 'message' | 'email' | 'bill' | 'task' | 'asana' | 'reminder' | 'finance' | 'digest' | 'system';
 export type Attention = { id: string; source: AttentionSource; title: string; why: string; href: string; score: number; at?: string; external?: boolean };
 
 export const SOURCE_META: Record<AttentionSource, { icon: string; label: string; color: string }> = {
@@ -11,6 +11,7 @@ export const SOURCE_META: Record<AttentionSource, { icon: string; label: string;
   asana: { icon: '◉', label: 'Asana', color: '#e8566c' },
   reminder: { icon: '◔', label: 'Reminder', color: '#d6477f' },
   finance: { icon: '↗', label: 'Finance', color: '#1e7a47' },
+  digest: { icon: '✎', label: 'Review', color: '#2f7d9c' },
   system: { icon: '⚠', label: 'Fix', color: '#a5414d' }
 };
 

@@ -116,3 +116,17 @@ Keep scope small: deliver useful inbox access before extending to household task
 49. [x] AI assistant finance facts behind explicit consent
 50. [x] AJAdvisor migration: dry run, idempotent apply, rollback, reconciliation report (dry run verified on real data; apply pending deploy)
 51. [x] Navigation, Finance permission, iOS via WebView shell, docs
+
+### Email views — remove, weekly review, tutoring trends (2026-11-18)
+52. [x] Settings → Views: Remove a view (clears its stored copies, remembered deletions and review results; mailbox untouched) — awaiting owner test
+53. [x] "Weekly review (AI)" view type with editable focus (default: Aad, 5th grade; ignore elementary/high school/other classes) — per-email AI review incl. PDF/DOCX attachments, cached, deterministic merge — awaiting owner test
+54. [x] Review items on the Dashboard attention list (open actions + dates in next 14 days); done / dismiss / + Task — awaiting owner test
+55. [x] Mathnasium "Session Summary" emails → structured sessions + trend tab inside the review view (weekly chart, mastered / needs practice, AI note) — awaiting owner test
+56. [ ] Unit tests for ai/weekly-digest.ts and ai/session-tracker.ts
+57. [ ] Decide: mark Mathnasium reports read in the mailbox after extraction (owner question)
+58. [x] Email Reply menu: "✦ Reply using AI" / "Reply All using AI" always listed; disabled with the exact reason + Settings link when AI isn't ready — awaiting owner test
+59. [ ] Owner: create a dedicated AadOS site + assistant in AJMCP, paste URL + site token in Settings → AI, Test connection
+60. [x] AI errors show AJMCP's HTTP status + error code / network code (e.g. "AJMCP is unavailable (HTTP 502 · no_provider)") — awaiting owner test
+61. [x] Compose: "Draft with AI" polishes the owner's typed text instead of replacing it ("Polish with AI") — awaiting owner test
+62. [x] Triage "Run now" message names the real blocker (gateway vs. PostgreSQL storage) — awaiting owner test
+63. [ ] Production (OpenShift) has no PostgreSQL: web runs file storage, API `AADOS_ENABLE_DATABASE=false` → triage, briefing, assistant history, AI drafts, documents and finance are unavailable on os.aadnanda.com. Owner decision: provision PostgreSQL in the `aados` namespace

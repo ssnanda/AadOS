@@ -157,7 +157,7 @@
         </form>
       </div>
     </li>{/each}</ul></section>
-  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} onkeepunread={keepUnreadNext} onchanged={() => invalidateAll()} ai={data.aiAvailable} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
+  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={() => viewing && act('mark-unread', [viewing.key])} onkeepunread={keepUnreadNext} onchanged={() => invalidateAll()} ai={data.aiAvailable} aiBlocked={data.aiBlocked} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
   </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}

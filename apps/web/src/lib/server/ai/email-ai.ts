@@ -38,11 +38,11 @@ export function askPrompt(kind: Ask, m: EmailInput, today: string): string {
   return [`You help the owner with one personal email. Today is ${today}. ${UNTRUSTED} Never claim to have done anything.`, task, emailBlock(m, 4000)].join('\n');
 }
 
-export type Tone = 'reply' | 'shorten' | 'formal' | 'friendly' | 'regenerate';
+export type Tone = 'reply' | 'shorten' | 'formal' | 'friendly' | 'regenerate' | 'polish';
 export function draftPrompt(tone: Tone, m: EmailInput, current = '', ownerName = ''): string {
   const instruction = {
     reply: 'Write a reply the owner could send.', regenerate: 'Write a different reply the owner could send.',
-    shorten: 'Rewrite the DRAFT to be much shorter while keeping its meaning.', formal: 'Rewrite the DRAFT in a more formal, polite tone.', friendly: 'Rewrite the DRAFT in a warmer, friendlier tone.'
+    shorten: 'Rewrite the DRAFT to be much shorter while keeping its meaning.', formal: 'Rewrite the DRAFT in a more formal, polite tone.', polish: 'The owner wrote the DRAFT (it may be rough notes). Turn it into a clear, correct reply: fix spelling and grammar, keep the owner\'s meaning, facts, names and sign-off; add nothing new.', friendly: 'Rewrite the DRAFT in a warmer, friendlier tone.'
   }[tone];
   return [
     `You draft email replies for the owner${ownerName ? ` (${clip(ownerName, 80)})` : ''}. ${UNTRUSTED} Do not invent facts, commitments, dates or amounts that are not in the email; leave [placeholders] where the owner must fill something in.`,

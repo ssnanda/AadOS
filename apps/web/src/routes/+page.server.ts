@@ -17,6 +17,7 @@ import { addressKey, categorize, isUnread as isUnreadChat, preview, SPAM_REPORT_
 import { db as financeDb, loadAll, portfolioSeries } from '$lib/server/finance/db';
 import { currentSignals } from '$lib/server/finance/refresh';
 import { billScore, type Attention } from '$lib/attention';
+import { digestAttention } from '$lib/server/ai/weekly-digest-service';
 
 // A slow provider (BlueBubbles over the tunnel, Postgres) resolves to null instead of hanging the streamed card.
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> => Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
@@ -78,7 +79,9 @@ export const load: PageServerLoad = async ({ locals }) => {
     ...brief.important.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Important · ${r.sender}`, href: emailHref(r), score: 56, at: r.receivedAt })),
     ...brief.upcoming.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Deadline ${r.due || 'soon'} · ${r.sender}`, href: emailHref(r), score: billScore(r.due, today) - 6, at: r.receivedAt })),
     ...[...brief.errors, ...calendarAccounts.filter((a) => a.calendarError).map((a) => ({ id: `cal-${a.id}`, label: `Calendar · ${a.email}`, message: a.calendarError! }))]
-      .map((e) => ({ id: `sys:${e.id}`, source: 'system' as const, title: `${e.label} isn't syncing`, why: e.message.slice(0, 140), href: '/settings/emails', score: 50 }))
+      .map((e) => ({ id: `sys:${e.id}`, source: 'system' as const, title: `${e.label} isn't syncing`, why: e.message.slice(0, 140), href: '/settings/emails', score: 50 })),
+    // Weekly review views (e.g. a child's school mail): open action items and dates in the next 14 days.
+    ...digestAttention(state)
   ];
   // Messages (BlueBubbles): unread texts from real people first, then threads you read but never answered (3 days).
   // Spam, the 7726 report thread, codes and marketing never show here.

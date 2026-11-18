@@ -1,3 +1,4 @@
+import type { DigestState } from './ai/weekly-digest';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { chmod, copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import pg from 'pg';
@@ -7,7 +8,8 @@ import { dirname, join } from 'node:path';
 import { env } from '$env/dynamic/private';
 import { dataDir } from './data-dir';
 
-export type PipelineParser = 'shop' | 'health' | 'generic';
+/** 'digest' = Weekly review: AI reads every email for the view's focus (see ai/weekly-digest.ts). */
+export type PipelineParser = 'shop' | 'health' | 'generic' | 'digest';
 
 /** `unread`: the provider's own unread count for the folder (Zoho folder list), refreshed by live sync. */
 export type ZohoFolder = { id: string; name: string; path: string; type: string; unread?: number };
@@ -23,6 +25,8 @@ export type Pipeline = {
   /** Hidden per-account inbox feed that powers the unified inbox; not shown as a view. */
   system?: boolean;
   parser: PipelineParser;
+  /** Weekly review views: who/what to keep (e.g. "5th grade only"); empty = DEFAULT_FOCUS. */
+  focus?: string;
   enabled: boolean;
   cursor: number;
   lastSync: string;
@@ -110,7 +114,7 @@ export type PageResult = { scanned: number; added: number; unknown: number; next
 // `dismissed` holds ids (pipelineId:messageId) of emails removed in AadOS, so syncs never bring them back.
 /** Running Asana work timers by task gid (the time is logged to the task as a comment when stopped). */
 export type AsanaTimer = { name: string; startedAt: string; note: string };
-export type AadOSState = { /** Messages: address keys moved to Spam (never shown in the main view). */ messageSpam?: string[]; /** Messages sender groups: several numbers shown as one contact (e.g. "Atrium notifications"). */ messageGroups?: { id: string; name: string; addresses: string[] }[]; /** Canned replies for Messages (seeded with defaults on first use). */ messageTemplates?: { id: string; title: string; text: string }[]; asanaTimers?: Record<string, AsanaTimer>; /** iMessage chat guid → when it was last opened in AadOS (ms), for unread. */ messagesRead?: Record<string, number>; zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
+export type AadOSState = { /** Weekly review results per view id (cached per email). */ digests?: Record<string, DigestState>; /** Messages: address keys moved to Spam (never shown in the main view). */ messageSpam?: string[]; /** Messages sender groups: several numbers shown as one contact (e.g. "Atrium notifications"). */ messageGroups?: { id: string; name: string; addresses: string[] }[]; /** Canned replies for Messages (seeded with defaults on first use). */ messageTemplates?: { id: string; title: string; text: string }[]; asanaTimers?: Record<string, AsanaTimer>; /** iMessage chat guid → when it was last opened in AadOS (ms), for unread. */ messagesRead?: Record<string, number>; zoho: ZohoState; gmail: GmailState; accounts: MailAccount[]; pipelines: Pipeline[]; items: PipelineItem[]; dismissed: string[]; tasks: Task[]; calendars: CalendarInfo[]; events: CalEvent[]; calendarSync: Record<string, string>; calendarDisabled: string[]; reminders: Reminder[]; prefs: Prefs; ai: AiPrefs; aiStatus: AiStatus; notify: { browser: boolean }; integrations: Integrations; storageOk?: string };
 
 const emptyState = (): AadOSState => ({
   zoho: { clientId: '', clientSecret: '', dataCenter: 'com', oauthState: '', oauthStateExpiresAt: 0 },

@@ -3,7 +3,7 @@
   // The viewer puts its title (`header`) and its own buttons (`lead` first, `trail` last) in the same row.
   import type { Snippet } from 'svelte';
   type Item = { key: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; unread?: boolean };
-  let { item, accountId = '', aiAvailable = false, onfind, header, lead, trail, moreOpen = false, onmore }: { item: Item; accountId?: string; aiAvailable?: boolean; onfind?: (term: string) => void; header?: Snippet; lead?: Snippet; trail?: Snippet; moreOpen?: boolean; onmore?: () => void } = $props();
+  let { item, accountId = '', aiAvailable = false, aiBlocked = '', onfind, header, lead, trail, moreOpen = false, onmore }: { item: Item; accountId?: string; aiAvailable?: boolean; aiBlocked?: string; onfind?: (term: string) => void; header?: Snippet; lead?: Snippet; trail?: Snippet; moreOpen?: boolean; onmore?: () => void } = $props();
 
   type Details = { from: string; to: string; cc: string; account: string; provider: string; unsubscribe: { url: string; mailto: string }; canSend: boolean; canFilter: boolean };
   let info = $state<Details | null>(null);
@@ -44,7 +44,9 @@
   }
   async function aiDraft() {
     if (!compose) return;
-    const r = await run('ai', () => call('draft', { tone: 'reply' }, '/emails/ai'));
+    // Text already typed = the owner's draft/notes: polish it instead of replacing it.
+    const mine = compose.text.trim();
+    const r = await run('ai', () => call('draft', mine ? { tone: 'polish', current: mine } : { tone: 'reply' }, '/emails/ai'));
     if (r && compose) compose.text = r.draft.content;
   }
   async function sendNow() {
@@ -81,7 +83,8 @@
         <button role="menuitem" onclick={() => startCompose('reply')}>Reply</button>
         <button role="menuitem" onclick={() => startCompose('replyAll')}>Reply All</button>
         <button role="menuitem" onclick={() => startCompose('forward')}>Forward</button>
-        {#if aiAvailable}<hr><button role="menuitem" onclick={() => startCompose('reply', true)}>Reply with AI</button><button role="menuitem" onclick={() => startCompose('replyAll', true)}>Reply All with AI</button>{/if}
+        <hr><button role="menuitem" disabled={!aiAvailable} title={aiBlocked} onclick={() => startCompose('reply', true)}>✦ Reply using AI</button><button role="menuitem" disabled={!aiAvailable} title={aiBlocked} onclick={() => startCompose('replyAll', true)}>✦ Reply All using AI</button>
+        {#if !aiAvailable && aiBlocked}<a class="aihint" href="/settings/ai">{aiBlocked}</a>{/if}
       </div>{/if}
     </div>
     {#if info?.provider === 'gmail'}<button onclick={openRules} class:on={rulesOpen}>☰ Rules</button>{/if}
@@ -115,7 +118,7 @@
       {#if compose.showQuoted}<pre class="quoted">{compose.quoted.trim()}</pre>{/if}
       <div class="actions">
         <button class="send" disabled={busy === 'send'}>Send</button>
-        {#if aiAvailable}<button type="button" onclick={aiDraft} disabled={!!busy}>✦ Draft with AI</button>{/if}
+        {#if aiAvailable}<button type="button" onclick={aiDraft} disabled={!!busy}>✦ {compose.text.trim() ? 'Polish with AI' : 'Draft with AI'}</button>{/if}
         {#if compose.mode === 'forward'}<label class="chk"><input type="checkbox" bind:checked={compose.attachments}> Include attachments{compose.provider === 'zoho' ? ' (Gmail only)' : ''}</label>{/if}
         <span class="sp"></span><small>From {info?.account}</small><button type="button" onclick={() => (compose = null)}>Discard</button>
       </div>
@@ -145,7 +148,7 @@
   .unsub{color:#3157de;font-weight:700;text-decoration:none}
   .top{display:flex;gap:10px;align-items:flex-start;margin-bottom:6px}.bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;justify-content:flex-end;margin-left:auto}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}button.on{background:#eef1ff;border-color:#8da2f0;color:#3157de}
-  .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}
+  .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}.menu button:disabled{color:#a3adbf;cursor:not-allowed;background:none}.aihint{font-size:11px;color:#3157de;padding:2px 10px 6px;text-decoration:none;max-width:220px}
   .busy{color:#8a95a8}.ok{color:#0f7f74}.err{color:#a5414d;margin:6px 0 0}.err a{color:#a5414d;font-weight:700}.muted{color:#8a95a8}
   .link{border:0;background:none;padding:0;color:#3157de}.x{color:#a5414d}
   .find{margin-top:6px}.find input{width:100%;box-sizing:border-box;border:1px solid #e4e9f2;border-radius:8px;padding:6px 9px;font-size:12px}

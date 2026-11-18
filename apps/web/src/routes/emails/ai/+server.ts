@@ -9,7 +9,7 @@ import { AI_CATEGORIES, type Tone } from '$lib/server/ai/email-ai';
 import { findDuplicate } from '$lib/server/tasks';
 import { tick } from '$lib/server/reminders';
 
-const TONES: Tone[] = ['reply', 'shorten', 'formal', 'friendly', 'regenerate'];
+const TONES: Tone[] = ['reply', 'shorten', 'formal', 'friendly', 'regenerate', 'polish'];
 
 // Owner-only email AI actions. Read-only towards Gmail/Zoho: nothing here sends or modifies a mailbox.
 export const POST = async ({ request, locals }) => {

@@ -8,6 +8,7 @@ import { ensureInboxPipelines, missingInboxPipelines, readState, updateState, vi
 import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxView } from '$lib/server/inbox';
 import { CATEGORIES } from '$lib/server/categories';
 import { isUnread } from '$lib/server/search';
+import { aiConfigured } from '$lib/server/ai/service';
 
 // Tabs: unread, recent, smart views, all. Older views (important, needs-reply, inbox, read) still work for existing links.
 const VIEWS: InboxView[] = ['unread', 'recent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
@@ -32,6 +33,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   const folderName = query.folder ? (folderSummary(state)[query.account || '']?.find((f) => f.id === query.folder)?.name || query.folder) : '';
   return {
     folderName, insights, aiAvailable: hasDatabase(),
+    // Why AI replies are unavailable ('' = ready); the Reply menu shows this instead of hiding the options.
+    aiBlocked: !aiConfigured(state) ? 'Connect the AJMCP gateway in Settings → AI' : !state.ai.enabled ? 'Turn on AI in Settings → AI' : !state.ai.share.email ? 'Allow Email in Settings → AI' : !hasDatabase() ? 'AI drafts need PostgreSQL storage' : '',
     query, ...result,
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', unreadCheckedAt: a.unreadCheckedAt || '', paused: Boolean(a.paused), total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),

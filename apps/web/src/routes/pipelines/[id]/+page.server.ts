@@ -4,6 +4,7 @@ import type { PageServerLoad } from './$types';
 import { readState, updateState } from '$lib/server/aados-store';
 import { clean, parseMessage } from '$lib/server/pipeline-parser';
 import { filterItems, isUnread } from '$lib/server/search';
+import { digestView, markDigestItem, runDigest } from '$lib/server/ai/weekly-digest-service';
 
 const count = (values: string[]) => {
   const map = new Map<string, number>();
@@ -35,11 +36,21 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     stores: count(searched.map((item) => String(item.facts.store || ''))).slice(0, 14),
     kind, store, q, view, unreadCount, allCount: matching.length,
     matched: shown.length,
-    items: shown.slice(0, 250)
+    items: shown.slice(0, 250),
+    // Weekly review views: AI review of the last 7 days + tutoring session trends.
+    review: pipeline.parser === 'digest' ? digestView(state, pipeline) : null
   };
 };
 
 export const actions: Actions = {
+  // Weekly review: start in the background (the page polls progress); only new/changed emails are read.
+  review: async ({ params }) => { void runDigest(params.id); return { reviewing: true }; },
+  reviewMark: async ({ params, request }) => {
+    const f = await request.formData(), op = String(f.get('op') || '') as 'done' | 'dismissed' | 'clear' | 'task';
+    if (!['done', 'dismissed', 'clear', 'task'].includes(op)) return fail(400, { error: 'Unknown action.' });
+    try { const task = await markDigestItem(params.id, String(f.get('item') || ''), op); return { marked: op, task }; }
+    catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Update failed.' }); }
+  },
   // Re-run the parser over stored fields (subject, sender, summary) without re-syncing.
   reparse: async ({ params }) => {
     let changed = 0;

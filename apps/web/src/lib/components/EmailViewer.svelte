@@ -6,7 +6,7 @@
   import AsanaFromEmail from './asana/AsanaFromEmail.svelte';
   // Read-only viewer: the body is fetched on demand and rendered in a sandboxed iframe.
   // One header row: title, then Delete, Mark read/unread, Keep unread ↓, Reply, Rules, Find, More from sender, ↑ ↓.
-  let { item, onclose, onprevious, onnext, ondelete, canPrevious = false, canNext = false, ai = false, embedded = false, unread = false, onmarkread, onmarkunread, onkeepunread, onchanged, accountId = '', onopen }: { item: { pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; key?: string }; onclose: () => void; onprevious?: () => void; onnext?: () => void; ondelete?: () => void; canPrevious?: boolean; canNext?: boolean; ai?: boolean; embedded?: boolean; unread?: boolean; onmarkread?: () => void; onmarkunread?: () => void; onkeepunread?: () => void; onchanged?: () => void; accountId?: string; onopen?: (item: any) => void } = $props();
+  let { item, onclose, onprevious, onnext, ondelete, canPrevious = false, canNext = false, ai = false, aiBlocked = '', embedded = false, unread = false, onmarkread, onmarkunread, onkeepunread, onchanged, accountId = '', onopen }: { item: { pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; key?: string }; onclose: () => void; onprevious?: () => void; onnext?: () => void; ondelete?: () => void; canPrevious?: boolean; canNext?: boolean; ai?: boolean; aiBlocked?: string; embedded?: boolean; unread?: boolean; onmarkread?: () => void; onmarkunread?: () => void; onkeepunread?: () => void; onchanged?: () => void; accountId?: string; onopen?: (item: any) => void } = $props();
   let moreOpen = $state(false);
   let asanaOpen = $state(false), asanaNote = $state('');
   $effect(() => { void item.key; asanaNote = ''; });
@@ -39,7 +39,7 @@
 {#snippet trail()}<nav aria-label="Email navigation"><button type="button" onclick={onprevious} disabled={!canPrevious} title="Previous email (↑)">↑</button><button type="button" onclick={onnext} disabled={!canNext} title="Next email (↓)">↓</button></nav>{/snippet}
 <svelte:window onkeydown={keyboard} />
 <aside class="viewer" class:embedded aria-label="Email">
-  {#if item.key}<MailTools item={{ ...item, key: item.key }} {accountId} aiAvailable={ai} onfind={(t) => (findTerm = t)} header={title} {lead} {trail} {moreOpen} onmore={() => (moreOpen = !moreOpen)} />
+  {#if item.key}<MailTools item={{ ...item, key: item.key }} {accountId} aiAvailable={ai && !aiBlocked} {aiBlocked} onfind={(t) => (findTerm = t)} header={title} {lead} {trail} {moreOpen} onmore={() => (moreOpen = !moreOpen)} />
   {:else}<header>{@render title()}<div class="bar">{@render lead()}{@render trail()}</div></header>{/if}
   {#if asanaNote}<div class="asanaNote">{asanaNote} <button type="button" class="link" onclick={() => (asanaNote = '')}>✕</button></div>{/if}
   {#if asanaOpen && item.key}<AsanaFromEmail emailKey={item.key} subject={item.subject} onclose={() => (asanaOpen = false)} oncreated={(note) => { asanaNote = note; onchanged?.(); }} />{/if}

@@ -5,6 +5,7 @@ import { syncJob } from './sync-job';
 import { hasDatabase } from './aados-store';
 import { financeTick } from './finance/refresh';
 import { autoAcknowledgeNow } from './asana';
+import { digestTick } from './ai/weekly-digest-service';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
 
@@ -43,6 +44,9 @@ async function pass() {
     if (hasDatabase()) await financeTick().catch((e) => console.warn('[aados] finance refresh failed:', e instanceof Error ? e.message : e));
     // Asana: acknowledge new Incoming tasks even when the Asana page isn't open.
     await autoAcknowledgeNow().catch((e) => console.warn('[aados] asana auto-acknowledge failed:', e instanceof Error ? e.message : e));
+    // Weekly review views: read new mail with the AI (only when AI + email bodies are allowed).
+    // Not awaited: a run can take minutes; runDigest() guards against overlapping runs per view.
+    void digestTick().catch((e) => console.warn('[aados] weekly review failed:', e instanceof Error ? e.message : e));
   } finally { globalThis.__aadosSyncRunning = false; }
 }
 

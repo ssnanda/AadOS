@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AppShell from '$lib/components/AppShell.svelte'; import { startAutoSync } from '$lib/sync'; import { invalidateAll } from '$app/navigation'; import { onMount } from 'svelte'; import ItemList from '$lib/components/ItemList.svelte'; import { kindMeta } from '$lib/kinds';
+  import AppShell from '$lib/components/AppShell.svelte'; import { startAutoSync } from '$lib/sync'; import { invalidateAll } from '$app/navigation'; import { onMount } from 'svelte'; import ItemList from '$lib/components/ItemList.svelte'; import { kindMeta } from '$lib/kinds'; import DigestPanel from '$lib/components/DigestPanel.svelte';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   // Auto sync of this view's folders (newest mail): on open, every 2 minutes while visible.
@@ -19,12 +19,13 @@
 <AppShell title={data.pipeline.name}>
 <main class="shell">
   <header>
-    <div><small>{data.pipeline.folderName}</small><h1>{data.pipeline.name}</h1><p>{data.pipeline.parser} parser · Last sync {data.pipeline.lastSync ? new Date(data.pipeline.lastSync).toLocaleString() : 'never'}</p></div>
+    <div><small>{data.pipeline.folderName}</small><h1>{data.pipeline.name}</h1><p>{data.pipeline.parser === 'digest' ? 'Weekly review' : `${data.pipeline.parser} parser`} · Last sync {data.pipeline.lastSync ? new Date(data.pipeline.lastSync).toLocaleString() : 'never'}</p></div>
 <form method="POST" action="?/reparse"><button title="Re-run the parser on stored emails">↻ Re-parse</button></form>
   </header>
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if form && 'reparsed' in form}<div class="ok">Re-parsed {data.total} emails · {form.reparsed} changed category.</div>{/if}
 
+  {#if data.review}<DigestPanel review={data.review} />{/if}
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'unread'}<input type="hidden" name="view" value="unread">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
   <div class="views"><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a></div>
