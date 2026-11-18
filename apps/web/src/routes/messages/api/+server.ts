@@ -15,6 +15,28 @@ const transcript = (msgs: Message[], names: Map<string, string>, key: (a: string
 export const POST = async ({ request }) => {
   const b = await request.json().catch(() => ({}));
   const op = s(b.op, 20), chatGuid = s(b.chatGuid, 300);
+  // Sender groups: add numbers (address keys) to a named group — merging into an existing group with that name; an address
+  // belongs to one group only. Remove a group or a single number.
+  if (op === 'groups.add' || op === 'groups.delete' || op === 'groups.removeAddress') {
+    const name = s(b.name, 80).trim(), id = s(b.id, 60);
+    const addrs: string[] = (Array.isArray(b.addresses) ? b.addresses : []).map((a: unknown) => s(a, 120)).filter(Boolean);
+    if (op === 'groups.add' && (!name || !addrs.length)) return json({ error: 'Pick conversations and a group name.' }, { status: 400 });
+    let groups: { id: string; name: string; addresses: string[] }[] = [];
+    await updateState((st) => {
+      let list = (st.messageGroups ||= []);
+      if (op === 'groups.delete') list = list.filter((g) => g.id !== id);
+      else if (op === 'groups.removeAddress') list = list.map((g) => (g.id === id ? { ...g, addresses: g.addresses.filter((a) => !addrs.includes(a)) } : g)).filter((g) => g.addresses.length);
+      else {
+        list = list.map((g) => ({ ...g, addresses: g.addresses.filter((a) => !addrs.includes(a)) }));
+        const hit = list.find((g) => (id ? g.id === id : g.name.toLowerCase() === name.toLowerCase()));
+        if (hit) hit.addresses = [...new Set([...hit.addresses, ...addrs])];
+        else list.push({ id: randomBytes(6).toString('hex'), name, addresses: [...new Set(addrs)] });
+        list = list.filter((g) => g.addresses.length);
+      }
+      st.messageGroups = list; groups = list;
+    });
+    return json({ groups });
+  }
   // Canned replies (stored with AadOS state; no BlueBubbles needed).
   if (op === 'templates.save' || op === 'templates.delete') {
     const id = s(b.id, 60), title = s(b.title, 120).trim(), text = s(b.text, 5000).trim();

@@ -6,15 +6,17 @@ import { can } from '$lib/server/auth';
 
 // Conversations, live from BlueBubbles, with review categories (tiles), names for participants, canned replies and
 // where contact names came from (to diagnose missing names).
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
+  // ?all=1 (Show all): every conversation, reaching far back, so old senders can be found and grouped.
+  const showAll = url.searchParams.get('all') === '1';
   const state = await readState();
-  const base = { aiAvailable: state.ai.enabled, asana: can(locals.user, 'asana') && Boolean(state.integrations.asana?.token), owner: Boolean(locals.user?.owner), templates: state.messageTemplates ?? DEFAULT_TEMPLATES };
+  const base = { aiAvailable: state.ai.enabled, asana: can(locals.user, 'asana') && Boolean(state.integrations.asana?.token), owner: Boolean(locals.user?.owner), templates: state.messageTemplates ?? DEFAULT_TEMPLATES, groups: state.messageGroups ?? [], showAll };
   if (!bb.bbConfigured(state)) return { ...base, connected: false as const };
   const readAt = state.messagesRead || {};
   const contactErrors = state.accounts.filter((a) => a.contacts && (a.lastError || '').startsWith('Contacts:')).map((a) => `${a.email}: ${a.lastError}`);
   const contactsOn = state.accounts.some((a) => a.provider === 'gmail' && a.contacts && !a.contactsOff);
   try {
-    const { chats, names, sources } = await bb.chatsWithNames(await bb.bbConnection());
+    const { chats, names, sources } = await bb.chatsWithNames(await bb.bbConnection(), showAll ? 1000 : 150);
     const unread = chats.filter((c) => isUnread(c, readAt)).map((c) => c.guid);
     bb.setUnreadBadge(unread.length);
     // Names for every participant on screen (group senders, headers) and a contact list for composing.

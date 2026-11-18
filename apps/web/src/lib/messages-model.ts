@@ -94,3 +94,46 @@ export const DEFAULT_TEMPLATES: Template[] = [{
   id: 'stop-solicitation', title: 'Stop solicitation (N.C.G.S. § 75-102)',
   text: 'Please stop calling or texting me. I am expressly requesting that you cease all telephone and text solicitations.\n\nUnder N.C.G.S. § 75-102, a telephone solicitor may not continue solicitations after a consumer has stated they do not wish to receive them, and the statute includes text messages.\n\nPlease place my number on your do-not-contact list immediately.\n\nFor help, reply HELP. To opt out, reply STOP.'
 }];
+
+// ---------- sender groups ("Atrium notifications" = several short codes as one contact) ----------
+export type MsgGroup = { id: string; name: string; addresses: string[] };
+const NOT_BRAND = /^(hi|hello|hey|dear|reminder|alert|alerts|your|you|we|our|this|the|note|important|update|thanks|thank you|re|fwd|ok|yes|no|me|i)$/i;
+/** The organization a notification comes from, read from the text: "Atrium Health: …", "Hi, it's AT&T.", "… from CVS Pharmacy". */
+export function brandOf(text: string): string | null {
+  const t = (text || '').replace(/\s+/g, ' ').trim();
+  const m = t.match(/^([A-Z0-9][\w&'.\- ]{1,40}?)\s*[:–-]\s/) || t.match(/\b(?:it'?s|this is|from|with)\s+([A-Z][\w&'.\-]*(?:\s+[A-Z][\w&'.\-]*){0,2})/);
+  if (!m) return null;
+  const brand = m[1].trim().replace(/[.,!]+$/, '');
+  if (!brand || brand.split(' ').length > 4 || NOT_BRAND.test(brand) || /^\d+$/.test(brand)) return null;
+  return brand;
+}
+/** Groups compare on the brand's first word ("Atrium Health" ~ "Atrium notifications"). */
+export const brandKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9& ]/g, '').trim().split(' ')[0] || '';
+
+export type GroupSuggestion = { name: string; groupId: string | null; guids: string[]; addresses: string[] };
+/**
+ * Ungrouped 1:1 conversations that are not your contacts, clustered by the brand in their latest message. A brand that
+ * matches an existing group becomes "add to that group"; otherwise ≥ 2 conversations from one brand become "create".
+ */
+export function suggestGroups(chats: Chat[], groups: MsgGroup[], names: Map<string, string> | Record<string, string>): GroupSuggestion[] {
+  const known = (k: string) => (names instanceof Map ? names.has(k) : Boolean(names[k]));
+  const grouped = new Set(groups.flatMap((g) => g.addresses));
+  const byKey = new Map<string, { brand: string; guids: string[]; addresses: string[] }>();
+  for (const c of chats) {
+    if (c.group || c.participants.length !== 1) continue;
+    const addr = addressKey(c.participants[0]);
+    if (grouped.has(addr) || (known(addr) && !isShortCode(c.participants[0]))) continue;
+    const brand = brandOf(c.last?.text || ''); if (!brand) continue;
+    const k = brandKey(brand); if (!k) continue;
+    const e = byKey.get(k) || { brand, guids: [], addresses: [] };
+    e.guids.push(c.guid); if (!e.addresses.includes(addr)) e.addresses.push(addr);
+    byKey.set(k, e);
+  }
+  const out: GroupSuggestion[] = [];
+  for (const [k, e] of byKey) {
+    const g = groups.find((x) => brandKey(x.name) === k);
+    if (g) out.push({ name: g.name, groupId: g.id, guids: e.guids, addresses: e.addresses });
+    else if (e.guids.length >= 2) out.push({ name: `${e.brand} notifications`, groupId: null, guids: e.guids, addresses: e.addresses });
+  }
+  return out.sort((a, b) => b.guids.length - a.guids.length);
+}

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { onMount, tick, untrack } from 'svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import { asanaApi } from '$lib/asana-client';
-  import { addressKey, isUnread, preview, prettyAddress, CATEGORIES, type Chat, type Message, type Template } from '$lib/messages-model';
+  import { addressKey, brandKey, brandOf, isShortCode, preview, prettyAddress, suggestGroups, CATEGORIES, type Chat, type Message, type MsgGroup, type Template } from '$lib/messages-model';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -14,24 +14,60 @@
   let scroller: HTMLDivElement | undefined = $state();
   let cat = $state(''), suggesting = $state(false), suggestion = $state<{ category: string; why: string; template: string | null } | null>(null);
   let templates = $state<Template[]>([]), managing = $state(false), editTpl = $state<Template | null>(null), refreshing = $state(false);
-  $effect(() => { const d = data; untrack(() => { templates = d.templates; if (d.connected) { chats = d.chats; unread = d.unread; } }); });
+  let groups = $state<MsgGroup[]>([]), picked = $state<string[]>([]), selecting = $state(false), similarOpen = $state(false);
+  $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; } }); });
+
+  // Rows: a sender group ("Atrium notifications") collapses its conversations into one row; others are one row each.
+  type Row = Chat & { members: string[]; groupId?: string };
+  const groupByAddr = $derived(new Map(groups.flatMap((g) => g.addresses.map((a) => [a, g] as const))));
+  const groupFor = (c: Chat) => (!c.group && c.participants.length === 1 ? groupByAddr.get(addressKey(c.participants[0])) : undefined);
+  const rows = $derived.by(() => {
+    const out: Row[] = [], byGroup = new Map<string, Row>();
+    for (const c of chats) {
+      const g = groupFor(c);
+      if (!g) { out.push({ ...c, members: [c.guid] }); continue; }
+      const r = byGroup.get(g.id);
+      if (r) { r.members.push(c.guid); r.participants = [...r.participants, ...c.participants]; if ((c.last?.at || 0) > (r.last?.at || 0)) r.last = c.last; }
+      else { const nr: Row = { ...c, guid: `group:${g.id}`, title: g.name, participants: [...c.participants], members: [c.guid], groupId: g.id }; byGroup.set(g.id, nr); out.push(nr); }
+    }
+    return out.sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
+  });
+  const rowUnread = (r: Row) => r.members.some((g) => unread.includes(g));
+  /** Chat to send to / summarize for a row: its most recent member conversation. */
+  const primary = (r: Row | undefined) => (r ? [...r.members].sort((a, b) => (chats.find((c) => c.guid === b)?.last?.at || 0) - (chats.find((c) => c.guid === a)?.last?.at || 0))[0] : '');
+  const similar = $derived(data.connected ? suggestGroups(chats, groups, data.people) : []);
+  async function addToGroup(name: string, addresses: string[], id = '') {
+    if (!name.trim() || !addresses.length) return;
+    try { groups = (await api('groups.add', { name, addresses, id })).groups; picked = []; selecting = false; notice = `Saved to “${name}”.`; } catch (e) { notice = (e as Error).message; }
+  }
+  const addrsOf = (guids: string[]) => [...new Set(guids.flatMap((g) => chats.find((c) => c.guid === g)?.participants || []).map(addressKey))];
+  async function groupPicked() {
+    const name = prompt(`Group ${picked.length} conversation(s) as one contact. Name:`, groups[0]?.name || (brandOf(chats.find((c) => c.guid === picked[0])?.last?.text || '') ? `${brandOf(chats.find((c) => c.guid === picked[0])?.last?.text || '')} notifications` : ''));
+    if (name) await addToGroup(name, addrsOf(picked), groups.find((g) => g.name.toLowerCase() === name.toLowerCase())?.id || '');
+  }
+  async function ungroup(id: string) { if (!confirm('Split this group back into separate conversations?')) return; try { groups = (await api('groups.delete', { id })).groups; openGuid = ''; } catch (e) { notice = (e as Error).message; } }
   /** A participant's name from your contacts (Google first, then the Mac), else the formatted number. */
   const nameOf = (a: string) => (data.connected ? data.people[addressKey(a)] : '') || prettyAddress(a);
   const catOf = (guid: string) => (data.connected ? (data.categories as Record<string, string>)[guid] : '') || 'unknown';
   // "Needs you": unread, or the last message is theirs and you haven't replied (last 30 days). Tiles count only these.
   const REPLY_WINDOW = 30 * 86_400_000;
-  const needsYou = (c: Chat) => unread.includes(c.guid) || Boolean(c.last && !c.last.fromMe && Date.now() - c.last.at < REPLY_WINDOW);
-  const tile = (id: string) => { const list = chats.filter((c) => (!id || catOf(c.guid) === id) && needsYou(c)); return { total: list.length, unread: list.filter((c) => unread.includes(c.guid)).length }; };
+  /** Waiting on you to answer: a person wrote last (automated short codes and grouped notification senders never count). */
+  const awaiting = (r: Row) => Boolean(r.last && !r.last.fromMe && !r.groupId && !isShortCode(r.participants[0] || '') && Date.now() - r.last.at < REPLY_WINDOW);
+  const needsYou = (r: Row) => data.showAll || rowUnread(r) || awaiting(r);
+  const rowCat = (r: Row) => catOf(r.members[0]);
+  const tile = (id: string) => { const list = rows.filter((r) => (!id || rowCat(r) === id) && needsYou(r)); return { total: list.length, unread: list.filter(rowUnread).length }; };
   async function refreshNow() { refreshing = true; await invalidateAll(); refreshing = false; }
   async function suggest() {
     suggesting = true; suggestion = null;
-    try { const r = await api('suggest', { chatGuid: openGuid }); draft = r.reply; suggestion = { category: r.category, why: r.why, template: r.template }; } catch (e) { notice = (e as Error).message; } finally { suggesting = false; }
+    try { const r = await api('suggest', { chatGuid: primary(open) }); draft = r.reply; suggestion = { category: r.category, why: r.why, template: r.template }; } catch (e) { notice = (e as Error).message; } finally { suggesting = false; }
   }
   async function saveTemplate() { const t = editTpl; if (!t) return; try { templates = (await api('templates.save', t)).templates; editTpl = null; } catch (e) { notice = (e as Error).message; } }
   async function deleteTemplate(id: string) { if (!confirm('Delete this reply?')) return; try { templates = (await api('templates.delete', { id })).templates; } catch (e) { notice = (e as Error).message; } }
-  const open = $derived(chats.find((c) => c.guid === openGuid));
+  const open = $derived(rows.find((r) => r.guid === openGuid));
+  /** For an ungrouped open conversation: the group it probably belongs to (same brand), or a new one to create. */
+  const openHint = $derived.by(() => { if (!open || open.groupId || open.group) return null; const b = brandOf(open.last?.text || ''); if (!b) return null; const g = groups.find((x) => brandKey(x.name) === brandKey(b)); return { name: g?.name || `${b} notifications`, id: g?.id || '' }; });
   const needsAll = $derived(tile(''));
-  const shown = $derived(chats.filter((c) => (cat === 'all' || ((!cat || catOf(c.guid) === cat) && needsYou(c))) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
+  const shown = $derived(rows.filter((c) => (!cat || rowCat(c) === cat) && needsYou(c) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
   const today = new Date().toISOString().slice(0, 10);
   const when = (ms: number) => { if (!ms) return ''; const d = new Date(ms); return Date.now() - ms < 86_400_000 && d.getDate() === new Date().getDate() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
   const stamp = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -44,16 +80,18 @@
   const toBottom = async () => { await tick(); scroller?.scrollTo({ top: scroller.scrollHeight }); };
 
   async function select(guid: string) {
-    openGuid = guid; messages = []; summary = ''; loading = true; notice = '';
-    try { messages = (await api('thread', { chatGuid: guid })).messages; await toBottom(); } catch (e) { notice = (e as Error).message; } finally { loading = false; }
-    if (unread.includes(guid)) { unread = unread.filter((g) => g !== guid); api('read', { chatGuid: guid }).catch(() => undefined); }
+    const row = rows.find((r) => r.guid === guid); if (!row) return;
+    openGuid = guid; messages = []; summary = ''; suggestion = null; loading = true; notice = '';
+    // A group shows every member conversation merged by time.
+    try { const parts = await Promise.all(row.members.map((m) => api('thread', { chatGuid: m }).then((r) => r.messages as Message[]))); messages = parts.flat().sort((a, b) => a.at - b.at); await toBottom(); } catch (e) { notice = (e as Error).message; } finally { loading = false; }
+    for (const m of row.members) if (unread.includes(m)) { unread = unread.filter((g) => g !== m); api('read', { chatGuid: m }).catch(() => undefined); }
   }
   async function send() {
-    const text = draft.trim(); if (!text || !openGuid) return;
+    const text = draft.trim(), target = primary(open); if (!text || !target) return;
     sending = true; notice = '';
-    const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: openGuid, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false, read: true };
+    const temp: Message = { guid: `temp-${Date.now()}`, chatGuid: target, text, fromMe: true, sender: '', at: Date.now(), attachments: [], error: false, read: true };
     messages = [...messages, temp]; draft = ''; await toBottom();
-    try { const r = await api('send', { chatGuid: openGuid, text }); if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(openGuid, r.message || temp); }
+    try { const r = await api('send', { chatGuid: target, text }); if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); }
     catch (e) { notice = (e as Error).message; messages = messages.map((m) => (m.guid === temp.guid ? { ...m, error: true } : m)); draft = text; }
     finally { sending = false; }
   }
@@ -62,11 +100,11 @@
   }
   /** Move a chat to the top with its newest message. */
   function bump(guid: string, m: Message) { const c = chats.find((x) => x.guid === guid); if (c) chats = [{ ...c, last: m }, ...chats.filter((x) => x.guid !== guid)]; }
-  async function summarize() { summarizing = true; try { summary = (await api('summary', { chatGuid: openGuid })).text; } catch (e) { notice = (e as Error).message; } finally { summarizing = false; } }
+  async function summarize() { summarizing = true; try { summary = (await api('summary', { chatGuid: primary(open) })).text; } catch (e) { notice = (e as Error).message; } finally { summarizing = false; } }
   async function toAsana(m: Message) {
     asanaFor = { guid: m.guid, name: m.text.split('\n')[0].slice(0, 120) || 'Follow up', notes: `From: ${m.fromMe ? 'Me' : prettyAddress(m.sender)} (${open?.title || ''})\n${stamp(m.at)}\n\n${m.text}`, day: today, busy: data.aiAvailable, note: '' };
     if (data.aiAvailable) {
-      try { const d = await api('asanaDraft', { chatGuid: openGuid, guid: m.guid }); if (asanaFor?.guid === m.guid) asanaFor = { ...asanaFor, name: d.name, notes: d.notes ? `${d.notes}\n\n———\n${asanaFor.notes}` : asanaFor.notes, day: d.due, busy: false, note: '✦ Drafted by AI — check it before creating.' }; }
+      try { const d = await api('asanaDraft', { chatGuid: m.chatGuid || primary(open), guid: m.guid }); if (asanaFor?.guid === m.guid) asanaFor = { ...asanaFor, name: d.name, notes: d.notes ? `${d.notes}\n\n———\n${asanaFor.notes}` : asanaFor.notes, day: d.due, busy: false, note: '✦ Drafted by AI — check it before creating.' }; }
       catch { if (asanaFor) asanaFor = { ...asanaFor, busy: false, note: 'AI draft unavailable; filled from the message.' }; }
     }
   }
@@ -87,7 +125,7 @@
         const m = e.message;
         if (!chats.some((c) => c.guid === e.chatGuid)) { invalidateAll(); return; }
         bump(e.chatGuid, m);
-        if (e.chatGuid === openGuid) { if (!messages.some((x) => x.guid === m.guid)) { messages = [...messages.filter((x) => !(x.guid.startsWith('temp-') && x.text === m.text && m.fromMe)), m]; toBottom(); } if (!m.fromMe && document.visibilityState === 'visible') api('read', { chatGuid: openGuid }).catch(() => undefined); }
+        if (open?.members.includes(e.chatGuid)) { if (!messages.some((x) => x.guid === m.guid)) { messages = [...messages.filter((x) => !(x.guid.startsWith('temp-') && x.text === m.text && m.fromMe)), m]; toBottom(); } if (!m.fromMe && document.visibilityState === 'visible') api('read', { chatGuid: e.chatGuid }).catch(() => undefined); }
         else if (!m.fromMe && !unread.includes(e.chatGuid)) unread = [...unread, e.chatGuid];
       } else if (e.type === 'updated-message' && e.message && e.chatGuid === openGuid) messages = messages.map((x) => (x.guid === e.message!.guid ? e.message! : x));
     };
@@ -108,26 +146,32 @@
   <div class="tiles">
     <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')} title="Unread, or waiting for your reply (last 30 days)"><span>💬</span><b>{needsAll.total}</b><small>Needs you{needsAll.unread ? ` · ${needsAll.unread} unread` : ''}</small></button>
     {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} class:zero={!n.total} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
-    <button class="tilebtn" class:on={cat === 'all'} onclick={() => (cat = cat === 'all' ? '' : 'all')} title="Every conversation, including ones you already answered"><span>🗂</span><b>{chats.length}</b><small>All conversations</small></button>
+
   </div>
+  <div class="showall"><label><input type="checkbox" checked={data.showAll} onchange={(e) => goto(e.currentTarget.checked ? '?all=1' : '?', { keepFocus: true, noScroll: true })}> Show all conversations <small>(not only unread / awaiting reply · searches older history)</small></label>
+    <button class="link" onclick={() => (similarOpen = !similarOpen)}>🔎 Find similar senders{similar.length ? ` (${similar.length})` : ''}</button></div>
+  {#if similarOpen}<div class="similar">{#each similar as sg (sg.name)}<div class="srow"><b>{sg.name}</b><small>{sg.guids.length} conversation{sg.guids.length === 1 ? '' : 's'}: {sg.guids.map((g) => chats.find((c) => c.guid === g)?.title).join(', ')}</small><span class="sp"></span><button class="primary small" onclick={() => addToGroup(sg.name, sg.addresses, sg.groupId || '')}>{sg.groupId ? `Add to ${sg.name}` : 'Create contact'}</button></div>{:else}<p class="muted">No similar senders found{data.showAll ? '' : ' — tick Show all to search older conversations'}.</p>{/each}</div>{/if}
   <div class="statusbar"><span class:on={live}>{live ? '● Live' : '○ Reconnecting…'}</span><span>Updated {new Date(data.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><button class="link" onclick={refreshNow} disabled={refreshing}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
     <span class="sp"></span><span class="muted" title="Names for phone numbers come from Google Contacts first, then your Mac's contacts">Names: {data.nameSources.google} Google · {data.nameSources.mac} Mac</span>{#if !data.contactsOn && data.owner}<a href="/settings/emails">Turn on Google Contacts</a>{/if}{#each data.contactErrors as e (e)}<span class="err">{e}</span>{/each}</div>
   <div class="wrap" class:reading={Boolean(openGuid)}>
     <aside class="list">
-      <div class="lhead"><input type="search" bind:value={filter} placeholder="Search conversations" aria-label="Search conversations"><button class="new" title="New message" aria-label="New message" onclick={() => (composing = !composing)}>✎</button></div>
+      <div class="lhead"><input type="search" bind:value={filter} placeholder="Search conversations" aria-label="Search conversations"><button class="new" title="Select conversations to group them" aria-label="Select" class:on={selecting} onclick={() => { selecting = !selecting; picked = []; }}>☑</button><button class="new" title="New message" aria-label="New message" onclick={() => (composing = !composing)}>✎</button></div>
+      {#if selecting}<div class="pickbar">{picked.length} selected<span class="sp"></span><button class="primary small" disabled={!picked.length} onclick={groupPicked}>Group as one contact…</button></div>{/if}
       {#if composing}<form class="compose" onsubmit={(e) => { e.preventDefault(); startChat(); }}><input bind:value={newTo} placeholder="Name, phone number or email" list="msg-contacts" aria-label="To"><datalist id="msg-contacts">{#each data.contacts as p (p.address)}<option value={p.address}>{p.name}</option>{/each}</datalist><textarea bind:value={newText} rows="2" placeholder="Message"></textarea><button class="primary">Send</button></form>{/if}
       <ul>{#each shown as c (c.guid)}
-        <li><button class="chat" class:on={c.guid === openGuid} class:unread={isUnread(c, {}) && unread.includes(c.guid)} onclick={() => select(c.guid)}>
-          <span class="av" class:grp={c.group}>{c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
-          <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span>{#if c.last && !c.last.fromMe && !unread.includes(c.guid) && Date.now() - c.last.at < REPLY_WINDOW}<em class="await">awaiting your reply</em>{/if}</span>
-          {#if unread.includes(c.guid)}<i class="dot"></i>{/if}
+        <li class="crow">{#if selecting && !c.groupId}<input type="checkbox" checked={c.members.every((m) => picked.includes(m))} onchange={(e) => (picked = e.currentTarget.checked ? [...new Set([...picked, ...c.members])] : picked.filter((m) => !c.members.includes(m)))} aria-label={`Select ${c.title}`}>{/if}<button class="chat" class:on={c.guid === openGuid} class:unread={rowUnread(c)} onclick={() => select(c.guid)}>
+          <span class="av" class:grp={c.group || c.groupId}>{c.groupId ? '🏷' : c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
+          <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span>{#if c.groupId}<em class="gcount">{c.members.length} senders</em>{:else if !rowUnread(c) && awaiting(c)}<em class="await">awaiting your reply</em>{/if}</span>
+          {#if rowUnread(c)}<i class="dot"></i>{/if}
         </button></li>{:else}<li class="muted pad">No conversations.</li>{/each}</ul>
     </aside>
     <section class="thread">
       {#if !open}<p class="muted pad">Pick a conversation.</p>
       {:else}
         <header><button class="back" onclick={() => (openGuid = '')} aria-label="Back">‹</button><div><strong>{open.title}</strong>{#if open.group}<small>{open.participants.map(nameOf).join(', ')}</small>{:else}<small>{open.participants.map((p) => (nameOf(p) !== prettyAddress(p) ? `${nameOf(p)} · ${prettyAddress(p)}` : prettyAddress(p))).join(', ')}</small>{/if}</div>
+          {#if open.groupId}<button onclick={() => open?.groupId && ungroup(open.groupId)}>Ungroup</button>{:else if !open.group}<button onclick={() => { const n = prompt('Save this sender as (existing or new contact name):', openHint?.name || groups[0]?.name || ''); if (n && open) addToGroup(n, addrsOf(open.members), groups.find((g) => g.name.toLowerCase() === n.toLowerCase())?.id || ''); }}>🏷 Name sender…</button>{/if}
           {#if data.aiAvailable}<button onclick={summarize} disabled={summarizing}>✦ {summarizing ? 'Summarizing…' : 'Summarize'}</button>{/if}</header>
+        {#if openHint}<div class="hint">Looks like <b>{openHint.name}</b>. <button class="primary small" onclick={() => open && openHint && addToGroup(openHint.name, addrsOf(open.members), openHint.id)}>{openHint.id ? `Add to ${openHint.name}` : `Create “${openHint.name}”`}</button> <span class="muted">— then Find similar to add the rest.</span></div>{/if}
         {#if summary}<div class="summary"><pre>{summary}</pre><button class="link" onclick={() => (summary = '')}>✕</button></div>{/if}
         <div class="msgs" bind:this={scroller}>
           {#if loading}<p class="muted pad">Loading…</p>{/if}
@@ -187,7 +231,11 @@
   .av{width:38px;height:38px;border-radius:50%;background:#e7ecf6;color:#53607a;display:grid;place-items:center;font-weight:800;flex:none}.av.grp{background:#eaf7ef}
   .meta{display:grid;gap:2px;min-width:0;flex:1}.row1{display:flex;gap:6px;justify-content:space-between}.row1 strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1f2a44}.row1 time{color:#8a95a8;font-size:11px;flex:none}
   .pv{color:#6b7690;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.chat.unread strong,.chat.unread .pv{font-weight:800;color:#1f2a44}
-  .sms{font-style:normal;font-size:9px;font-weight:800;background:#e6f6ea;color:#2a8a55;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle}.await{font-style:normal;font-size:10px;font-weight:700;color:#e8862a}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
+  .sms{font-style:normal;font-size:9px;font-weight:800;background:#e6f6ea;color:#2a8a55;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle}.await{font-style:normal;font-size:10px;font-weight:700;color:#e8862a}.crow{display:flex;align-items:center;padding-left:6px}.crow input{flex:none}.crow .chat{flex:1}.gcount{font-style:normal;font-size:10px;font-weight:700;color:#6a3fd6}.new.on{background:#eef1ff;border-color:#8da2f0}
+  .pickbar{display:flex;gap:8px;align-items:center;padding:0 10px 8px;font-size:12px;font-weight:600}.small{padding:4px 9px;font-size:11px}
+  .showall{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:13px}.showall label{display:flex;gap:6px;align-items:center;font-weight:600}.showall small{color:#8a95a8;font-weight:500}
+  .similar{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:8px 12px;margin-bottom:8px;display:grid;gap:6px}.srow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.srow small{color:#8a95a8}
+  .hint{margin:0;padding:7px 14px;background:#f4f1ff;border-bottom:1px solid #e6defc;font-size:12px;color:#53607a}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
   .thread header{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #eef0f5}.thread header div{display:grid;flex:1;min-width:0}.thread header small{color:#8a95a8}.back{display:none}
   .summary{display:flex;gap:8px;background:#faf7ff;border-bottom:1px solid #ece3ff;padding:8px 14px}.summary pre{margin:0;flex:1;white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif}
   .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px}
