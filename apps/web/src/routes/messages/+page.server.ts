@@ -25,6 +25,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     const contacts = [...names].filter(([k]) => /^\d{10}$/.test(k) || k.includes('@')).map(([k, name]) => ({ name, address: k.includes('@') ? k : `+1${k}` })).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 3000);
     return { ...base, connected: true as const, chats, unread, categories: Object.fromEntries(chats.map((c) => [c.guid, categorize(c, names)])), people, contacts, nameSources: sources, contactsOn, contactErrors, loadedAt: new Date().toISOString(), error: '' };
   } catch (e) {
-    return { ...base, connected: true as const, chats: [], unread: [], categories: {}, people: {}, contacts: [], nameSources: { google: 0, mac: 0 }, contactsOn, contactErrors, loadedAt: new Date().toISOString(), error: e instanceof Error ? e.message : 'Could not reach BlueBubbles.' };
+    return { ...base, connected: true as const, chats: [], unread: [], categories: {}, people: {}, contacts: [], nameSources: { google: 0 }, contactsOn, contactErrors, loadedAt: new Date().toISOString(), error: e instanceof Error ? e.message : 'Could not reach BlueBubbles.' };
   }
 };

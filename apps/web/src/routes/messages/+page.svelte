@@ -46,7 +46,7 @@
     if (name) await addToGroup(name, addrsOf(picked), groups.find((g) => g.name.toLowerCase() === name.toLowerCase())?.id || '');
   }
   async function ungroup(id: string) { if (!confirm('Split this group back into separate conversations?')) return; try { groups = (await api('groups.delete', { id })).groups; openGuid = ''; } catch (e) { notice = (e as Error).message; } }
-  /** A participant's name from your contacts (Google first, then the Mac), else the formatted number. */
+  /** A participant's name from Google Contacts, else the formatted number. */
   const nameOf = (a: string) => (data.connected ? data.people[addressKey(a)] : '') || prettyAddress(a);
   const catOf = (guid: string) => (data.connected ? (data.categories as Record<string, string>)[guid] : '') || 'unknown';
   // "Needs you": unread, or the last message is theirs and you haven't replied (last 30 days). Tiles count only these.
@@ -116,6 +116,9 @@
   // Live: BlueBubbles' webhook → /messages/stream (Server-Sent Events). New texts appear without refreshing.
   onMount(() => {
     if (!data.connected) return;
+    // From Contacts: /messages?to=+1… opens New message for that number.
+    const to = new URL(location.href).searchParams.get('to');
+    if (to) { composing = true; newTo = to; }
     const es = new EventSource('/messages/stream');
     es.onopen = () => (live = true);
     es.onerror = () => (live = false);
@@ -152,7 +155,7 @@
     <button class="link" onclick={() => (similarOpen = !similarOpen)}>🔎 Find similar senders{similar.length ? ` (${similar.length})` : ''}</button></div>
   {#if similarOpen}<div class="similar">{#each similar as sg (sg.name)}<div class="srow"><b>{sg.name}</b><small>{sg.guids.length} conversation{sg.guids.length === 1 ? '' : 's'}: {sg.guids.map((g) => chats.find((c) => c.guid === g)?.title).join(', ')}</small><span class="sp"></span><button class="primary small" onclick={() => addToGroup(sg.name, sg.addresses, sg.groupId || '')}>{sg.groupId ? `Add to ${sg.name}` : 'Create contact'}</button></div>{:else}<p class="muted">No similar senders found{data.showAll ? '' : ' — tick Show all to search older conversations'}.</p>{/each}</div>{/if}
   <div class="statusbar"><span class:on={live}>{live ? '● Live' : '○ Reconnecting…'}</span><span>Updated {new Date(data.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><button class="link" onclick={refreshNow} disabled={refreshing}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
-    <span class="sp"></span><span class="muted" title="Names for phone numbers come from Google Contacts first, then your Mac's contacts">Names: {data.nameSources.google} Google · {data.nameSources.mac} Mac</span>{#if !data.contactsOn && data.owner}<a href="/settings/emails">Turn on Google Contacts</a>{/if}{#each data.contactErrors as e (e)}<span class="err">{e}</span>{/each}</div>
+    <span class="sp"></span><span class="muted" title="Names for phone numbers come from Google Contacts">Names: {data.nameSources.google} from Google Contacts</span>{#if !data.contactsOn && data.owner}<a href="/settings/emails">Turn on Google Contacts</a>{/if}{#each data.contactErrors as e (e)}<span class="err">{e}</span>{/each}</div>
   <div class="wrap" class:reading={Boolean(openGuid)}>
     <aside class="list">
       <div class="lhead"><input type="search" bind:value={filter} placeholder="Search conversations" aria-label="Search conversations"><button class="new" title="Select conversations to group them" aria-label="Select" class:on={selecting} onclick={() => { selecting = !selecting; picked = []; }}>☑</button><button class="new" title="New message" aria-label="New message" onclick={() => (composing = !composing)}>✎</button></div>

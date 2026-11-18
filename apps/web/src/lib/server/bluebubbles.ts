@@ -38,33 +38,17 @@ export async function ping(c: BBConn) { await call(c, 'GET', '/ping', { timeoutM
 
 // Contacts from the Mac (names for numbers). Cached for an hour; failure just means numbers are shown.
 declare global { var __aadosBBContacts: { at: number; names: Map<string, string> } | undefined; var __aadosBBUnread: number | undefined; }
-export async function contactNames(c: BBConn): Promise<Map<string, string>> {
-  const cached = globalThis.__aadosBBContacts;
-  if (cached && Date.now() - cached.at < 3_600_000) return cached.names;
-  const names = new Map<string, string>();
-  try {
-    const list: any[] = await call(c, 'GET', '/contact', { timeoutMs: 15_000 });
-    for (const p of Array.isArray(list) ? list : []) {
-      const name = String(p.displayName || [p.firstName, p.lastName].filter(Boolean).join(' ') || '').trim();
-      if (!name) continue;
-      for (const x of [...(p.phoneNumbers || []), ...(p.emails || [])]) { const a = typeof x === 'string' ? x : x?.address; if (a) names.set(addressKey(a), name); }
-    }
-  } catch { /* contacts are optional */ }
-  globalThis.__aadosBBContacts = { at: Date.now(), names };
-  return names;
-}
+/** Contact names for numbers/emails — Google Contacts only (the owner does not use Mac contacts). */
+export async function contactNames(_c?: BBConn): Promise<Map<string, string>> { return googleContactNames().catch(() => new Map<string, string>()); }
 
-/** Conversations plus the names used for them (Google Contacts first, then the Mac's contacts) and where names came from. */
-export async function chatsWithNames(c: BBConn, limit = 150): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number; mac: number } }> {
-  const [raw, mac, google] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c), googleContactNames().catch(() => new Map<string, string>())]);
-  const names = new Map([...mac, ...google]);
+/** Conversations plus the names used for them (Google Contacts) and how many names were available. */
+export async function chatsWithNames(c: BBConn, limit = 150): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number } }> {
+  const [raw, names] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames()]);
   const list = (Array.isArray(raw) ? raw : []).map((x) => toChat(x, names)).filter((x) => x.guid).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
-  return { chats: list, names, sources: { google: google.size, mac: mac.size } };
+  return { chats: list, names, sources: { google: names.size } };
 }
 export async function chats(c: BBConn, limit = 100): Promise<Chat[]> {
-  const [raw, mac, google] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c), googleContactNames().catch(() => new Map<string, string>())]);
-  // Google Contacts first, then the Mac's contacts for anything Google does not know.
-  const names = new Map([...mac, ...google]);
+  const [raw, names] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames()]);
   return (Array.isArray(raw) ? raw : []).map((x) => toChat(x, names)).filter((x) => x.guid).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
 }
 

@@ -2,7 +2,7 @@
   import { enhance } from '$app/forms';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
-  const LABELS: Record<string, string> = { emails: 'Emails', messages: 'Messages', finance: 'Finance', calendar: 'Calendar', tasks: 'Tasks', reminders: 'Reminders', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
+  const LABELS: Record<string, string> = { emails: 'Emails', messages: 'Messages', contacts: 'Contacts', finance: 'Finance', calendar: 'Calendar', tasks: 'Tasks', reminders: 'Reminders', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
   let adding = $state(false), editing = $state(''), resetting = $state('');
   let newAll = $state(false);
 </script>
