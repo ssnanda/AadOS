@@ -134,3 +134,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 65. [ ] Messages: Send follows SMS after a failed iMessage (iMessage/SMS chip per chat); Retry as SMS shows progress, falls back to /chat/new service SMS, rechecks delivery. Untested — owner to verify.
 66. [ ] Messages: spam senders whose stop reply was delivered move from Spam to Spam reports (state.messageSpamDone); Spam keeps only unhandled senders (may hold genuine messages); Not spam works from both. Untested.
 67. [ ] Messages: right-click a conversation → Move to Spam reports / back to Spam / Not spam / Move to Spam (op spam.done). Untested.
+68. [ ] Messages SMS on macOS 26: AppleScript into the merged chat sends iMessage. sendSms now uses the BlueBubbles Private API when on, else /chat/new service SMS, then SMS;-; id; warns when SMS was not forced; Settings → Messages → Test shows Private API status. Untested.

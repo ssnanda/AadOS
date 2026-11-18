@@ -121,7 +121,7 @@
     // For a spam reply that reports to 7726, the server forwards their latest text there too.
     const reportText = [...messages].reverse().find((m) => !m.fromMe && m.text.trim())?.text || '';
     try { const r = await api('send', { chatGuid: target, text, sms: Boolean(smsTo), address: smsTo, addresses: open?.group ? [] : open?.participants || [], reportText });
-      if (r.spammed && open) { for (const p of open.participants) spamSet.add(addressKey(p)); spamSet = new Set(spamSet); notice = r.reported ? 'Sent — moved to Spam and reported to 7726 (their text now, their number in ~20 s).' : 'Sent — conversation moved to Spam.'; } if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); }
+      if (r.spammed && open) { for (const p of open.participants) spamSet.add(addressKey(p)); spamSet = new Set(spamSet); notice = r.reported ? 'Sent — moved to Spam and reported to 7726 (their text now, their number in ~20 s).' : 'Sent — conversation moved to Spam.'; } if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); if (r.smsNote) notice = r.smsNote; }
     catch (e) { notice = (e as Error).message; messages = messages.map((m) => (m.guid === temp.guid ? { ...m, error: true } : m)); draft = text; }
     finally { sending = false; }
   }
@@ -133,7 +133,7 @@
     retrying = m.guid; notice = 'Sending as SMS…';
     const rowGuid = open.guid;
     smsPick = { ...smsPick, [rowGuid]: true }; // later replies in this conversation go as SMS too
-    try { const r = await api('send', { chatGuid: m.chatGuid || primary(open), text: m.text, sms: true, address: to }); messages = [...messages, r.message || { ...m, guid: `temp-${Date.now()}`, error: false, at: Date.now(), service: 'SMS' }]; notice = 'Sent as SMS — checking delivery…'; await toBottom();
+    try { const r = await api('send', { chatGuid: m.chatGuid || primary(open), text: m.text, sms: true, address: to }); messages = [...messages, r.message || { ...m, guid: `temp-${Date.now()}`, error: false, at: Date.now(), service: 'SMS' }]; notice = r.smsNote || 'Sent as SMS — checking delivery…'; await toBottom();
       // Delivery failures arrive after the send; reload the conversation to show them.
       setTimeout(() => { if (openGuid === rowGuid) void select(rowGuid).then(() => { if (lastMine?.error) notice = 'SMS also failed. On the Mac: iPhone → Settings → Messages → Text Message Forwarding must include this Mac.'; }); }, 8000); }
     catch (e) { notice = `SMS failed: ${(e as Error).message}`; }

@@ -102,7 +102,11 @@ export const POST = async ({ request }) => {
         // SMS threads (and "Retry as SMS") go out explicitly as SMS: a service-neutral id lets Messages pick iMessage,
         // which fails for numbers that are not on iMessage.
         const address = s(b.address, 120).trim();
-        const message = b.sms === true && address ? await bb.sendSms(c, address, text) : await bb.sendText(c, chatGuid, text);
+        let message: Message | null, smsNote = '';
+        if (b.sms === true && address) {
+          const r = await bb.sendSms(c, address, text); message = r.message;
+          if (!r.forced) smsNote = 'Sent without the BlueBubbles Private API — macOS 26 may still deliver it as iMessage. Turn on the Private API in BlueBubbles to force SMS.';
+        } else message = await bb.sendText(c, chatGuid, text);
         // Sending a spam reply (e.g. stop-solicitation) moves the conversation to Spam, and — when the reply is set to report —
         // forwards the sender's text to the carrier spam line 7726, then their number (which AT&T asks for) — two separate
         // texts. The 7726 thread (reports + AT&T's replies) lives in its own Spam reports folder, never in the main view.
@@ -121,7 +125,7 @@ export const POST = async ({ request }) => {
               .catch((e) => console.warn('[aados] 7726 spam report failed:', e instanceof Error ? e.message : e));
           }
         }
-        return json({ message, spammed, reported });
+        return json({ message, spammed, reported, smsNote });
       }
       case 'newChat': { const address = s(b.address, 200).trim(), text = s(b.text, 10_000).trim(); if (!address || !text) return json({ error: 'Enter a phone number or email and a message.' }, { status: 400 }); await bb.newChat(c, address, text); return json({ ok: true }); }
       case 'summary':

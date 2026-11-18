@@ -24,11 +24,11 @@ export const actions: Actions = {
       await updateState((s) => { s.integrations.bluebubbles.url = server; s.integrations.bluebubbles.password = pw; });
       let hook = '', hookError = '';
       try { hook = await registerWebhook(await bbConnection(), url.origin); } catch (e) { hookError = e instanceof Error ? e.message : 'failed'; }
-      return { saved: true, info: { os: String(info?.os_version || info?.macos_version || ''), version: String(info?.server_version || '') }, hook: Boolean(hook), hookError };
+      return { saved: true, info: { os: String(info?.os_version || info?.macos_version || ''), version: String(info?.server_version || ''), privateApi: Boolean(info?.private_api && info?.helper_connected) }, hook: Boolean(hook), hookError };
     } catch (e) { return fail(400, { error: e instanceof Error ? e.message : 'Could not reach the server.' }); }
   },
   test: async () => {
-    try { const info = await ping(await bbConnection()); return { tested: true, info: { os: String(info?.os_version || info?.macos_version || ''), version: String(info?.server_version || '') } }; }
+    try { const info = await ping(await bbConnection()); return { tested: true, info: { os: String(info?.os_version || info?.macos_version || ''), version: String(info?.server_version || ''), privateApi: Boolean(info?.private_api && info?.helper_connected) } }; }
     catch (e) { return fail(400, { error: e instanceof Error ? e.message : 'Could not reach the server.' }); }
   },
   webhook: async ({ url }) => {

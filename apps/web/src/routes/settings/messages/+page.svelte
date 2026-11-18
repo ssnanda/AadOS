@@ -8,7 +8,7 @@
   <h1>Messages (iMessage)</h1>
   <p class="muted">Through the BlueBubbles server on your Mac. AadOS reads and sends live; it does not keep a copy of your texts.</p>
   {#if form && 'error' in form && form.error}<p class="alert">{form.error}</p>{/if}
-  {#if form && 'info' in form && form.info}<p class="ok">Connected{form.info.version ? ` · BlueBubbles ${form.info.version}` : ''}{form.info.os ? ` · macOS ${form.info.os}` : ''}{'hook' in form ? (form.hook ? ' · live updates on' : ` · live updates not set up (${form.hookError})`) : ''}.</p>{/if}
+  {#if form && 'info' in form && form.info}<p class="ok">Connected{form.info.version ? ` · BlueBubbles ${form.info.version}` : ''}{form.info.os ? ` · macOS ${form.info.os}` : ''}{form.info.privateApi ? ' · Private API on' : ' · Private API off (SMS may go as iMessage)'}{'hook' in form ? (form.hook ? ' · live updates on' : ` · live updates not set up (${form.hookError})`) : ''}.</p>{/if}
   {#if form && 'disconnected' in form}<p class="ok">Disconnected.</p>{/if}
   <form class="card" method="POST" action="?/save" use:enhance={() => async ({ update }) => update({ reset: false })}>
     <label>Server URL<input name="url" value={data.url} placeholder="http://192.168.1.20:1234 or https://….trycloudflare.com" required></label>

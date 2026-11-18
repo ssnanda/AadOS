@@ -57,22 +57,41 @@ export async function thread(c: BBConn, chatGuid: string, limit = 60, before = 0
   return (Array.isArray(raw) ? raw : []).map((m) => toMessage(m, chatGuid)).filter((m) => m.guid).reverse();
 }
 
-export async function sendText(c: BBConn, chatGuid: string, text: string): Promise<Message | null> {
-  // "apple-script" works on every server; "private-api" adds reactions/typing when the owner enabled it on the Mac.
-  const data = await call(c, 'POST', '/message/text', { body: { chatGuid, tempGuid: `aados-${randomBytes(8).toString('hex')}`, message: text, method: 'apple-script' }, timeoutMs: 30_000 });
+export async function sendText(c: BBConn, chatGuid: string, text: string, method: 'apple-script' | 'private-api' = 'apple-script'): Promise<Message | null> {
+  // "apple-script" works on every server; "private-api" needs the BlueBubbles Private API (helper) on the Mac.
+  const data = await call(c, 'POST', '/message/text', { body: { chatGuid, tempGuid: `aados-${randomBytes(8).toString('hex')}`, message: text, method }, timeoutMs: 30_000 });
   return data?.guid ? toMessage(data, chatGuid) : null;
 }
 
-/** Send as SMS to one person. The "SMS;-;<number>" chat may not exist (newer macOS files 1:1 chats as "any;-;…"), so
- *  fall back to starting the chat with service SMS. */
-export async function sendSms(c: BBConn, address: string, text: string): Promise<Message | null> {
-  try { return await sendText(c, smsGuid(address), text); }
-  catch (first) {
-    try {
-      const data = await call(c, 'POST', '/chat/new', { body: { addresses: [address.trim()], message: text, service: 'SMS', method: 'apple-script' }, timeoutMs: 30_000 });
-      return data?.lastMessage ? toMessage(data.lastMessage, String(data.guid || smsGuid(address))) : null;
-    } catch { throw first; }
+/** Server capabilities (cached 10 min): the Private API is what can force SMS on macOS 26. */
+declare global { var __aadosBBInfo: { at: number; url: string; info: BBInfo } | undefined; }
+export type BBInfo = { privateApi: boolean; helper: boolean; os: string; version: string };
+export async function serverInfo(c: BBConn): Promise<BBInfo> {
+  const hit = globalThis.__aadosBBInfo;
+  if (hit && hit.url === c.url && Date.now() - hit.at < 600_000) return hit.info;
+  const i = await call(c, 'GET', '/server/info', { timeoutMs: 8000 });
+  const info = { privateApi: Boolean(i?.private_api), helper: Boolean(i?.helper_connected), os: String(i?.os_version || i?.macos_version || ''), version: String(i?.server_version || '') };
+  globalThis.__aadosBBInfo = { at: Date.now(), url: c.url, info };
+  return info;
+}
+
+/** Send as SMS to one person. On macOS 26 a person's SMS and iMessage chats are one conversation, and an AppleScript send
+ *  into it goes as iMessage whenever the number is registered with iMessage. So: with the Private API, send into the
+ *  "SMS;-;<number>" chat through it; without it, start the chat on the SMS account (/chat/new service SMS), then the
+ *  SMS chat id. `forced` is false when the Mac may still have picked iMessage. */
+export async function sendSms(c: BBConn, address: string, text: string): Promise<{ message: Message | null; forced: boolean }> {
+  const to = address.trim(), guid = smsGuid(to);
+  const info = await serverInfo(c).catch(() => null);
+  const viaNew = async (method: 'apple-script' | 'private-api') => {
+    const data = await call(c, 'POST', '/chat/new', { body: { addresses: [to], message: text, service: 'SMS', method }, timeoutMs: 30_000 });
+    return data?.lastMessage ? toMessage(data.lastMessage, String(data.guid || guid)) : null;
+  };
+  if (info?.privateApi && info.helper) {
+    try { return { message: await sendText(c, guid, text, 'private-api'), forced: true }; }
+    catch { try { return { message: await viaNew('private-api'), forced: true }; } catch { /* fall through to AppleScript */ } }
   }
+  try { return { message: await viaNew('apple-script'), forced: false }; }
+  catch { return { message: await sendText(c, guid, text), forced: false }; }
 }
 
 /** Start a conversation with one address (phone/email). Needs the Private API on most servers. */
