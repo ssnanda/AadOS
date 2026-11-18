@@ -1,6 +1,6 @@
 // Mail syncs automatically, the way a mail client refreshes the folder on screen: when it is opened,
 // when the tab becomes visible again, and every AUTO_SYNC_MS while it stays visible. No sync buttons.
-export type LiveScope = { account?: string; folder?: string; pipeline?: string };
+export type LiveScope = { account?: string; folder?: string; pipeline?: string; q?: string; force?: boolean };
 const AUTO_SYNC_MS = 120_000;
 
 /** Sync what is on screen now. True when the stored mail changed (the page should reload its data). */
@@ -12,14 +12,14 @@ export async function liveSync(scope: LiveScope, endpoint = '/sync/live'): Promi
 }
 
 /** Browser only (call from onMount). `run()` syncs now (e.g. after switching folder); `stop()` on unmount. */
-export function startAutoSync(scope: () => LiveScope, onChange: () => unknown, endpoint = '/sync/live') {
+export function startAutoSync(scope: () => LiveScope, onChange: () => unknown, endpoint = '/sync/live', onBusy?: (busy: boolean) => void) {
   let busy = false, again = false;
   // A folder click while a sync is running is not dropped: it runs right after, for the folder now on screen.
   const run = async (): Promise<void> => {
     if (document.visibilityState !== 'visible') return;
     if (busy) { again = true; return; }
-    busy = true;
-    try { if (await liveSync(scope(), endpoint)) await onChange(); } finally { busy = false; }
+    busy = true; onBusy?.(true);
+    try { if (await liveSync(scope(), endpoint)) await onChange(); } finally { busy = false; onBusy?.(false); }
     if (again) { again = false; return run(); }
   };
   const timer = setInterval(run, AUTO_SYNC_MS);

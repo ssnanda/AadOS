@@ -1,6 +1,6 @@
 import { pipelineFolders, type AadOSState, type Pipeline } from './aados-store';
 import { liveZohoFolder, liveZohoUnread, searchZoho, syncPipeline } from './zoho';
-import { liveGmailLabel, searchGmail, syncGmailPipeline } from './gmail';
+import { liveGmailLabel, liveGmailUnread, searchGmail, syncGmailPipeline } from './gmail';
 
 /**
  * Sync the folders of a view across its accounts and providers; records per-account health.
@@ -21,7 +21,7 @@ export async function syncView(state: AadOSState, pipeline: Pipeline, options: {
   }
 }
 
-export type LiveScope = { account?: string; folder?: string; pipeline?: string; /** search text: also searched in the mailboxes themselves */ q?: string };
+export type LiveScope = { account?: string; folder?: string; pipeline?: string; /** search text: also searched in the mailboxes themselves */ q?: string; /** "Check now": skip the unread-scan throttle */ force?: boolean };
 type LiveTarget = { pipeline: Pipeline; accountId: string; folderId: string };
 
 /**
@@ -77,13 +77,15 @@ export async function syncLive(state: AadOSState, scope: LiveScope, allowed?: Se
       try { added += (account.provider === 'gmail' ? await searchGmail(state, account, inbox, q) : await searchZoho(state, account, inbox, q)).added; } catch { failed++; }
     }
   }
-  // Unread views (all inboxes, or one account) also pick up unread mail in every Zoho folder, not only Inbox.
+  // Unread views (all inboxes, or one account) also pick up unread mail in every folder/label, not only Inbox.
+  // Accounts run side by side so opening Emails checks everything quickly.
   if (!scope.folder && !scope.pipeline && !q) {
-    for (const account of state.accounts.filter((a) => a.provider === 'zoho' && !a.paused && (!allowed || allowed.has(a.id)) && (!scope.account || scope.account === a.id))) {
+    await Promise.all(state.accounts.filter((a) => !a.paused && (!allowed || allowed.has(a.id)) && (!scope.account || scope.account === a.id)).map(async (account) => {
       const inbox = state.pipelines.find((p) => p.system && p.accountId === account.id);
-      if (!inbox) continue;
-      try { added += (await liveZohoUnread(state, account, inbox)).added; } catch (cause) { failed++; account.lastError = cause instanceof Error ? cause.message : 'Unread sync failed'; }
-    }
+      if (!inbox) return;
+      try { added += (await (account.provider === 'gmail' ? liveGmailUnread : liveZohoUnread)(state, account, inbox, scope.force)).added; }
+      catch (cause) { failed++; account.lastError = cause instanceof Error ? cause.message : 'Unread sync failed'; }
+    }));
   }
   return { added, removed, failed };
 }

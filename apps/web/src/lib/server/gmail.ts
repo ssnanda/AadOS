@@ -158,7 +158,7 @@ const UNREAD_FETCH = 200;
  * Align stored read state with Gmail's UNREAD list for this label (all pages, or nothing is applied), store unread
  * mail AadOS never fetched (older than the newest page), and record the label's unread count for the sidebar.
  */
-export async function reconcileGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string) {
+export async function reconcileGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, maxFetch = UNREAD_FETCH) {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
   const unread = new Map<string, string>();
   let pageToken = '';
@@ -172,7 +172,7 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
     pageToken = String(list.nextPageToken || '');
     if (pageToken) continue;
     const known = knownMessageIds(state, pipeline.id);
-    const fresh = [...unread.keys()].filter((id) => !known.has(id)).slice(0, UNREAD_FETCH);
+    const fresh = [...unread.keys()].filter((id) => !known.has(id)).slice(0, maxFetch);
     for (let i = 0; i < fresh.length; i += CONCURRENCY) {
       const items = await Promise.all(fresh.slice(i, i + CONCURRENCY).map((id) => gmailItem(headers, pipeline, id)));
       for (const item of items) { item.accountId = account.id; item.folderId = folderId; item.threadId = unread.get(item.messageId) || undefined; }
@@ -183,6 +183,23 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
     return { added: fresh.length };
   }
   return { added: 0 };
+}
+
+/**
+ * Unread views (all inboxes, or one account): unread mail in the account's own labels too, not only Inbox
+ * (INBOX itself is refreshed by the live label sync). Same throttle as the Zoho folder scan.
+ */
+declare global { var __aadosGmailUnreadScan: Map<string, number> | undefined; }
+export async function liveGmailUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, force = false) {
+  const scans = (globalThis.__aadosGmailUnreadScan ??= new Map());
+  if (!force && Date.now() - (scans.get(account.id) || 0) < 60_000) return { added: 0 };
+  scans.set(account.id, Date.now());
+  let added = 0;
+  for (const label of (account.folders || []).filter((f) => f.type === 'label')) {
+    try { added += (await reconcileGmailUnread(state, account, pipeline, label.id, 50)).added; } catch { /* one label failing never stops the others */ }
+  }
+  account.unreadCheckedAt = new Date().toISOString();
+  return { added };
 }
 
 /** Mailbox-wide history cursor (users.getProfile.historyId). */

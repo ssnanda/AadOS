@@ -78,6 +78,8 @@ export type MailAccount = {
   /** Connection health, updated by syncs. */
   lastSync?: string;
   lastError?: string;
+  /** Last unread check across every folder/label of the account (Emails page header). */
+  unreadCheckedAt?: string;
   /** Gmail incremental-sync checkpoints (history cursor per label). */
   historyIds?: Record<string, string>;
   /** The account granted change access (Gmail gmail.modify / Zoho messages UPDATE+DELETE): delete to Trash, mark read/unread. */

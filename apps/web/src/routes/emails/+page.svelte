@@ -20,7 +20,7 @@
   // Auto sync of the open folder/inbox: on open, on folder change, every 2 minutes while visible.
   let auto: ReturnType<typeof startAutoSync> | undefined;
   onMount(() => {
-    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, q: data.query.q }), () => (acting ? undefined : invalidateAll()));
+    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, q: data.query.q }), () => (acting ? undefined : invalidateAll()), '/sync/live', (b) => (syncing = b));
     void auto.run();
     return () => auto?.stop();
   });
@@ -46,6 +46,19 @@
   const ago = (iso: string) => { const d = new Date(iso); return Date.now() - d.getTime() < 86_400_000 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };
   const name = (s: string) => s.replace(/<[^>]*>/g, '').replace(/["']/g, '').trim() || s;
   const bad = $derived(data.accounts.filter((a) => a.lastError));
+  // Header: when each account was last checked, and a button per folder with unread mail (all accounts).
+  let syncing = $state(false);
+  const clock = (iso: string) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'never');
+  const checkedOf = (a: (typeof data.accounts)[number]) => [a.lastSync, a.unreadCheckedAt].filter(Boolean).sort().pop() || '';
+  const lastChecked = $derived(data.accounts.map(checkedOf).filter(Boolean).sort().pop() || '');
+  const shellAccounts = $derived((data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number; folders: { id: string; name: string; unread: number }[] }[]);
+  const unreadFolders = $derived(shellAccounts.flatMap((a) => a.folders.filter((f) => f.unread > 0).map((f) => ({ account: a, folder: f }))));
+  async function checkNow() {
+    if (syncing) return;
+    syncing = true;
+    try { await fetch('/sync/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, force: true }) }); await invalidateAll(); }
+    finally { syncing = false; }
+  }
   const allShown = $derived(rows.length > 0 && selected.length === rows.length);
   const viewingIndex = $derived(viewing ? rows.findIndex((r) => r.key === viewing?.key) : -1);
   const toggle = (key: string, checked: boolean) => selected = checked ? [...new Set([...selected, key])] : selected.filter((x) => x !== key);
@@ -87,7 +100,10 @@
 <AppShell title="Emails">
 <main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
   <header>
-    <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply</p></div>
+    <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
+      {#if data.accounts.length}<div class="checked">{#each data.accounts as a (a.id)}{@const sh = shellAccounts.find((x) => x.id === a.id)}<a class="acct" class:err={Boolean(a.lastError)} class:zero={!sh?.unread} href={unreadHref({ account: a.id, folder: '' })} title={a.lastError || `${a.email} · last check ${clock(checkedOf(a))}`}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i>{a.email.split('@')[0]}{#if sh?.unread}<b>{sh.unread}</b>{/if}<small>{a.paused ? 'paused' : a.lastError ? 'error' : clock(checkedOf(a))}</small></a>{/each}</div>{/if}
+      {#if unreadFolders.length}<div class="ufolders"><small>Unread</small>{#each unreadFolders as u (`${u.account.id}:${u.folder.id}`)}<a class:on={data.query.account === u.account.id && data.query.folder === u.folder.id} href={unreadHref({ account: u.account.id, folder: u.folder.id })} title={u.account.email}><i class={u.account.provider}>{u.account.provider === 'gmail' ? 'G' : 'Z'}</i>{u.folder.name.replace(/^inbox\//i, '')}<b>{u.folder.unread}</b></a>{/each}</div>{/if}
+    </div>
   </header>
   {#if data.accounts.length === 0}<div class="empty">No accounts connected. <a href="/settings/emails">Connect Gmail or Zoho in Settings → Emails</a>.</div>{:else}
   {#each bad as a (a.id)}<div class="alert">{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}: {a.lastError} · <a href={`/settings/emails#acct-${a.id}`}>Fix in Settings</a></div>{/each}
@@ -154,6 +170,12 @@
   main.previewing .row{grid-template-columns:minmax(0,1fr) 60px;gap:2px 10px}main.previewing .subj{grid-column:1/-1;grid-row:2}main.previewing .meta .ops,main.previewing .meta .tag:not(.act),main.previewing .aitag{display:none}
   li{cursor:pointer}li.active{background:#eef3ff;box-shadow:inset 3px 0 0 #3157de}
   @media(max-width:900px){main.previewing .split{display:block}}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
+  header p .link{border:0;background:none;color:#3157de;font-weight:700;font-size:12px;padding:0 0 0 4px;cursor:pointer}header p .link:disabled{color:#a5b0c2;cursor:default}
+  .checked,.ufolders{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;align-items:center}.ufolders>small{color:#8a95a8;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
+  .checked a,.ufolders a{display:inline-flex;gap:5px;align-items:center;border:1px solid #e1e6f0;background:#fff;border-radius:999px;padding:2px 9px 2px 3px;font-size:11px;font-weight:600;color:#43516c;text-decoration:none}
+  .checked a b,.ufolders a b{background:#e8eefe;color:#3157de;border-radius:999px;padding:0 6px;font-size:10px}.checked a small{color:#9aa4b6;font-weight:500}
+  .checked a.zero{opacity:.65}.checked a.err{border-color:#f0c4c4;background:#fdf3f3}.checked a.err small{color:#b03a3a;font-weight:700}.ufolders a.on{border-color:#3157de;background:#eef3ff}
+  .checked i,.ufolders i{font-style:normal;font-weight:800;font-size:9px;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:#eef1fb;color:#3157de}.checked i.gmail,.ufolders i.gmail{background:#fdecea;color:#c5392f}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px}.btn:hover{border-color:#8da2f0}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
   .find{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:0 12px;margin-bottom:10px}.find:focus-within{border-color:#8da2f0}.find span{color:#8a95a8;font-size:18px}.find input[type=search]{border:0;outline:0;flex:1;padding:10px 0;font-size:14px;background:transparent}

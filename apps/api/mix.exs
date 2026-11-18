@@ -4,7 +4,7 @@ defmodule AadOS.Api.MixProject do
   def project do
     [
       app: :aados_api,
-      version: "0.1.59",
+      version: "0.1.60",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps()

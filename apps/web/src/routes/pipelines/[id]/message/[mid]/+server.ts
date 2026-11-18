@@ -1,8 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { readState, updateState, type MailAccount } from '$lib/server/aados-store';
-import { fetchZohoBody } from '$lib/server/zoho';
-import { fetchGmailBody } from '$lib/server/gmail';
+import { fetchZohoBody, setZohoUnread } from '$lib/server/zoho';
+import { fetchGmailBody, setGmailUnread } from '$lib/server/gmail';
 import { canSeeAccount } from '$lib/server/auth';
 
 // Fetches one email body from the mailbox on demand (read-only) and marks it seen in AadOS.
@@ -33,6 +33,31 @@ function persist(pipelineId: string, messageId: string, change: { seen: boolean;
   }).catch((cause) => console.warn('[aados] saving preview state failed:', cause instanceof Error ? cause.message : cause));
 }
 
+/**
+ * Opening an email reads it in the mailbox too (like any mail client), so Gmail/Zoho and other apps stop counting it
+ * unread. Background, best effort; only accounts that granted change access. All stored copies follow.
+ */
+async function markReadInMailbox(pipelineId: string, messageId: string) {
+  const state = await readState();
+  const pipeline = state.pipelines.find((p) => p.id === pipelineId);
+  const item = state.items.find((i) => i.pipelineId === pipelineId && i.messageId === messageId);
+  const account = item && state.accounts.find((a) => a.id === (item.accountId || pipeline?.accountId));
+  if (!item || !account?.canModify || item.unread === false) return;
+  const token = account.accessToken;
+  await (account.provider === 'gmail' ? setGmailUnread : setZohoUnread)(state, account, [messageId], false);
+  await updateState((s) => {
+    const a = s.accounts.find((x) => x.id === account.id);
+    if (!a) return;
+    if (account.accessToken !== token) { a.accessToken = account.accessToken; a.expiresAt = account.expiresAt; }
+    const owner = new Map(s.pipelines.map((p) => [p.id, p.accountId]));
+    const folders = new Set<string>();
+    for (const i of s.items) if (i.messageId === messageId && (i.accountId || owner.get(i.pipelineId)) === a.id && i.unread !== false) { i.unread = false; if (i.folderId) folders.add(i.folderId); }
+    a.folders = (a.folders || []).map((f) => (folders.has(f.id) && f.unread ? { ...f, unread: f.unread - 1 } : f));
+  });
+}
+const readInMailbox = (pipelineId: string, messageId: string) =>
+  void markReadInMailbox(pipelineId, messageId).catch((cause) => console.warn('[aados] mark read in mailbox failed:', cause instanceof Error ? cause.message : cause));
+
 export const GET: RequestHandler = async ({ params, url, locals }) => {
   // Family members: only mail from mailboxes they were given.
   if (!locals.user?.owner) {
@@ -44,7 +69,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
   const seen = (globalThis.__aadosSeen ??= new Set());
   const cached = globalThis.__aadosBodies?.get(key);
   if (cached) {
-    if (!prefetch && !seen.has(key)) { seen.add(key); persist(params.id, params.mid, { seen: true }); }
+    if (!prefetch && !seen.has(key)) { seen.add(key); persist(params.id, params.mid, { seen: true }); readInMailbox(params.id, params.mid); }
     return json(cached, { headers });
   }
   let body: Body;
@@ -60,6 +85,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
     const markSeen = !prefetch && !item.seen;
     const tokenChanged = account.accessToken !== token, folderFound = item.folderId !== folderId ? item.folderId : undefined;
     if (markSeen || tokenChanged || folderFound) persist(params.id, params.mid, { seen: markSeen, folderId: folderFound, account: tokenChanged ? account : undefined });
+    if (markSeen) readInMailbox(params.id, params.mid);
     if (!prefetch) seen.add(key);
   } catch (cause) {
     throw error(502, cause instanceof Error ? cause.message : 'Could not load this email.');

@@ -182,7 +182,8 @@ const SKIP_UNREAD = /^(trash|spam|sent|drafts|outbox|templates|snoozed)$/i;
  * state aligned (read elsewhere → read here). Full scans run at most every 10 minutes per account.
  */
 declare global { var __aadosZohoUnreadScan: Map<string, number> | undefined; }
-const UNREAD_SCAN_MS = 10 * 60_000, UNREAD_PAGES = 4;
+// Opening Emails checks every folder; this only absorbs repeat calls (auto sync, quick re-clicks).
+const UNREAD_SCAN_MS = 60_000, UNREAD_PAGES = 4;
 export async function liveZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline, force = false) {
   const scans = (globalThis.__aadosZohoUnreadScan ??= new Map());
   if (!force && Date.now() - (scans.get(account.id) || 0) < UNREAD_SCAN_MS) return { added: 0 };
@@ -208,6 +209,7 @@ export async function liveZohoUnread(state: AadOSState, account: MailAccount, pi
     }
   }));
   account.folders = account.folders.map((f) => (counts.has(f.id) ? { ...f, unread: counts.get(f.id) } : f));
+  account.unreadCheckedAt = new Date().toISOString();
   return { added };
 }
 
