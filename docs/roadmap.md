@@ -135,3 +135,5 @@ Keep scope small: deliver useful inbox access before extending to household task
 66. [ ] Messages: spam senders whose stop reply was delivered move from Spam to Spam reports (state.messageSpamDone); Spam keeps only unhandled senders (may hold genuine messages); Not spam works from both. Untested.
 67. [ ] Messages: right-click a conversation → Move to Spam reports / back to Spam / Not spam / Move to Spam (op spam.done). Untested.
 68. [ ] Messages SMS on macOS 26: AppleScript into the merged chat sends iMessage. sendSms now uses the BlueBubbles Private API when on, else /chat/new service SMS, then SMS;-; id; warns when SMS was not forced; Settings → Messages → Test shows Private API status. Untested.
+69. [ ] Messages: senders reported to 7726 go to Spam reports at send time; existing reports backfilled from the numbers you texted 7726. Untested.
+70. [ ] Messages folders match the Mac: Messages · Unknown Senders (BlueBubbles isFiltered) · Spam · Spam reports, + Unread only. Loads 1000 chats (BB lastmessage sort is not newest-first; 150 dropped known senders → "Needs you 0"). Badge = known-sender unread. Untested.

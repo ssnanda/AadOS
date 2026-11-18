@@ -42,7 +42,19 @@ declare global { var __aadosBBContacts: { at: number; names: Map<string, string>
 export async function contactNames(_c?: BBConn): Promise<Map<string, string>> { return googleContactNames().catch(() => new Map<string, string>()); }
 
 /** Conversations plus the names used for them (Google Contacts) and how many names were available. */
-export async function chatsWithNames(c: BBConn, limit = 150): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number } }> {
+// BlueBubbles' "lastmessage" sort is not newest-first across the whole list, so a small limit drops recent known senders
+// (spam and unknown senders fill it). Load enough conversations to sort locally; cached briefly so the dashboard and the
+// Messages page share one fetch.
+declare global { var __aadosBBChats: { at: number; key: string; value: { chats: Chat[]; names: Map<string, string>; sources: { google: number } } } | undefined; }
+export async function chatsWithNames(c: BBConn, limit = 1000): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number } }> {
+  const key = `${c.url}:${limit}`, hit = globalThis.__aadosBBChats;
+  if (hit && hit.key === key && Date.now() - hit.at < 15_000) return hit.value;
+  const value = await loadChats(c, limit);
+  globalThis.__aadosBBChats = { at: Date.now(), key, value };
+  return value;
+}
+export const forgetChats = () => { globalThis.__aadosBBChats = undefined; };
+async function loadChats(c: BBConn, limit: number): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number } }> {
   const [raw, names] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames()]);
   const list = (Array.isArray(raw) ? raw : []).map((x) => toChat(x, names)).filter((x) => x.guid).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
   return { chats: list, names, sources: { google: names.size } };

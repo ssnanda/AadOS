@@ -21,7 +21,7 @@ test('chats take the group name, else contact names, else pretty numbers', () =>
 test('messages, unread and previews', () => {
   const m = toMessage({ guid: 'm1', text: 'Hi', isFromMe: false, dateCreated: 2000, handle: { address: '+19803068308' }, attachments: [{ guid: 'a1', transferName: 'IMG.jpg', mimeType: 'image/jpeg', totalBytes: 10 }] }, 'g2');
   assert.equal(m.sender, '+19803068308'); assert.equal(m.attachments[0].name, 'IMG.jpg');
-  const chat = { guid: 'g2', title: 't', participants: [], group: false, last: m, sms: false };
+  const chat = { guid: 'g2', title: 't', participants: [], group: false, last: m, sms: false, filtered: false };
   assert.equal(isUnread(chat, {}), true); assert.equal(isUnread(chat, { g2: 3000 }), false);
   // Already read on the phone/Mac (dateRead) → not unread here either.
   assert.equal(isUnread({ ...chat, last: toMessage({ guid: 'm2', text: 'x', dateCreated: 2000, dateRead: 2500, handle: { address: 'a' } }, 'g2') }, {}), false);
@@ -36,7 +36,7 @@ test('brands from notification texts, and grouping suggestions', async () => {
   assert.equal(brandOf("Hi, it's AT&T. As a reminder, network…"), 'AT&T');
   assert.equal(brandOf('Hello. We are attempting to get a vacant lot'), null);
   assert.equal(brandKey('Atrium notifications'), brandKey('Atrium Health'));
-  const chat = (guid: string, addr: string, text: string) => ({ guid, title: addr, participants: [addr], group: false, sms: true, last: { guid: `${guid}m`, chatGuid: guid, text, fromMe: false, sender: addr, at: 1, attachments: [], error: false, read: false } });
+  const chat = (guid: string, addr: string, text: string) => ({ guid, title: addr, participants: [addr], group: false, sms: true, filtered: false, last: { guid: `${guid}m`, chatGuid: guid, text, fromMe: false, sender: addr, at: 1, attachments: [], error: false, read: false } });
   const chats = [chat('a', '604931(smsft)', 'Atrium Health: statement'), chat('b', '69871(smsft)', 'Atrium Health: flu shot'), chat('c', '+19803726532', 'Hi Anad, this is Atrium Health reaching out'), chat('d', '+12312016624', 'Is your lot available?')];
   const s = suggestGroups(chats, [], {});
   assert.equal(s.length, 1); assert.equal(s[0].name, 'Atrium Health notifications'); assert.equal(s[0].guids.length, 3);

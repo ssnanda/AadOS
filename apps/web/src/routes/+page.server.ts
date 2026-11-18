@@ -86,11 +86,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Messages (BlueBubbles): unread texts from real people first, then threads you read but never answered (3 days).
   // Spam, the 7726 report thread, codes and marketing never show here.
   const messages = can(user, 'messages') && bb.bbConfigured(full) ? withTimeout((async () => {
-    const { chats, names } = await bb.chatsWithNames(await bb.bbConnection(), 80);
+    const { chats, names } = await bb.chatsWithNames(await bb.bbConnection());
     const spam = new Set(full.messageSpam ?? []), readAt = full.messagesRead || {};
     const out: Attention[] = [];
     for (const c of chats) {
-      if (!c.last || c.last.fromMe || c.participants.some((p) => spam.has(addressKey(p)) || addressKey(p) === SPAM_REPORT_NUMBER)) continue;
+      if (!c.last || c.last.fromMe || c.filtered || c.participants.some((p) => spam.has(addressKey(p)) || addressKey(p) === SPAM_REPORT_NUMBER)) continue;
       const cat = categorize(c, names), unread = isUnreadChat(c, readAt), age = Date.now() - c.last.at;
       if (cat === 'marketing' || cat === 'codes' || cat === 'unknown' && !unread) continue;
       const text = preview(c.last).slice(0, 120);

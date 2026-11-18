@@ -5,7 +5,7 @@ export type Attachment = { guid: string; name: string; mime: string; size: numbe
 /** `read`: the Mac/phone already read it (BlueBubbles' dateRead), so it is not unread in AadOS either. */
 export type Message = { guid: string; chatGuid: string; text: string; fromMe: boolean; sender: string; at: number; attachments: Attachment[]; error: boolean; read: boolean; /** 'iMessage' | 'SMS' | 'RCS' when BlueBubbles reports it */ service?: string };
 /** `sms`: a text-message (green bubble) thread; Messages keeps it separate from the iMessage thread with the same person. */
-export type Chat = { guid: string; title: string; participants: string[]; group: boolean; last: Message | null; sms: boolean };
+export type Chat = { guid: string; title: string; participants: string[]; group: boolean; last: Message | null; sms: boolean; /** Messages filed it under Unknown Senders */ filtered: boolean };
 
 type Raw = Record<string, any>;
 
@@ -60,7 +60,7 @@ export function toChat(c: Raw, names: Map<string, string>): Chat {
   const label = (a: string) => names.get(addressKey(a)) || prettyAddress(a);
   const group = participants.length > 1 || String(c.style) === '43';
   const title = String(c.displayName || '').trim() || participants.map(label).join(', ') || String(c.chatIdentifier || 'Conversation');
-  return { guid: String(c.guid || ''), title, participants, group, last: c.lastMessage ? toMessage(c.lastMessage, String(c.guid || '')) : null, sms: isSmsChat(c) };
+  return { guid: String(c.guid || ''), title, participants, group, last: c.lastMessage ? toMessage(c.lastMessage, String(c.guid || '')) : null, sms: isSmsChat(c), filtered: Boolean(c.isFiltered) };
 }
 
 /** Unread = the last message is from someone else and arrived after the chat was last opened in AadOS. */

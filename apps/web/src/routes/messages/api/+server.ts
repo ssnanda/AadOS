@@ -118,6 +118,8 @@ export const POST = async ({ request }) => {
           if (addrs.length) { await updateState((st) => { st.messageSpam = [...new Set([...(st.messageSpam ?? []), ...addrs])]; }); spammed = true; }
           if (report) {
             reported = true;
+            // Reported to 7726 → the conversation belongs under Spam reports.
+            await updateState((st) => { st.messageSpamDone = [...new Set([...(st.messageSpamDone ?? []), addrs[0]])]; });
             const spamText = s(b.reportText, 1500).trim() || 'Unsolicited text message';
             void bb.sendSms(c, SPAM_REPORT_NUMBER, spamText)
               .then(() => new Promise((r) => setTimeout(r, 20_000)))

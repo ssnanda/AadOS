@@ -3,7 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import { asanaApi } from '$lib/asana-client';
-  import { addressKey, brandKey, brandOf, isShortCode, preview, prettyAddress, suggestGroups, CATEGORIES, type Chat, type Message, type MsgGroup, type Template } from '$lib/messages-model';
+  import { addressKey, brandKey, brandOf, isShortCode, preview, prettyAddress, suggestGroups, type Chat, type Message, type MsgGroup, type Template } from '$lib/messages-model';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -64,14 +64,21 @@
   async function ungroup(id: string) { if (!confirm('Split this group back into separate conversations?')) return; try { groups = (await api('groups.delete', { id })).groups; openGuid = ''; } catch (e) { notice = (e as Error).message; } }
   /** A participant's name from Google Contacts, else the formatted number. */
   const nameOf = (a: string) => (data.connected ? data.people[addressKey(a)] : '') || prettyAddress(a);
-  const catOf = (guid: string) => (data.connected ? (data.categories as Record<string, string>)[guid] : '') || 'unknown';
   // "Needs you": unread, or the last message is theirs and you haven't replied (last 30 days). Tiles count only these.
   const REPLY_WINDOW = 30 * 86_400_000;
   /** Waiting on you to answer: a person wrote last (automated short codes and grouped notification senders never count). */
   const awaiting = (r: Row) => Boolean(r.last && !r.last.fromMe && !r.groupId && !isShortCode(r.participants[0] || '') && Date.now() - r.last.at < REPLY_WINDOW);
-  const needsYou = (r: Row) => !isSpamRow(r) && !isReportRow(r) && (data.showAll || rowUnread(r) || awaiting(r));
-  const rowCat = (r: Row) => catOf(r.members[0]);
-  const tile = (id: string) => { const list = rows.filter((r) => (!id || rowCat(r) === id) && needsYou(r)); return { total: list.length, unread: list.filter(rowUnread).length }; };
+  // Folders match Messages on the Mac/iPhone (Messages · Unknown Senders · Spam); AadOS splits Spam into Spam and Spam reports.
+  type Folder = 'messages' | 'unknown' | 'spam' | 'reports';
+  const FOLDERS: { id: Folder; icon: string; label: string; title: string }[] = [
+    { id: 'messages', icon: '💬', label: 'Messages', title: 'Known senders (Messages on the Mac)' },
+    { id: 'unknown', icon: '❔', label: 'Unknown Senders', title: 'Filed under Unknown Senders by Messages' },
+    { id: 'spam', icon: '🚫', label: 'Spam', title: 'Spam not yet handled — check for genuine messages caught by mistake' },
+    { id: 'reports', icon: '📨', label: 'Spam reports', title: 'Senders told to stop or reported to 7726, plus the 7726 thread' }
+  ];
+  const rowFolder = (r: Row): Folder => (isReportRow(r) ? 'reports' : isSpamRow(r) ? 'spam' : r.filtered ? 'unknown' : 'messages');
+  let unreadOnly = $state(false);
+  const folderStats = $derived(Object.fromEntries(FOLDERS.map((f) => { const list = rows.filter((r) => rowFolder(r) === f.id); return [f.id, { total: list.length, unread: list.filter(rowUnread).length }]; })) as Record<Folder, { total: number; unread: number }>);
   async function refreshNow() { refreshing = true; await invalidateAll(); refreshing = false; }
   async function suggest() {
     suggesting = true; suggestion = null;
@@ -89,10 +96,7 @@
   const asSms = $derived(oneToOne && open ? (smsPick[open.guid] ?? (open.sms || Boolean(lastMine?.error) || /^(SMS|RCS)$/i.test(lastMine?.service || ''))) : false);
   /** For an ungrouped open conversation: the group it probably belongs to (same brand), or a new one to create. */
   const openHint = $derived.by(() => { if (!open || open.groupId || open.group) return null; const b = brandOf(open.last?.text || ''); if (!b) return null; const g = groups.find((x) => brandKey(x.name) === brandKey(b)); return { name: g?.name || `${b} notifications`, id: g?.id || '' }; });
-  const needsAll = $derived(tile(''));
-  const spamRows = $derived(rows.filter(isSpamRow));
-  const reportRows = $derived(rows.filter(isReportRow));
-  const shown = $derived(rows.filter((c) => (cat === 'spam' ? isSpamRow(c) : cat === 'reports' ? isReportRow(c) : (!cat || rowCat(c) === cat) && needsYou(c)) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
+  const shown = $derived(rows.filter((c) => rowFolder(c) === (cat || 'messages') && (!unreadOnly || rowUnread(c)) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
   const today = new Date().toISOString().slice(0, 10);
   const when = (ms: number) => { if (!ms) return ''; const d = new Date(ms); return Date.now() - ms < 86_400_000 && d.getDate() === new Date().getDate() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
   const stamp = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -121,7 +125,7 @@
     // For a spam reply that reports to 7726, the server forwards their latest text there too.
     const reportText = [...messages].reverse().find((m) => !m.fromMe && m.text.trim())?.text || '';
     try { const r = await api('send', { chatGuid: target, text, sms: Boolean(smsTo), address: smsTo, addresses: open?.group ? [] : open?.participants || [], reportText });
-      if (r.spammed && open) { for (const p of open.participants) spamSet.add(addressKey(p)); spamSet = new Set(spamSet); notice = r.reported ? 'Sent — moved to Spam and reported to 7726 (their text now, their number in ~20 s).' : 'Sent — conversation moved to Spam.'; } if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); if (r.smsNote) notice = r.smsNote; }
+      if (r.spammed && open) { for (const p of open.participants) { spamSet.add(addressKey(p)); if (r.reported) doneSet.add(addressKey(p)); } spamSet = new Set(spamSet); doneSet = new Set(doneSet); notice = r.reported ? 'Sent — reported to 7726 and moved to Spam reports (their text now, their number in ~20 s).' : 'Sent — conversation moved to Spam.'; } if (r.message) messages = messages.map((m) => (m.guid === temp.guid ? r.message : m)); bump(target, r.message || temp); if (r.smsNote) notice = r.smsNote; }
     catch (e) { notice = (e as Error).message; messages = messages.map((m) => (m.guid === temp.guid ? { ...m, error: true } : m)); draft = text; }
     finally { sending = false; }
   }
@@ -194,13 +198,10 @@
   {#if data.error}<div class="alert">{data.error}{#if data.owner} · <a href="/settings/messages">Settings</a>{/if}</div>{/if}
   {#if notice}<div class="alert soft">{notice} <button class="link" onclick={() => (notice = '')}>✕</button></div>{/if}
   <div class="tiles">
-    <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')} title="Unread, or waiting for your reply (last 30 days)"><span>💬</span><b>{needsAll.total}</b><small>Needs you{needsAll.unread ? ` · ${needsAll.unread} unread` : ''}</small></button>
-    {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} class:zero={!n.total} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
-    <button class="tilebtn spam" class:on={cat === 'spam'} class:zero={!spamRows.length} onclick={() => (cat = cat === 'spam' ? '' : 'spam')} title="Senders you told to stop (never shown in the main view)"><span>🚫</span><b>{spamRows.length}</b><small>Spam</small></button>
-    <button class="tilebtn spam" class:on={cat === 'reports'} class:zero={!reportRows.length} onclick={() => (cat = cat === 'reports' ? '' : 'reports')} title="Senders whose stop reply was delivered, plus your 7726 reports and AT&amp;T's replies"><span>📨</span><b>{reportRows.length}</b><small>Spam reports</small></button>
+    {#each FOLDERS as f (f.id)}{@const n = folderStats[f.id]}<button class="tilebtn" class:spam={f.id === 'spam' || f.id === 'reports'} class:on={(cat || 'messages') === f.id} class:zero={!n.total} onclick={() => { cat = f.id; openGuid = ''; }} title={f.title}><span>{f.icon}</span><b>{f.id === 'messages' || f.id === 'unknown' ? n.unread : n.total}</b><small>{f.label}{f.id === 'messages' || f.id === 'unknown' ? ` · unread of ${n.total}` : n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
 
   </div>
-  <div class="showall"><label><input type="checkbox" checked={data.showAll} onchange={(e) => goto(e.currentTarget.checked ? '?all=1' : '?', { keepFocus: true, noScroll: true })}> Show all conversations <small>(not only unread / awaiting reply · searches older history)</small></label>
+  <div class="showall"><label><input type="checkbox" bind:checked={unreadOnly}> Unread only</label><label><input type="checkbox" checked={data.showAll} onchange={(e) => goto(e.currentTarget.checked ? '?all=1' : '?', { keepFocus: true, noScroll: true })}> Older history <small>(loads up to 2000 conversations)</small></label>
     <button class="link" onclick={() => (similarOpen = !similarOpen)}>🔎 Find similar senders{similar.length ? ` (${similar.length})` : ''}</button></div>
   {#if similarOpen}<div class="similar">{#each similar as sg (sg.name)}<div class="srow"><b>{sg.name}</b><small>{sg.guids.length} conversation{sg.guids.length === 1 ? '' : 's'}: {sg.guids.map((g) => chats.find((c) => c.guid === g)?.title).join(', ')}</small><span class="sp"></span><button class="primary small" onclick={() => addToGroup(sg.name, sg.addresses, sg.groupId || '')}>{sg.groupId ? `Add to ${sg.name}` : 'Create contact'}</button></div>{:else}<p class="muted">No similar senders found{data.showAll ? '' : ' — tick Show all to search older conversations'}.</p>{/each}</div>{/if}
   <div class="statusbar"><span class:on={live}>{live ? '● Live' : '○ Reconnecting…'}</span><span>Updated {new Date(data.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><button class="link" onclick={refreshNow} disabled={refreshing}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
@@ -273,7 +274,7 @@
   .ctxmenu{position:fixed;z-index:50;display:grid;min-width:190px;background:#fff;border:1px solid #dfe4ee;border-radius:10px;box-shadow:0 8px 24px rgba(20,30,60,.16);padding:4px}.ctxmenu button{border:0;background:none;text-align:left;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:600;color:#29344c;cursor:pointer}.ctxmenu button:hover{background:#f1f4fa}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:22px;max-width:560px;display:grid;gap:8px}.empty h1{margin:0}
   .alert{background:#fff3f3;border:1px solid #f3c9cf;color:#a5414d;border-radius:10px;padding:8px 12px;margin-bottom:8px}.alert.soft{background:#eef1ff;border-color:#cfd8ff;color:#3157de}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.spam b{color:#8a95a8}.chkl{display:flex;gap:6px;align-items:center;font-size:12px;color:#53607a}.spamtag{font-style:normal;font-size:10px;font-weight:800;color:#b53c50;background:#fdeceb;border-radius:5px;padding:1px 6px}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.spam b{color:#8a95a8}.chkl{display:flex;gap:6px;align-items:center;font-size:12px;color:#53607a}.spamtag{font-style:normal;font-size:10px;font-weight:800;color:#b53c50;background:#fdeceb;border-radius:5px;padding:1px 6px}
   .statusbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8a95a8;margin-bottom:8px}.statusbar .on{color:#2a9d5c}.statusbar a{color:#3157de;font-weight:600}.sp{flex:1}.err{color:#a5414d}
   .replybar{display:flex;gap:8px;align-items:center;padding:6px 10px 0;flex-wrap:wrap}.replybar select{border:1px solid #d9dfeb;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px}
   .suggest{margin:0 10px;padding:6px 10px;background:#faf7ff;border:1px solid #ece3ff;border-radius:8px;font-size:12px;color:#6a3fd6}
