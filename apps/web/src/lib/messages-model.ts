@@ -59,3 +59,38 @@ export function preview(m: Message | null): string {
   const t = m.text.replace(/\s+/g, ' ').replace(/￼/g, '').trim();
   return t || (m.attachments.length ? `📎 ${m.attachments.length === 1 ? m.attachments[0].name : `${m.attachments.length} attachments`}` : '');
 }
+
+// ---------- review categories (dashboard tiles) ----------
+export const CATEGORIES = [
+  { id: 'personal', label: 'Family & personal', icon: '👪' },
+  { id: 'unknown', label: 'Unknown / possible spam', icon: '⚠' },
+  { id: 'marketing', label: 'Marketing', icon: '📣' },
+  { id: 'health', label: 'Healthcare', icon: '🩺' },
+  { id: 'codes', label: 'Codes & alerts', icon: '🔐' },
+  { id: 'groups', label: 'Groups', icon: '👥' }
+] as const;
+export type Category = (typeof CATEGORIES)[number]['id'];
+const HEALTH = /\b(appointment|appt|clinic|health|medical|doctor|dr\.|dentist|dental|pharmacy|prescription|rx|refill|patient|atrium|novant|duke health|cvs|walgreens|labcorp|quest|urgent care|therap)/i;
+const CODES = /\b(code|passcode|verification|verify|otp|one[- ]time|security alert|sign[- ]in|login)\b|\b\d{4,8}\b.*\b(is your|use)\b/i;
+const MARKETING = /(reply stop|text stop|txt stop|to opt[- ]out|unsubscribe|msg ?& ?data|% off|\bsale\b|\bdeal\b|promo|coupon|offer ends|\bshop\b)/i;
+/** Short codes (5–6 digits) and Apple's "(smsft)" business senders are never people. */
+export const isShortCode = (address: string) => /^\d{5,6}(\(smsft\))?$/i.test(address.replace(/\s/g, '')) || /\(smsft\)/i.test(address);
+
+/** Which tile a conversation belongs to: groups, known contacts (personal), codes, healthcare, marketing, else unknown. */
+export function categorize(chat: Chat, names: Map<string, string>): Category {
+  if (chat.group) return 'groups';
+  const who = chat.participants[0] || '', text = chat.last?.text || '';
+  const known = !isShortCode(who) && names.has(addressKey(who));
+  if (CODES.test(text) && (isShortCode(who) || !known)) return 'codes';
+  if (HEALTH.test(text) || HEALTH.test(chat.title)) return 'health';
+  if (known) return 'personal';
+  if (isShortCode(who) || MARKETING.test(text)) return 'marketing';
+  return 'unknown';
+}
+
+/** Default canned replies; the owner edits/adds their own. */
+export type Template = { id: string; title: string; text: string };
+export const DEFAULT_TEMPLATES: Template[] = [{
+  id: 'stop-solicitation', title: 'Stop solicitation (N.C.G.S. § 75-102)',
+  text: 'Please stop calling or texting me. I am expressly requesting that you cease all telephone and text solicitations.\n\nUnder N.C.G.S. § 75-102, a telephone solicitor may not continue solicitations after a consumer has stated they do not wish to receive them, and the statute includes text messages.\n\nPlease place my number on your do-not-contact list immediately.\n\nFor help, reply HELP. To opt out, reply STOP.'
+}];

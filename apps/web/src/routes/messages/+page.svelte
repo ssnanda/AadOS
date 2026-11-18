@@ -3,7 +3,7 @@
   import { onMount, tick, untrack } from 'svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import { asanaApi } from '$lib/asana-client';
-  import { isUnread, preview, prettyAddress, type Chat, type Message } from '$lib/messages-model';
+  import { addressKey, isUnread, preview, prettyAddress, CATEGORIES, type Chat, type Message, type Template } from '$lib/messages-model';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -12,9 +12,22 @@
   let summary = $state(''), summarizing = $state(false), composing = $state(false), newTo = $state(''), newText = $state('');
   let asanaFor = $state<{ guid: string; name: string; notes: string; day: string; busy: boolean; note: string } | null>(null);
   let scroller: HTMLDivElement | undefined = $state();
-  $effect(() => { const d = data; untrack(() => { if (d.connected) { chats = d.chats; unread = d.unread; } }); });
+  let cat = $state(''), suggesting = $state(false), suggestion = $state<{ category: string; why: string; template: string | null } | null>(null);
+  let templates = $state<Template[]>([]), managing = $state(false), editTpl = $state<Template | null>(null), refreshing = $state(false);
+  $effect(() => { const d = data; untrack(() => { templates = d.templates; if (d.connected) { chats = d.chats; unread = d.unread; } }); });
+  /** A participant's name from your contacts (Google first, then the Mac), else the formatted number. */
+  const nameOf = (a: string) => (data.connected ? data.people[addressKey(a)] : '') || prettyAddress(a);
+  const catOf = (guid: string) => (data.connected ? (data.categories as Record<string, string>)[guid] : '') || 'unknown';
+  const tile = (id: string) => ({ total: chats.filter((c) => catOf(c.guid) === id).length, unread: chats.filter((c) => catOf(c.guid) === id && unread.includes(c.guid)).length });
+  async function refreshNow() { refreshing = true; await invalidateAll(); refreshing = false; }
+  async function suggest() {
+    suggesting = true; suggestion = null;
+    try { const r = await api('suggest', { chatGuid: openGuid }); draft = r.reply; suggestion = { category: r.category, why: r.why, template: r.template }; } catch (e) { notice = (e as Error).message; } finally { suggesting = false; }
+  }
+  async function saveTemplate() { const t = editTpl; if (!t) return; try { templates = (await api('templates.save', t)).templates; editTpl = null; } catch (e) { notice = (e as Error).message; } }
+  async function deleteTemplate(id: string) { if (!confirm('Delete this reply?')) return; try { templates = (await api('templates.delete', { id })).templates; } catch (e) { notice = (e as Error).message; } }
   const open = $derived(chats.find((c) => c.guid === openGuid));
-  const shown = $derived(chats.filter((c) => !filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase())));
+  const shown = $derived(chats.filter((c) => (!cat || catOf(c.guid) === cat) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
   const today = new Date().toISOString().slice(0, 10);
   const when = (ms: number) => { if (!ms) return ''; const d = new Date(ms); return Date.now() - ms < 86_400_000 && d.getDate() === new Date().getDate() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
   const stamp = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -74,7 +87,9 @@
         else if (!m.fromMe && !unread.includes(e.chatGuid)) unread = [...unread, e.chatGuid];
       } else if (e.type === 'updated-message' && e.message && e.chatGuid === openGuid) messages = messages.map((x) => (x.guid === e.message!.guid ? e.message! : x));
     };
-    return () => es.close();
+    // Backup to live updates: re-read the list every minute while this tab is visible.
+    const t = setInterval(() => { if (document.visibilityState === 'visible' && !sending) invalidateAll(); }, 60_000);
+    return () => { es.close(); clearInterval(t); };
   });
 </script>
 
@@ -86,11 +101,16 @@
   {:else}
   {#if data.error}<div class="alert">{data.error}{#if data.owner} · <a href="/settings/messages">Settings</a>{/if}</div>{/if}
   {#if notice}<div class="alert soft">{notice} <button class="link" onclick={() => (notice = '')}>✕</button></div>{/if}
+  <div class="tiles">
+    <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')}><span>💬</span><b>{chats.length}</b><small>All{unread.length ? ` · ${unread.length} unread` : ''}</small></button>
+    {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
+  </div>
+  <div class="statusbar"><span class:on={live}>{live ? '● Live' : '○ Reconnecting…'}</span><span>Updated {new Date(data.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><button class="link" onclick={refreshNow} disabled={refreshing}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
+    <span class="sp"></span><span class="muted" title="Names for phone numbers come from Google Contacts first, then your Mac's contacts">Names: {data.nameSources.google} Google · {data.nameSources.mac} Mac</span>{#if !data.contactsOn && data.owner}<a href="/settings/emails">Turn on Google Contacts</a>{/if}{#each data.contactErrors as e (e)}<span class="err">{e}</span>{/each}</div>
   <div class="wrap" class:reading={Boolean(openGuid)}>
     <aside class="list">
       <div class="lhead"><input type="search" bind:value={filter} placeholder="Search conversations" aria-label="Search conversations"><button class="new" title="New message" aria-label="New message" onclick={() => (composing = !composing)}>✎</button></div>
-      <small class="status" class:on={live}>{live ? '● Live' : '○ Connecting…'} · {unread.length} unread</small>
-      {#if composing}<form class="compose" onsubmit={(e) => { e.preventDefault(); startChat(); }}><input bind:value={newTo} placeholder="Phone number or email"><textarea bind:value={newText} rows="2" placeholder="Message"></textarea><button class="primary">Send</button></form>{/if}
+      {#if composing}<form class="compose" onsubmit={(e) => { e.preventDefault(); startChat(); }}><input bind:value={newTo} placeholder="Name, phone number or email" list="msg-contacts" aria-label="To"><datalist id="msg-contacts">{#each data.contacts as p (p.address)}<option value={p.address}>{p.name}</option>{/each}</datalist><textarea bind:value={newText} rows="2" placeholder="Message"></textarea><button class="primary">Send</button></form>{/if}
       <ul>{#each shown as c (c.guid)}
         <li><button class="chat" class:on={c.guid === openGuid} class:unread={isUnread(c, {}) && unread.includes(c.guid)} onclick={() => select(c.guid)}>
           <span class="av" class:grp={c.group}>{c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
@@ -101,7 +121,7 @@
     <section class="thread">
       {#if !open}<p class="muted pad">Pick a conversation.</p>
       {:else}
-        <header><button class="back" onclick={() => (openGuid = '')} aria-label="Back">‹</button><div><strong>{open.title}</strong>{#if open.group}<small>{open.participants.length} people</small>{:else}<small>{open.participants.map(prettyAddress).join(', ')}</small>{/if}</div>
+        <header><button class="back" onclick={() => (openGuid = '')} aria-label="Back">‹</button><div><strong>{open.title}</strong>{#if open.group}<small>{open.participants.map(nameOf).join(', ')}</small>{:else}<small>{open.participants.map((p) => (nameOf(p) !== prettyAddress(p) ? `${nameOf(p)} · ${prettyAddress(p)}` : prettyAddress(p))).join(', ')}</small>{/if}</div>
           {#if data.aiAvailable}<button onclick={summarize} disabled={summarizing}>✦ {summarizing ? 'Summarizing…' : 'Summarize'}</button>{/if}</header>
         {#if summary}<div class="summary"><pre>{summary}</pre><button class="link" onclick={() => (summary = '')}>✕</button></div>{/if}
         <div class="msgs" bind:this={scroller}>
@@ -109,7 +129,7 @@
           {#each messages as m, i (m.guid)}
             {#if i === 0 || m.at - messages[i - 1].at > 3_600_000}<p class="ts">{stamp(m.at)}</p>{/if}
             <div class="bubble" class:me={m.fromMe} class:err={m.error}>
-              {#if open.group && !m.fromMe && (i === 0 || messages[i - 1].sender !== m.sender)}<small class="who">{prettyAddress(m.sender)}</small>{/if}
+              {#if open.group && !m.fromMe && (i === 0 || messages[i - 1].sender !== m.sender)}<small class="who">{nameOf(m.sender)}</small>{/if}
               {#each m.attachments as a (a.guid)}{#if a.mime.startsWith('image/') && !/heic/i.test(a.mime)}<a href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener"><img src={`/messages/attachment/${encodeURIComponent(a.guid)}`} alt={a.name} loading="lazy"></a>{:else}<a class="file" href={`/messages/attachment/${encodeURIComponent(a.guid)}`} target="_blank" rel="noopener">📎 {a.name}</a>{/if}{/each}
               {#if m.text.replace(/￼/g, '').trim()}<p>{m.text.replace(/￼/g, '')}</p>{/if}
               {#if m.error}<small class="who">Not delivered</small>{/if}
@@ -117,11 +137,21 @@
             </div>
           {/each}
         </div>
-        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows="1" placeholder="iMessage" onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea><button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
+        {#if suggestion}<div class="suggest">✦ {suggestion.category}{suggestion.template ? ` · template “${templates.find((t) => t.id === suggestion?.template)?.title}”` : ' · AI draft'} — {suggestion.why} <span class="muted">Review, edit, then Send.</span> <button class="link" onclick={() => (suggestion = null)}>✕</button></div>{/if}
+        <div class="replybar">
+          <select aria-label="Canned reply" onchange={(e) => { const t = templates.find((x) => x.id === e.currentTarget.value); if (t) draft = t.text; e.currentTarget.value = ''; }}><option value="">Canned replies…</option>{#each templates as t (t.id)}<option value={t.id}>{t.title}</option>{/each}</select>
+          {#if data.aiAvailable}<button onclick={suggest} disabled={suggesting} title="AI reads the conversation, picks a matching canned reply or drafts one">✦ {suggesting ? 'Thinking…' : 'Suggest reply'}</button>{/if}
+          <button class="link" onclick={() => (managing = true)}>Manage replies</button>
+        </div>
+        <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}><textarea bind:value={draft} rows={draft.includes('\n') || draft.length > 90 ? 6 : 1} placeholder="iMessage" onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea><button class="primary" disabled={sending || !draft.trim()}>Send</button></form>
       {/if}
     </section>
   </div>
   {/if}
+  {#if managing}<div class="backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) { managing = false; editTpl = null; } }}><div class="sheet"><h3>Canned replies</h3>
+    {#each templates as t (t.id)}<div class="tpl"><div class="tplh"><b>{t.title}</b><span class="sp"></span><button class="link" onclick={() => (editTpl = { ...t })}>Edit</button><button class="link danger" onclick={() => deleteTemplate(t.id)}>Delete</button></div><pre>{t.text}</pre></div>{:else}<p class="muted">No canned replies.</p>{/each}
+    {#if editTpl}<form class="tplform" onsubmit={(e) => { e.preventDefault(); saveTemplate(); }}><input bind:value={editTpl.title} placeholder="Title" aria-label="Title"><textarea bind:value={editTpl.text} rows="8" placeholder="Reply text"></textarea><div class="end"><button type="button" onclick={() => (editTpl = null)}>Cancel</button><button class="primary">Save reply</button></div></form>
+    {:else}<div class="end"><button onclick={() => (editTpl = { id: '', title: '', text: '' })}>＋ New reply</button><button class="primary" onclick={() => (managing = false)}>Done</button></div>{/if}</div></div>{/if}
   {#if asanaFor}<div class="backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) asanaFor = null; }}>
     <form class="sheet" onsubmit={(e) => { e.preventDefault(); createAsana(); }}><h3>Create Asana task</h3>
       {#if asanaFor.busy}<p class="muted">✦ Drafting from the conversation…</p>{:else}{#if asanaFor.note}<small class="ai">{asanaFor.note}</small>{/if}
@@ -134,6 +164,11 @@
   main{color:#29344c;font-size:13px}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:22px;max-width:560px;display:grid;gap:8px}.empty h1{margin:0}
   .alert{background:#fff3f3;border:1px solid #f3c9cf;color:#a5414d;border-radius:10px;padding:8px 12px;margin-bottom:8px}.alert.soft{background:#eef1ff;border-color:#cfd8ff;color:#3157de}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
+  .statusbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8a95a8;margin-bottom:8px}.statusbar .on{color:#2a9d5c}.statusbar a{color:#3157de;font-weight:600}.sp{flex:1}.err{color:#a5414d}
+  .replybar{display:flex;gap:8px;align-items:center;padding:6px 10px 0;flex-wrap:wrap}.replybar select{border:1px solid #d9dfeb;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px}
+  .suggest{margin:0 10px;padding:6px 10px;background:#faf7ff;border:1px solid #ece3ff;border-radius:8px;font-size:12px;color:#6a3fd6}
+  .tpl{border-top:1px solid #f0f2f7;padding:8px 0}.tplh{display:flex;gap:10px;align-items:center}.tpl pre{white-space:pre-wrap;font:12px/1.45 system-ui,sans-serif;color:#53607a;margin:4px 0 0}.tplform{display:grid;gap:8px;border-top:1px solid #f0f2f7;padding-top:10px}.danger{color:#b53c50}
   .wrap{display:grid;grid-template-columns:320px minmax(0,1fr);gap:12px;height:calc(100vh - 120px)}
   .list,.thread{background:#fff;border:1px solid #e4e9f2;border-radius:14px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
   .lhead{display:flex;gap:6px;padding:10px}.lhead input{flex:1}

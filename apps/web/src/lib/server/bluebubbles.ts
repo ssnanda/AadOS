@@ -54,6 +54,13 @@ export async function contactNames(c: BBConn): Promise<Map<string, string>> {
   return names;
 }
 
+/** Conversations plus the names used for them (Google Contacts first, then the Mac's contacts) and where names came from. */
+export async function chatsWithNames(c: BBConn, limit = 150): Promise<{ chats: Chat[]; names: Map<string, string>; sources: { google: number; mac: number } }> {
+  const [raw, mac, google] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c), googleContactNames().catch(() => new Map<string, string>())]);
+  const names = new Map([...mac, ...google]);
+  const list = (Array.isArray(raw) ? raw : []).map((x) => toChat(x, names)).filter((x) => x.guid).sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
+  return { chats: list, names, sources: { google: google.size, mac: mac.size } };
+}
 export async function chats(c: BBConn, limit = 100): Promise<Chat[]> {
   const [raw, mac, google] = await Promise.all([call(c, 'POST', '/chat/query', { body: { limit, offset: 0, with: ['lastMessage', 'participants'], sort: 'lastmessage' } }), contactNames(c), googleContactNames().catch(() => new Map<string, string>())]);
   // Google Contacts first, then the Mac's contacts for anything Google does not know.
@@ -74,7 +81,13 @@ export async function sendText(c: BBConn, chatGuid: string, text: string): Promi
 
 /** Start a conversation with one address (phone/email). Needs the Private API on most servers. */
 export async function newChat(c: BBConn, address: string, text: string) {
-  return call(c, 'POST', '/chat/new', { body: { addresses: [address], message: text, method: 'apple-script' }, timeoutMs: 30_000 });
+  try { return await call(c, 'POST', '/chat/new', { body: { addresses: [address], message: text, method: 'apple-script' }, timeoutMs: 30_000 }); }
+  catch (first) {
+    // Without the Private API, Messages can still send to a 1:1 thread addressed by service + handle.
+    const handle = address.includes('@') ? address.trim() : `+${addressKey(address).length === 10 ? '1' : ''}${addressKey(address)}`;
+    for (const service of ['iMessage', 'SMS']) { try { return await sendText(c, `${service};-;${handle}`, text); } catch { /* try the next service */ } }
+    throw first;
+  }
 }
 
 export async function markRead(c: BBConn, chatGuid: string) { await call(c, 'POST', `/chat/${encodeURIComponent(chatGuid)}/read`).catch(() => undefined); } // Private API only; local unread works regardless

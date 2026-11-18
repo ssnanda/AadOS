@@ -175,6 +175,9 @@ const SKIP_UNREAD = /^(trash|spam|sent|drafts|outbox|templates|snoozed)$/i;
 export async function liveZohoUnread(state: AadOSState, account: MailAccount, pipeline: Pipeline) {
   const list = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/folders`);
   let added = 0;
+  // Keep Zoho's own unread count per folder for the sidebar (shows folders with unread mail even before it is stored).
+  const counts = new Map<string, number>((Array.isArray(list.data) ? list.data : []).map((f: Record<string, unknown>) => [String(f.folderId || ''), Number(f.unreadCount || 0)]));
+  account.folders = account.folders.map((f) => (counts.has(f.id) ? { ...f, unread: counts.get(f.id) } : f));
   for (const f of Array.isArray(list.data) ? list.data : []) {
     const folderId = String(f.folderId || ''), unread = Number(f.unreadCount || 0);
     if (!folderId || SKIP_UNREAD.test(String(f.folderType || f.folderName || '')) || SKIP_UNREAD.test(String(f.folderName || ''))) continue;
