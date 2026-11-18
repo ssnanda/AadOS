@@ -18,7 +18,10 @@
   /** A participant's name from your contacts (Google first, then the Mac), else the formatted number. */
   const nameOf = (a: string) => (data.connected ? data.people[addressKey(a)] : '') || prettyAddress(a);
   const catOf = (guid: string) => (data.connected ? (data.categories as Record<string, string>)[guid] : '') || 'unknown';
-  const tile = (id: string) => ({ total: chats.filter((c) => catOf(c.guid) === id).length, unread: chats.filter((c) => catOf(c.guid) === id && unread.includes(c.guid)).length });
+  // "Needs you": unread, or the last message is theirs and you haven't replied (last 30 days). Tiles count only these.
+  const REPLY_WINDOW = 30 * 86_400_000;
+  const needsYou = (c: Chat) => unread.includes(c.guid) || Boolean(c.last && !c.last.fromMe && Date.now() - c.last.at < REPLY_WINDOW);
+  const tile = (id: string) => { const list = chats.filter((c) => (!id || catOf(c.guid) === id) && needsYou(c)); return { total: list.length, unread: list.filter((c) => unread.includes(c.guid)).length }; };
   async function refreshNow() { refreshing = true; await invalidateAll(); refreshing = false; }
   async function suggest() {
     suggesting = true; suggestion = null;
@@ -27,7 +30,8 @@
   async function saveTemplate() { const t = editTpl; if (!t) return; try { templates = (await api('templates.save', t)).templates; editTpl = null; } catch (e) { notice = (e as Error).message; } }
   async function deleteTemplate(id: string) { if (!confirm('Delete this reply?')) return; try { templates = (await api('templates.delete', { id })).templates; } catch (e) { notice = (e as Error).message; } }
   const open = $derived(chats.find((c) => c.guid === openGuid));
-  const shown = $derived(chats.filter((c) => (!cat || catOf(c.guid) === cat) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
+  const needsAll = $derived(tile(''));
+  const shown = $derived(chats.filter((c) => (cat === 'all' || ((!cat || catOf(c.guid) === cat) && needsYou(c))) && (!filter || c.title.toLowerCase().includes(filter.toLowerCase()) || preview(c.last).toLowerCase().includes(filter.toLowerCase()))));
   const today = new Date().toISOString().slice(0, 10);
   const when = (ms: number) => { if (!ms) return ''; const d = new Date(ms); return Date.now() - ms < 86_400_000 && d.getDate() === new Date().getDate() ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
   const stamp = (ms: number) => new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -102,8 +106,9 @@
   {#if data.error}<div class="alert">{data.error}{#if data.owner} · <a href="/settings/messages">Settings</a>{/if}</div>{/if}
   {#if notice}<div class="alert soft">{notice} <button class="link" onclick={() => (notice = '')}>✕</button></div>{/if}
   <div class="tiles">
-    <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')}><span>💬</span><b>{chats.length}</b><small>All{unread.length ? ` · ${unread.length} unread` : ''}</small></button>
-    {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
+    <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')} title="Unread, or waiting for your reply (last 30 days)"><span>💬</span><b>{needsAll.total}</b><small>Needs you{needsAll.unread ? ` · ${needsAll.unread} unread` : ''}</small></button>
+    {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} class:zero={!n.total} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
+    <button class="tilebtn" class:on={cat === 'all'} onclick={() => (cat = cat === 'all' ? '' : 'all')} title="Every conversation, including ones you already answered"><span>🗂</span><b>{chats.length}</b><small>All conversations</small></button>
   </div>
   <div class="statusbar"><span class:on={live}>{live ? '● Live' : '○ Reconnecting…'}</span><span>Updated {new Date(data.loadedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><button class="link" onclick={refreshNow} disabled={refreshing}>{refreshing ? 'Refreshing…' : '↻ Refresh'}</button>
     <span class="sp"></span><span class="muted" title="Names for phone numbers come from Google Contacts first, then your Mac's contacts">Names: {data.nameSources.google} Google · {data.nameSources.mac} Mac</span>{#if !data.contactsOn && data.owner}<a href="/settings/emails">Turn on Google Contacts</a>{/if}{#each data.contactErrors as e (e)}<span class="err">{e}</span>{/each}</div>
@@ -114,7 +119,7 @@
       <ul>{#each shown as c (c.guid)}
         <li><button class="chat" class:on={c.guid === openGuid} class:unread={isUnread(c, {}) && unread.includes(c.guid)} onclick={() => select(c.guid)}>
           <span class="av" class:grp={c.group}>{c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
-          <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span></span>
+          <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span>{#if c.last && !c.last.fromMe && !unread.includes(c.guid) && Date.now() - c.last.at < REPLY_WINDOW}<em class="await">awaiting your reply</em>{/if}</span>
           {#if unread.includes(c.guid)}<i class="dot"></i>{/if}
         </button></li>{:else}<li class="muted pad">No conversations.</li>{/each}</ul>
     </aside>
@@ -164,7 +169,7 @@
   main{color:#29344c;font-size:13px}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:22px;max-width:560px;display:grid;gap:8px}.empty h1{margin:0}
   .alert{background:#fff3f3;border:1px solid #f3c9cf;color:#a5414d;border-radius:10px;padding:8px 12px;margin-bottom:8px}.alert.soft{background:#eef1ff;border-color:#cfd8ff;color:#3157de}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}
   .statusbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;color:#8a95a8;margin-bottom:8px}.statusbar .on{color:#2a9d5c}.statusbar a{color:#3157de;font-weight:600}.sp{flex:1}.err{color:#a5414d}
   .replybar{display:flex;gap:8px;align-items:center;padding:6px 10px 0;flex-wrap:wrap}.replybar select{border:1px solid #d9dfeb;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px}
   .suggest{margin:0 10px;padding:6px 10px;background:#faf7ff;border:1px solid #ece3ff;border-radius:8px;font-size:12px;color:#6a3fd6}
@@ -182,7 +187,7 @@
   .av{width:38px;height:38px;border-radius:50%;background:#e7ecf6;color:#53607a;display:grid;place-items:center;font-weight:800;flex:none}.av.grp{background:#eaf7ef}
   .meta{display:grid;gap:2px;min-width:0;flex:1}.row1{display:flex;gap:6px;justify-content:space-between}.row1 strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#1f2a44}.row1 time{color:#8a95a8;font-size:11px;flex:none}
   .pv{color:#6b7690;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.chat.unread strong,.chat.unread .pv{font-weight:800;color:#1f2a44}
-  .sms{font-style:normal;font-size:9px;font-weight:800;background:#e6f6ea;color:#2a8a55;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
+  .sms{font-style:normal;font-size:9px;font-weight:800;background:#e6f6ea;color:#2a8a55;border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle}.await{font-style:normal;font-size:10px;font-weight:700;color:#e8862a}.dot{width:9px;height:9px;border-radius:50%;background:#2f7cf6;flex:none}
   .thread header{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #eef0f5}.thread header div{display:grid;flex:1;min-width:0}.thread header small{color:#8a95a8}.back{display:none}
   .summary{display:flex;gap:8px;background:#faf7ff;border-bottom:1px solid #ece3ff;padding:8px 14px}.summary pre{margin:0;flex:1;white-space:pre-wrap;font:12px/1.5 system-ui,sans-serif}
   .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:4px}
