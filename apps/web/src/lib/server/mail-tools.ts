@@ -89,10 +89,24 @@ export async function related(key: string, scope: 'sender' | 'domain', sameSubje
   const rows = rowsOf(s);
   const me = rows.find((r) => r.key === key);
   if (!me) throw new Error('Email not found.');
-  const addr = addresses(me.sender)[0] || '';
+  // Zoho lists give only the display name ("Dunkin' Rewards"), so older stored mail may have no address: read it from
+  // the message header. Never match "no address" to "no address" — that listed every such email as the same sender.
+  let addr = addresses(me.sender)[0] || '';
+  if (!addr && me.provider === 'zoho' && me.folders[0]) {
+    await updateStateDetached(async (st) => {
+      const acct = st.accounts.find((a) => a.id === me.accountId);
+      if (acct) addr = addresses((await zohoHeaders(st, acct, me.folders[0], me.messageId).catch(() => ({} as Record<string, string>))).from)[0] || '';
+    }).catch(() => undefined);
+  }
   const domain = addr.split('@')[1] || '';
   const subj = normSubject(me.subject);
-  const match = (r: InboxRow) => { const a = addresses(r.sender)[0] || ''; return scope === 'domain' && domain ? a.endsWith(`@${domain}`) : a === addr; };
+  const nameOf = (v: string) => v.replace(/<[^>]*>/g, '').replace(/["'’`]/g, '').trim().toLowerCase();
+  const myName = nameOf(me.sender);
+  const match = (r: InboxRow) => {
+    const a = addresses(r.sender)[0] || '';
+    if (a) return scope === 'domain' ? Boolean(domain) && a.endsWith(`@${domain}`) : Boolean(addr) && a === addr;
+    return Boolean(myName) && nameOf(r.sender) === myName; // no address stored: same display name only
+  };
   const hits = rows.filter((r) => r.key !== key && r.accountId === me.accountId && match(r) && (!sameSubject || normSubject(r.subject) === subj));
   return { sender: addr, domain, total: hits.length, rows: hits.slice(0, 50).map((r) => ({ key: r.key, subject: r.subject, summary: r.summary, sender: r.sender, receivedAt: r.receivedAt, unread: r.unread, pipelineId: r.pipelineId, messageId: r.messageId, accountEmail: r.accountEmail, provider: r.provider })) };
 }

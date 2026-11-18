@@ -139,7 +139,7 @@ export async function syncGmailPage(state: AadOSState, account: MailAccount, pip
 export async function searchGmail(state: AadOSState, account: MailAccount, pipeline: Pipeline, q: string) {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
   const known = knownMessageIds(state, pipeline.id);
-  const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({ q, maxResults: '50' })}`, { headers }));
+  const list = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?${new URLSearchParams({ q: (q.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] ? `from:${q.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)![0]}` : q.replace(/[<>"]/g, ' ')), maxResults: '50' })}`, { headers }));
   const rows: Record<string, unknown>[] = Array.isArray(list.messages) ? list.messages : [];
   const fresh = rows.map((r) => String(r.id || '')).filter((id) => id && !known.has(id));
   const threads = new Map(rows.map((row) => [String(row.id || ''), String(row.threadId || '')]));

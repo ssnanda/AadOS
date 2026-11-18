@@ -128,13 +128,16 @@ const isBills = (r: InboxRow, now: number) => r.categories.some((c) => c === 'Bi
 /** Every search word must appear in subject, sender, preview, account, provider, categories or view names. */
 function matchesText(row: InboxRow, terms: string[]) {
   if (!terms.length) return true;
-  const hay = `${row.subject} ${row.sender} ${row.summary} ${row.accountEmail} ${row.provider} ${row.categories.join(' ')} ${row.pipelines.join(' ')}`.toLowerCase();
-  return terms.every((term) => hay.includes(term));
+  const hay = `${row.subject} ${row.sender} ${row.summary} ${row.accountEmail} ${row.provider} ${row.categories.join(' ')} ${row.pipelines.join(' ')}`.toLowerCase().replace(/['’`]/g, '');
+  // Older Zoho mail was stored with the sender's name only; a pasted "Name <address>" still finds it by the name.
+  const noAddress = !row.sender.includes('@');
+  return terms.every((term) => hay.includes(term) || (noAddress && term.includes('@')));
 }
 
 export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()): InboxResult {
   const view = query.view || 'all';
-  const terms = (query.q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  // Pasted senders (\"Dunkin' Rewards <noreply@…>\") search as words: brackets, quotes and commas are ignored.
+  const terms = (query.q || '').toLowerCase().replace(/['’`]/g, '').replace(/[<>"(),;]/g, ' ').split(/\s+/).filter(Boolean);
   const sender = (query.sender || '').toLowerCase();
   const from = query.from ? Date.parse(query.from) : NaN;
   const to = query.to ? Date.parse(query.to) + 86_399_999 : NaN;

@@ -122,10 +122,16 @@ const PAGE_SIZE = 50;
 const MAX_PAGES = 200;
 const CONCURRENCY = 4;
 
+/** "Name <address>" (Zoho's list has the name in `sender` and the address in `fromAddress`). */
+const zohoSender = (row: Record<string, unknown>) => {
+  const name = clean(row.sender || row.from), addr = clean(row.fromAddress);
+  return addr && !name.toLowerCase().includes(addr.toLowerCase()) ? (name ? `${name} <${addr}>` : addr) : name || addr;
+};
+
 async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, row: Record<string, unknown>): Promise<PipelineItem> {
   const messageId = String(row.messageId || '');
   const subject = clean(row.subject);
-  const sender = clean(row.sender || row.fromAddress || row.from);
+  const sender = zohoSender(row);
   let summary = clean(row.summary || row.snippet);
   let body = '';
   try {
@@ -154,6 +160,7 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
     if (!item) continue;
     item.unread = String(row.status) === '0';
     item.folderId ||= folderId;
+    if (!item.sender.includes('@') && row.fromAddress) item.sender = zohoSender(row); // repair mail stored name-only
   }
   const fresh = unknownRows.slice(0, maxAdd);
   for (let i = 0; i < fresh.length; i += CONCURRENCY) {
@@ -209,7 +216,9 @@ export async function liveZohoUnread(state: AadOSState, account: MailAccount, pi
  * so the normal inbox search finds old mail too. Zoho search syntax: entire:<text> matches subject, sender and body.
  */
 export async function searchZoho(state: AadOSState, account: MailAccount, pipeline: Pipeline, q: string) {
-  const query = new URLSearchParams({ searchKey: `entire:${q.replace(/::/g, ' ')}`, limit: '50', start: '1' });
+  // A pasted address searches by sender; anything else searches subject, sender and body.
+  const addr = q.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0];
+  const query = new URLSearchParams({ searchKey: addr ? `sender:${addr}` : `entire:${q.replace(/[<>"]/g, ' ').replace(/::/g, ' ').trim()}`, limit: '50', start: '1' });
   const response = await api(state, account, `/accounts/${encodeURIComponent(account.remoteId)}/messages/search?${query}`);
   const rows: Record<string, unknown>[] = (Array.isArray(response.data) ? response.data : []).filter((r: Record<string, unknown>) => r.messageId && r.folderId);
   const mine = new Map(state.items.filter((i) => (i.accountId || pipeline.accountId) === account.id).map((i) => [i.messageId, i]));
