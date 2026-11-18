@@ -333,6 +333,11 @@ export function applyUnread(state: AadOSState, pipeline: Pipeline, folderId: str
     if (unreadIds.has(item.messageId)) { item.unread = true; item.folderId ||= folderId; }
     else if (item.folderId === folderId || (!item.folderId && single)) item.unread = false;
   }
+  // Copies of the same message in other views follow the mailbox too (they may not have been refreshed).
+  const decided = new Map<string, boolean>();
+  for (const item of state.items) if (item.pipelineId === pipeline.id && (item.accountId || pipeline.accountId) === account && (unreadIds.has(item.messageId) || item.folderId === folderId)) decided.set(item.messageId, item.unread !== false);
+  const owner = new Map(state.pipelines.map((p) => [p.id, p.accountId]));
+  for (const item of state.items) if (item.pipelineId !== pipeline.id && decided.has(item.messageId) && (item.accountId || owner.get(item.pipelineId)) === account) item.unread = decided.get(item.messageId);
 }
 
 /** Stored copies of one view's folder (same folder rule as `applyUnread`). */

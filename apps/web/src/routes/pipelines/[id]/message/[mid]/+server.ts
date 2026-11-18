@@ -26,7 +26,12 @@ function remember(key: string, body: Body) {
 function persist(pipelineId: string, messageId: string, change: { seen: boolean; folderId?: string; account?: MailAccount }) {
   updateState((state) => {
     const item = state.items.find((entry) => entry.pipelineId === pipelineId && entry.messageId === messageId);
-    if (item && change.seen) item.seen = true;
+    if (item && change.seen) {
+      item.seen = true;
+      // Read right away on screen (every copy); the mailbox is marked read in the background and the next sync confirms it.
+      const acct = item.accountId || state.pipelines.find((p) => p.id === pipelineId)?.accountId;
+      for (const i of state.items) if (i.messageId === messageId && (i.accountId || state.pipelines.find((p) => p.id === i.pipelineId)?.accountId) === acct) i.unread = false;
+    }
     if (item && change.folderId) item.folderId ||= change.folderId;
     const target = change.account && state.accounts.find((entry) => entry.id === change.account!.id);
     if (target && change.account!.accessToken && target.accessToken !== change.account!.accessToken) { target.accessToken = change.account!.accessToken; target.expiresAt = change.account!.expiresAt; }
@@ -82,7 +87,7 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
     if (!account) throw new Error('The account for this view is no longer connected.');
     const token = account.accessToken, folderId = item.folderId;
     body = account.provider === 'gmail' ? await fetchGmailBody(state, account, item) : await fetchZohoBody(state, account, pipeline, item);
-    const markSeen = !prefetch && !item.seen;
+    const markSeen = !prefetch && (!item.seen || item.unread !== false);
     const tokenChanged = account.accessToken !== token, folderFound = item.folderId !== folderId ? item.folderId : undefined;
     if (markSeen || tokenChanged || folderFound) persist(params.id, params.mid, { seen: markSeen, folderId: folderFound, account: tokenChanged ? account : undefined });
     if (markSeen) readInMailbox(params.id, params.mid);

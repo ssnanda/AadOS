@@ -1,7 +1,8 @@
 import type { PipelineItem } from './aados-store';
 
 export type ItemFilter = { kind?: string; store?: string; q?: string; unread?: boolean };
-export const isUnread = (item: PipelineItem) => item.unread !== false && !item.seen;
+// The mailbox decides (like Toolbox): opening an email marks it read in Gmail/Zoho, and the next sync follows.
+export const isUnread = (item: PipelineItem) => item.unread !== false;
 const haystack = (item: PipelineItem) => `${item.subject} ${item.sender} ${item.summary} ${item.kind} ${Object.values(item.facts).join(' ')}`.toLowerCase();
 
 /** Every search word must appear somewhere in subject, sender, summary, kind or parsed facts. */

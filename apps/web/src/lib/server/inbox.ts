@@ -21,8 +21,8 @@ export type InboxResult = {
 };
 
 export const RECENT_DAYS = 7;
-/** Mailbox unread state, unless the owner already opened it in AadOS. */
-export const itemUnread = (item: Pick<PipelineItem, 'unread' | 'seen'>) => item.unread !== false && !item.seen;
+/** Mailbox unread state (the provider is the source of truth; a local "seen" no longer hides unread mail). */
+export const itemUnread = (item: Pick<PipelineItem, 'unread' | 'seen'>) => item.unread !== false;
 export const messageKey = (accountId: string, messageId: string) => `${accountId}:${messageId}`;
 
 /** Mailbox folder (Zoho folder / Gmail label) a stored copy came from: its recorded folder, else its view's only folder in that account. */
@@ -98,7 +98,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       key, id: first.id, pipelineId: first.pipelineId, messageId: first.messageId, subject: first.subject, sender: first.sender,
       receivedAt: first.receivedAt, summary: first.summary,
       // Opened in AadOS on any copy counts as read; otherwise unread only if every synced copy says unread.
-      unread: !copies.some((c) => c.seen) && copies.every((c) => c.unread !== false),
+      unread: copies.every((c) => c.unread !== false),
       accountId, accountEmail: account?.email || '', provider: account?.provider || '', categories,
       importance: importance(merged, categories, ctx), action: suggestion?.kind || null, actionReason: suggestion?.reason || '', due: suggestion?.due || '',
       reviewed: merged.actionState === 'reviewed', followUp: merged.followUp || '',

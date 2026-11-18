@@ -30,9 +30,11 @@ test('rows never expose credentials', () => {
   assert.ok(!JSON.stringify(rows).includes('SECRET'));
 });
 
-test('unread: opened-in-AadOS copy makes the message read', () => {
-  const rows = buildRows({ pipelines, accounts, items: [item('inbox-gmail-a', 'm1', { unread: true }), item('shop', 'm1', { unread: true, seen: true })] });
-  assert.equal(rows[0].unread, false);
+test('unread: the mailbox decides; a local "seen" does not hide unread mail; any read copy makes it read', () => {
+  const seen = buildRows({ pipelines, accounts, items: [item('inbox-gmail-a', 'm1', { unread: true }), item('shop', 'm1', { unread: true, seen: true })] });
+  assert.equal(seen[0].unread, true);
+  const read = buildRows({ pipelines, accounts, items: [item('inbox-gmail-a', 'm1', { unread: true }), item('shop', 'm1', { unread: false })] });
+  assert.equal(read[0].unread, false);
 });
 
 test('filters, search, pagination and counts', () => {

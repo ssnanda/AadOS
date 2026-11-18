@@ -179,7 +179,8 @@ export async function reconcileGmailUnread(state: AadOSState, account: MailAccou
       state.items.push(...items);
     }
     applyUnread(state, pipeline, folderId, new Set(unread.keys()), account.id);
-    account.folders = (account.folders || []).map((f) => (f.id === folderId ? { ...f, unread: unread.size } : f));
+    if (!(account.folders || []).some((f) => f.id === folderId) && folderId === 'INBOX') account.folders = [...(account.folders || []), { id: 'INBOX', name: 'Inbox', path: 'Inbox', type: 'system' } as MailAccount['folders'][number]];
+    account.folders = account.folders.map((f) => (f.id === folderId ? { ...f, unread: unread.size } : f));
     return { added: fresh.length };
   }
   return { added: 0 };
