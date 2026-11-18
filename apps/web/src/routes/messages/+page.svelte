@@ -16,6 +16,7 @@
   let templates = $state<Template[]>([]), managing = $state(false), editTpl = $state<Template | null>(null), refreshing = $state(false);
   let spamSet = $state(new Set<string>());
   let doneSet = $state(new Set<string>()); // spam senders whose stop reply was delivered → Spam reports
+  let ctx = $state<{ x: number; y: number; row: Row } | null>(null); // right-click menu on a conversation
   let groups = $state<MsgGroup[]>([]), picked = $state<string[]>([]), selecting = $state(false), similarOpen = $state(false);
   $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; spamSet = new Set((d as { spam?: string[] }).spam ?? []); doneSet = new Set((d as { spamDone?: string[] }).spamDone ?? []); } }); });
 
@@ -43,6 +44,11 @@
     const addresses = r.participants.map(addressKey);
     try { spamSet = new Set((await api('spam.set', { addresses, spam })).spam); notice = spam ? 'Moved to Spam.' : 'Moved back to your conversations.'; if (!spam) doneSet = new Set([...doneSet].filter((a) => !addresses.includes(a))); if (spam && cat !== 'spam') openGuid = ''; } catch (e) { notice = (e as Error).message; }
   }
+  async function setDone(r: Row, done: boolean) {
+    const addresses = r.participants.map(addressKey);
+    try { const res = await api('spam.done', { addresses, done }); spamSet = new Set(res.spam); doneSet = new Set(res.spamDone); notice = done ? 'Moved to Spam reports.' : 'Moved back to Spam.'; if (openGuid === r.guid) openGuid = ''; } catch (e) { notice = (e as Error).message; }
+  }
+  const menuFor = (e: MouseEvent, r: Row) => { if (r.group || r.groupId || r.participants.some((p) => addressKey(p) === '7726')) return; e.preventDefault(); ctx = { x: Math.min(e.clientX, innerWidth - 200), y: Math.min(e.clientY, innerHeight - 120), row: r }; };
   /** Chat to send to / summarize for a row: its most recent member conversation. */
   const primary = (r: Row | undefined) => (r ? [...r.members].sort((a, b) => (chats.find((c) => c.guid === b)?.last?.at || 0) - (chats.find((c) => c.guid === a)?.last?.at || 0))[0] : '');
   const similar = $derived(data.connected ? suggestGroups(chats, groups, data.people) : []);
@@ -205,7 +211,7 @@
       {#if selecting}<div class="pickbar">{picked.length} selected<span class="sp"></span><button class="primary small" disabled={!picked.length} onclick={groupPicked}>Group as one contact…</button></div>{/if}
       {#if composing}<form class="compose" onsubmit={(e) => { e.preventDefault(); startChat(); }}><input bind:value={newTo} placeholder="Name, phone number or email" list="msg-contacts" aria-label="To"><datalist id="msg-contacts">{#each data.contacts as p (p.address)}<option value={p.address}>{p.name}</option>{/each}</datalist><textarea bind:value={newText} rows="2" placeholder="Message"></textarea><button class="primary">Send</button></form>{/if}
       <ul>{#each shown as c (c.guid)}
-        <li class="crow">{#if selecting && !c.groupId}<input type="checkbox" checked={c.members.every((m) => picked.includes(m))} onchange={(e) => (picked = e.currentTarget.checked ? [...new Set([...picked, ...c.members])] : picked.filter((m) => !c.members.includes(m)))} aria-label={`Select ${c.title}`}>{/if}<button class="chat" class:on={c.guid === openGuid} class:unread={rowUnread(c)} onclick={() => select(c.guid)}>
+        <li class="crow">{#if selecting && !c.groupId}<input type="checkbox" checked={c.members.every((m) => picked.includes(m))} onchange={(e) => (picked = e.currentTarget.checked ? [...new Set([...picked, ...c.members])] : picked.filter((m) => !c.members.includes(m)))} aria-label={`Select ${c.title}`}>{/if}<button class="chat" class:on={c.guid === openGuid} class:unread={rowUnread(c)} onclick={() => select(c.guid)} oncontextmenu={(e) => menuFor(e, c)}>
           <span class="av" class:grp={c.group || c.groupId}>{c.groupId ? '🏷' : c.group ? '👥' : c.title.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || '#'}</span>
           <span class="meta"><span class="row1"><strong>{c.title}{#if c.sms}<em class="sms">SMS</em>{/if}</strong><time>{when(c.last?.at || 0)}</time></span><span class="pv">{c.last?.fromMe ? 'You: ' : ''}{preview(c.last)}</span>{#if c.groupId}<em class="gcount">{c.members.length} senders</em>{:else if !rowUnread(c) && awaiting(c)}<em class="await">awaiting your reply</em>{/if}</span>
           {#if rowUnread(c)}<i class="dot"></i>{/if}
@@ -253,11 +259,18 @@
       {#if asanaFor.busy}<p class="muted">✦ Drafting from the conversation…</p>{:else}{#if asanaFor.note}<small class="ai">{asanaFor.note}</small>{/if}
       <input bind:value={asanaFor.name} aria-label="Title"><label class="rowl">Due <input type="date" bind:value={asanaFor.day}></label><textarea rows="7" bind:value={asanaFor.notes}></textarea>{/if}
       <div class="end"><button type="button" onclick={() => (asanaFor = null)}>Cancel</button><button class="primary" disabled={asanaFor.busy}>Create task</button></div></form></div>{/if}
+  {#if ctx}{@const r = ctx.row}<div class="ctxmenu" role="menu" style={`left:${ctx.x}px;top:${ctx.y}px`}>
+    {#if isReportRow(r)}<button role="menuitem" onclick={() => { setDone(r, false); ctx = null; }}>🚫 Move back to Spam</button><button role="menuitem" onclick={() => { setSpam(r, false); ctx = null; }}>Not spam</button>
+    {:else if isSpamRow(r)}<button role="menuitem" onclick={() => { setDone(r, true); ctx = null; }}>📨 Move to Spam reports</button><button role="menuitem" onclick={() => { setSpam(r, false); ctx = null; }}>Not spam</button>
+    {:else}<button role="menuitem" onclick={() => { setSpam(r, true); ctx = null; }}>🚫 Move to Spam</button><button role="menuitem" onclick={() => { setDone(r, true); ctx = null; }}>📨 Move to Spam reports</button>{/if}
+  </div>{/if}
 </main>
 </AppShell>
+<svelte:window onclick={() => (ctx = null)} onkeydown={(e) => { if (e.key === 'Escape') ctx = null; }} onscroll={() => (ctx = null)} />
 
 <style>
   main{color:#29344c;font-size:13px}
+  .ctxmenu{position:fixed;z-index:50;display:grid;min-width:190px;background:#fff;border:1px solid #dfe4ee;border-radius:10px;box-shadow:0 8px 24px rgba(20,30,60,.16);padding:4px}.ctxmenu button{border:0;background:none;text-align:left;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:600;color:#29344c;cursor:pointer}.ctxmenu button:hover{background:#f1f4fa}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:22px;max-width:560px;display:grid;gap:8px}.empty h1{margin:0}
   .alert{background:#fff3f3;border:1px solid #f3c9cf;color:#a5414d;border-radius:10px;padding:8px 12px;margin-bottom:8px}.alert.soft{background:#eef1ff;border-color:#cfd8ff;color:#3157de}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px}.tilebtn{display:grid;justify-items:start;gap:1px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:9px 11px;text-align:left;cursor:pointer}.tilebtn b{font-size:20px;color:#1f2a44}.tilebtn small{color:#6b7690;font-weight:600}.tilebtn.on{border-color:#2f7cf6;box-shadow:0 0 0 2px #dbe8ff}.tilebtn.zero{opacity:.55}.tilebtn.spam b{color:#8a95a8}.chkl{display:flex;gap:6px;align-items:center;font-size:12px;color:#53607a}.spamtag{font-style:normal;font-size:10px;font-weight:800;color:#b53c50;background:#fdeceb;border-radius:5px;padding:1px 6px}.tilebtn.unknown b{color:#c0392b}.tilebtn.personal b{color:#1e8a4c}.tilebtn.health b{color:#239aa5}

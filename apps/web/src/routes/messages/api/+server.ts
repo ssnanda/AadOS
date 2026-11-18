@@ -44,6 +44,18 @@ export const POST = async ({ request }) => {
     await updateState((st) => { const cur = new Set(st.messageSpam ?? []); for (const a of addrs) { if (b.spam === false) cur.delete(a); else cur.add(a); } st.messageSpam = [...cur]; spam = st.messageSpam; if (b.spam === false) st.messageSpamDone = (st.messageSpamDone ?? []).filter((a) => !addrs.includes(a)); });
     return json({ spam });
   }
+  // Spam reports: mark spam senders handled (shown under Spam reports) or move them back to Spam.
+  if (op === 'spam.done') {
+    const addrs: string[] = (Array.isArray(b.addresses) ? b.addresses : []).map((a: unknown) => addressKey(s(a, 120))).filter(Boolean);
+    let spam: string[] = [], done: string[] = [];
+    await updateState((st) => {
+      const d = new Set(st.messageSpamDone ?? []);
+      for (const a of addrs) { if (b.done === false) d.delete(a); else d.add(a); }
+      if (b.done !== false) st.messageSpam = [...new Set([...(st.messageSpam ?? []), ...addrs])];
+      st.messageSpamDone = [...d]; spam = st.messageSpam ?? []; done = st.messageSpamDone;
+    });
+    return json({ spam, spamDone: done });
+  }
   // Canned replies (stored with AadOS state; no BlueBubbles needed).
   if (op === 'templates.save' || op === 'templates.delete') {
     const id = s(b.id, 60), title = s(b.title, 120).trim(), text = s(b.text, 5000).trim();
