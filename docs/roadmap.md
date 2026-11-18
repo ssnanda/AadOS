@@ -129,4 +129,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 60. [x] AI errors show AJMCP's HTTP status + error code / network code (e.g. "AJMCP is unavailable (HTTP 502 · no_provider)") — awaiting owner test
 61. [x] Compose: "Draft with AI" polishes the owner's typed text instead of replacing it ("Polish with AI") — awaiting owner test
 62. [x] Triage "Run now" message names the real blocker (gateway vs. PostgreSQL storage) — awaiting owner test
-63. [ ] Production (OpenShift) has no PostgreSQL: web runs file storage, API `AADOS_ENABLE_DATABASE=false` → triage, briefing, assistant history, AI drafts, documents and finance are unavailable on os.aadnanda.com. Owner decision: provision PostgreSQL in the `aados` namespace
+63. [x] Production PostgreSQL: `aados-db` (PG16, 5 Gi) + api migrations + web `AADOS_STORAGE=postgres`; secret keys postgres-password / credential-encryption-key / internal-api-token added by hand — `bin/oc-deploy.sh` should create them on fresh namespaces (owner edit)

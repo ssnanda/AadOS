@@ -24,6 +24,107 @@ objects:
       resources:
         requests:
           storage: 1Gi
+  # PostgreSQL 16 for AadOS (state, AI insights, drafts, briefings, documents, finance). OpenShift-native image:
+  # runs as the namespace's random UID under the restricted SCC. Password: aados-api-secrets/postgres-password.
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: ${APP_NAME}-db-data
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: db
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 5Gi
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ${APP_NAME}-db
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: db
+    spec:
+      replicas: 1
+      revisionHistoryLimit: 3
+      # One writer on an RWO volume: stop the old pod before starting the new one.
+      strategy:
+        type: Recreate
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: ${APP_NAME}-db
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/part-of: aados
+            app.kubernetes.io/name: ${APP_NAME}-db
+            app.kubernetes.io/component: db
+        spec:
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: postgres
+              image: quay.io/sclorg/postgresql-16-c9s:latest
+              imagePullPolicy: IfNotPresent
+              ports:
+                - name: postgres
+                  containerPort: 5432
+              env:
+                - name: POSTGRESQL_USER
+                  value: aados
+                - name: POSTGRESQL_DATABASE
+                  value: aados
+                - name: POSTGRESQL_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: postgres-password
+              volumeMounts:
+                - name: db-data
+                  mountPath: /var/lib/pgsql/data
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              readinessProbe:
+                exec:
+                  command: [/usr/libexec/check-container]
+                initialDelaySeconds: 5
+                periodSeconds: 10
+              livenessProbe:
+                exec:
+                  command: [/usr/libexec/check-container, --live]
+                initialDelaySeconds: 120
+                periodSeconds: 20
+          volumes:
+            - name: db-data
+              persistentVolumeClaim:
+                claimName: ${APP_NAME}-db-data
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: ${APP_NAME}-db
+      labels:
+        app.kubernetes.io/part-of: aados
+        app.kubernetes.io/component: db
+    spec:
+      selector:
+        app.kubernetes.io/name: ${APP_NAME}-db
+      ports:
+        - name: postgres
+          port: 5432
+          targetPort: postgres
   - apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -60,7 +161,14 @@ objects:
                 - name: PORT
                   value: '4000'
                 - name: AADOS_ENABLE_DATABASE
-                  value: 'false'
+                  value: 'true'
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: postgres-password
+                - name: DATABASE_URL
+                  value: ecto://aados:$(POSTGRES_PASSWORD)@${APP_NAME}-db:5432/aados
                 - name: SECRET_KEY_BASE
                   valueFrom:
                     secretKeyRef:
@@ -177,6 +285,25 @@ objects:
                   value: /data/aados
                 - name: AADOS_DB_READ
                   value: 'off'
+                # PostgreSQL is primary: the first start copies state.enc into it (backup kept, file untouched).
+                # Rollback: AADOS_STORAGE=file (changes made after the switch stay only in PostgreSQL).
+                - name: AADOS_STORAGE
+                  value: postgres
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: postgres-password
+                - name: AADOS_DATABASE_URL
+                  value: postgres://aados:$(POSTGRES_PASSWORD)@${APP_NAME}-db:5432/aados
+                - name: AADOS_CREDENTIAL_ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aados-api-secrets
+                      key: credential-encryption-key
+                # Document uploads up to 25 MB (adapter-node default is 512 KB).
+                - name: BODY_SIZE_LIMIT
+                  value: '27M'
                 - name: AADOS_INTERNAL_API_TOKEN
                   valueFrom:
                     secretKeyRef:

@@ -24,7 +24,8 @@ Normal deploys keep the existing username and password hash. Run `./bin/oc-deplo
 - DNS for `os.aadnanda.com` must point to the OpenShift router. The default certificate issuer is `letsencrypt-prod`, which has the Cloudflare DNS solver used by existing `aadnanda.com` certificates.
 - `aados-web-data` is a 1 GiB persistent volume. Zoho OAuth credentials, folder mappings, cursors and parsed items are encrypted before being written there with a key derived from `secret_key_base`.
 - Register `https://os.aadnanda.com/oauth/zoho/callback` in the Zoho API Console. The app requests read-only account, folder and message scopes.
-- `AADOS_ENABLE_DATABASE=false` until CloudNativePG/PostgreSQL and migrations are configured.
+- PostgreSQL 16 (`aados-db`, image `quay.io/sclorg/postgresql-16-c9s`, 5 Gi PVC `aados-db-data`) is primary storage since v0.1.64. The API runs migrations on start; the web app imported `state.enc` once (file kept). Rollback: set web `AADOS_STORAGE=file` (changes made since then exist only in PostgreSQL).
+- `aados-api-secrets` keys: `secret_key_base`, `aados-user`, `aados-password-hash`, `postgres-password`, `credential-encryption-key` (base64 of 32 bytes; encrypts mail/OAuth/AI tokens in PostgreSQL — **back it up; losing it means reconnecting every account**), `internal-api-token`. `bin/oc-deploy.sh` only creates `secret_key_base` and the login keys today; on a fresh namespace add the other three first (see 2026-11-18 handoff in roadmap item 63).
 - OpenShift builds use each app's Dockerfile; the cluster's internal image registry stores `aados-api:latest` and `aados-web:latest` in the target namespace.
 - The script uses `oc` against your **currently logged-in cluster**, but never changes your default namespace. Confirm cluster/context before deploying.
 - `bin/dev-local.sh` uses Docker Compose for optional local-only testing, not for OpenShift.
