@@ -4,6 +4,7 @@ import { syncCalendars } from './calendar-sync';
 import { syncJob } from './sync-job';
 import { hasDatabase } from './aados-store';
 import { financeTick } from './finance/refresh';
+import { autoAcknowledgeNow } from './asana';
 
 declare global { var __aadosPipelineScheduler: ReturnType<typeof setInterval> | undefined; var __aadosSyncRunning: boolean | undefined; }
 
@@ -40,6 +41,8 @@ async function pass() {
     await updateStateDetached(async (state) => { await syncCalendars(state); }); // read-only; per-account errors are recorded on the account
     // Finance: prices every pass during market hours, otherwise twice a day; snapshots + alerts follow each refresh.
     if (hasDatabase()) await financeTick().catch((e) => console.warn('[aados] finance refresh failed:', e instanceof Error ? e.message : e));
+    // Asana: acknowledge new Incoming tasks even when the Asana page isn't open.
+    await autoAcknowledgeNow().catch((e) => console.warn('[aados] asana auto-acknowledge failed:', e instanceof Error ? e.message : e));
   } finally { globalThis.__aadosSyncRunning = false; }
 }
 

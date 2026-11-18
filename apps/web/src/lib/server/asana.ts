@@ -2,7 +2,7 @@
 // Tasks are read live from Asana every time, like the Toolbox; AadOS stores only the token (encrypted, with the
 // other integration secrets), the chosen workspace and running timers.
 import { readState, updateState, type AadOSState } from './aados-store';
-import { NO_REPEAT, type Recurrence, type Task } from '$lib/asana-model';
+import { NO_REPEAT, stageOf, type Recurrence, type Task } from '$lib/asana-model';
 
 const BASE = 'https://app.asana.com/api/1.0';
 const TASK_FIELDS = 'name,notes,due_on,due_at,completed,permalink_url,projects.name,assignee.name,assignee_section.name,recurrence,num_subtasks';
@@ -87,6 +87,28 @@ export async function createTask(c: Conn, t: { name: string; notes?: string; due
   body.workspace = c.workspace; body.assignee = t.assignee || 'me';
   if (t.projects?.length) body.projects = t.projects;
   return toTask((await call(c.token, 'POST', '/tasks', { body, query: { opt_fields: TASK_FIELDS } })).data);
+}
+/** Auto-acknowledge is on unless the owner turned it off on the Asana page. */
+export const autoAckOn = (s: Pick<AadOSState, 'prefs'>) => s.prefs.asanaAutoAck !== false;
+/**
+ * Auto-acknowledge: move every task sitting in Incoming / Recently assigned (new assignments, the next copy of a
+ * recurring task) into To do. Returns the task list with sections updated; does nothing without a To do section.
+ */
+export async function autoAcknowledge(c: Conn, tasks: Task[], sections?: { gid: string; name: string }[]): Promise<{ tasks: Task[]; moved: number }> {
+  const incoming = tasks.filter((t) => stageOf(t.sectionName) === 'incoming');
+  if (!incoming.length) return { tasks, moved: 0 };
+  const todo = (sections ?? (await mySections(c))).find((x) => stageOf(x.name) === 'todo');
+  if (!todo) return { tasks, moved: 0 };
+  const ok = new Set<string>();
+  for (let i = 0; i < incoming.length; i += 4) await Promise.all(incoming.slice(i, i + 4).map((t) => moveToSection(c, todo.gid, t.gid).then(() => ok.add(t.gid)).catch(() => undefined)));
+  return { tasks: tasks.map((t) => (ok.has(t.gid) ? { ...t, sectionGid: todo.gid, sectionName: todo.name } : t)), moved: ok.size };
+}
+/** Background pass (scheduler, after completing a task): acknowledge whatever arrived since. */
+export async function autoAcknowledgeNow(): Promise<number> {
+  const state = await readState();
+  if (!connectedState(state) || !autoAckOn(state)) return 0;
+  const c = await connection();
+  return (await autoAcknowledge(c, await myTasks(c))).moved;
 }
 export async function subtasks(c: Conn, gid: string) {
   return (await all(c.token, `/tasks/${gid}/subtasks`, { opt_fields: 'name,completed,due_on,due_at,assignee.name' }))

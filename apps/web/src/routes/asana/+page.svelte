@@ -31,7 +31,8 @@
   let timePick = $state<{ gid: string; value: string } | null>(null), repeatEdit = $state(''), addTimeOpen = $state(false), addTimeValue = $state('09:00');
   let collapsed = $state<string[]>([]), dueOnly = $state(false), refreshing = $state(false), token = $state(''), connecting = $state(false);
   let now = $state(Date.now());
-  $effect(() => { dueOnly = data.dashboardDueOnly; });
+  let autoAck = $state(true);
+  $effect(() => { dueOnly = data.dashboardDueOnly; autoAck = data.autoAck; });
   onMount(() => { const t = setInterval(() => (now = Date.now()), 1000); return () => clearInterval(t); });
 
   // Board columns: the real My Tasks sections, else derived from the tasks (first-seen order).
@@ -174,7 +175,7 @@
       {#if notice}<p class="err">{notice}</p>{/if}
     </section>
   {:else}
-  <div class="topline"><label class="chk"><input type="checkbox" bind:checked={dueOnly} onchange={() => asanaApi('prefs', { dashboardDueOnly: dueOnly }).catch(fail)}> Dashboard due tasks only</label><span class="sp"></span><small class="muted">{data.workspace}{data.user ? ` · ${data.user}` : ''}</small><button class="ghost" onclick={refresh} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh'}</button><button class="ghost" onclick={disconnect}>Disconnect</button></div>
+  <div class="topline"><label class="chk"><input type="checkbox" bind:checked={dueOnly} onchange={() => asanaApi('prefs', { dashboardDueOnly: dueOnly }).catch(fail)}> Dashboard due tasks only</label><label class="chk" title="New and recurring tasks move from Incoming to To do automatically"><input type="checkbox" bind:checked={autoAck} onchange={() => asanaApi('prefs', { autoAck }).then(() => { if (autoAck) void invalidateAll(); }).catch(fail)}> Auto-acknowledge</label><span class="sp"></span><small class="muted">{data.workspace}{data.user ? ` · ${data.user}` : ''}</small><button class="ghost" onclick={refresh} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh'}</button><button class="ghost" onclick={disconnect}>Disconnect</button></div>
   <header class="head">
     <h1>Asana — {VIEWS.find(([v]) => v === view)?.[1]}</h1>
     <nav class="tabs">{#each VIEWS as [v, label, icon] (v)}<button class="tab {v}" class:on={view === v} onclick={() => setView(v)}><span>{icon}</span> {label}</button>{/each}<button class="newtask" onclick={() => (creating = true)}>⊕ New Task</button></nav>

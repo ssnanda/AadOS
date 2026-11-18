@@ -64,7 +64,7 @@ export type Task = {
   id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string; priority?: 'high' | 'normal' | 'low'; completedAt?: string;
   notes?: string; /** HH:MM, local to prefs.timeZone */ dueTime?: string; tags?: string[]; /** Linked calendar occurrence: `${eventId}|${occurrenceStart}` */ eventKey?: string;
 };
-export type Prefs = { /** Calendar shown on the Conference Room tab */ roomCalendarId?: string; /** Home dashboard shows only Asana tasks that are due (today/overdue) */ asanaDashboardDueOnly?: boolean; /** IANA zone; '' = not set yet (UTC is used until the browser reports one) */ timeZone: string; /** minutes before an event; null = no automatic event reminders */ eventLeadMinutes: number | null; /** HH:MM reminder time for tasks without a due time; '' = none */ taskReminderTime: string; weekStart: 0 | 1 };
+export type Prefs = { /** Calendar shown on the Conference Room tab */ roomCalendarId?: string; /** Asana: move new Incoming / Recently assigned tasks to To do automatically (default on) */ asanaAutoAck?: boolean; /** Home dashboard shows only Asana tasks that are due (today/overdue) */ asanaDashboardDueOnly?: boolean; /** IANA zone; '' = not set yet (UTC is used until the browser reports one) */ timeZone: string; /** minutes before an event; null = no automatic event reminders */ eventLeadMinutes: number | null; /** HH:MM reminder time for tasks without a due time; '' = none */ taskReminderTime: string; weekStart: 0 | 1 };
 // One connected mailbox. `remoteId` is the Zoho mail account id (unused for Gmail).
 export type MailAccount = {
   id: string;

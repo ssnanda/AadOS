@@ -26,6 +26,9 @@ async function each(gids: string[], work: (gid: string) => Promise<void>) {
 }
 
 /** Section gid for a workflow stage (by My Tasks section name). */
+// Completing a recurring task makes Asana create the next copy in Recently assigned; acknowledge it shortly after.
+const ackSoon = () => { setTimeout(() => { void asana.autoAcknowledgeNow().catch(() => 0); }, 4000); };
+
 async function sectionFor(c: asana.Conn, stage: Stage) {
   const s = (await asana.mySections(c)).find((x) => stageOf(x.name) === stage);
   if (!s) throw new asana.AsanaError(`Your My Tasks has no “${stage === 'todo' ? 'To do' : stage[0].toUpperCase() + stage.slice(1)}” section — add it in Asana, then Refresh.`);
@@ -72,10 +75,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
   try {
     if (op === 'connect') return json(await asana.connect(str(b.token, 500), str(b.workspace, 40)));
     if (op === 'disconnect') { await asana.disconnect(); return json({ ok: true }); }
-    if (op === 'prefs') { await updateState((s) => { s.prefs.asanaDashboardDueOnly = b.dashboardDueOnly === true; }); return json({ ok: true }); }
+    if (op === 'prefs') { await updateState((s) => { if (typeof b.dashboardDueOnly === 'boolean') s.prefs.asanaDashboardDueOnly = b.dashboardDueOnly; if (typeof b.autoAck === 'boolean') s.prefs.asanaAutoAck = b.autoAck; }); if (b.autoAck === true) await asana.autoAcknowledgeNow().catch(() => 0); return json({ ok: true }); }
     const c = await asana.connection();
     switch (op) {
-      case 'complete': await each(gidsOf(b), async (g) => { await logTimer(c, g); await asana.updateTask(c, g, { completed: b.completed !== false }); }); return json({ ok: true });
+      case 'complete': await each(gidsOf(b), async (g) => { await logTimer(c, g); await asana.updateTask(c, g, { completed: b.completed !== false }); }); ackSoon(); return json({ ok: true });
       case 'stage': {
         const stage = str(b.stage, 10) as Stage;
         if (stage === 'done') { await each(gidsOf(b), async (g) => { await logTimer(c, g); await asana.updateTask(c, g, { completed: true }); }); return json({ ok: true }); }

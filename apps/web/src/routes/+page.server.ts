@@ -58,7 +58,8 @@ export const load: PageServerLoad = async ({ locals }) => {
   // limits it to today/overdue; otherwise Incoming tasks show too.
   const asana = can(user, 'asana') && asanaApi.connectedState(state) ? (async () => {
     const today = dayIn(new Date(), tz), dueOnly = Boolean(state.prefs.asanaDashboardDueOnly);
-    const all = await asanaApi.myTasks(await asanaApi.connection());
+    const conn = await asanaApi.connection(), raw = await asanaApi.myTasks(conn);
+    const all = asanaApi.autoAckOn(state) ? (await asanaApi.autoAcknowledge(conn, raw).catch(() => ({ tasks: raw }))).tasks : raw;
     const list = all.filter((t) => { const d = dueDay(t, tz); return (d && d <= today) || (!dueOnly && stageOf(t.sectionName) === 'incoming'); })
       .sort((a, b) => (dueDay(a, tz) || '9999').localeCompare(dueDay(b, tz) || '9999'));
     const attention: Attention[] = list.map((t) => ({ t, due: dueShort(t, today, tz) })).filter((x) => x.due.tone === 'overdue' || x.due.tone === 'today')
