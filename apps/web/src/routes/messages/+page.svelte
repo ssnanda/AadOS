@@ -15,8 +15,9 @@
   let cat = $state(''), suggesting = $state(false), suggestion = $state<{ category: string; why: string; template: string | null } | null>(null);
   let templates = $state<Template[]>([]), managing = $state(false), editTpl = $state<Template | null>(null), refreshing = $state(false);
   let spamSet = $state(new Set<string>());
+  let doneSet = $state(new Set<string>()); // spam senders whose stop reply was delivered → Spam reports
   let groups = $state<MsgGroup[]>([]), picked = $state<string[]>([]), selecting = $state(false), similarOpen = $state(false);
-  $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; spamSet = new Set((d as { spam?: string[] }).spam ?? []); } }); });
+  $effect(() => { const d = data; untrack(() => { templates = d.templates; groups = d.groups; if (d.connected) { chats = d.chats; unread = d.unread; spamSet = new Set((d as { spam?: string[] }).spam ?? []); doneSet = new Set((d as { spamDone?: string[] }).spamDone ?? []); } }); });
 
   // Rows: a sender group ("Atrium notifications") collapses its conversations into one row; others are one row each.
   type Row = Chat & { members: string[]; groupId?: string };
@@ -36,11 +37,11 @@
   const rowUnread = (r: Row) => r.members.some((g) => unread.includes(g));
   /** Spam: senders you sent the stop-solicitation reply to (or moved by hand). Never in the main view. */
   const isSpamRow = (r: Row) => !r.group && !isReportRow(r) && r.participants.some((p) => spamSet.has(addressKey(p)));
-  /** The carrier spam-report thread (7726): your reports and AT&T's replies, kept in their own folder. */
-  const isReportRow = (r: Row) => !r.group && r.participants.some((p) => addressKey(p) === '7726');
+  /** Spam reports: the carrier thread (7726, your reports and AT&T's replies) plus spam senders whose stop reply was delivered. */
+  const isReportRow = (r: Row) => !r.group && r.participants.some((p) => addressKey(p) === '7726' || (doneSet.has(addressKey(p)) && spamSet.has(addressKey(p))));
   async function setSpam(r: Row, spam: boolean) {
     const addresses = r.participants.map(addressKey);
-    try { spamSet = new Set((await api('spam.set', { addresses, spam })).spam); notice = spam ? 'Moved to Spam.' : 'Moved back to your conversations.'; if (spam && cat !== 'spam') openGuid = ''; } catch (e) { notice = (e as Error).message; }
+    try { spamSet = new Set((await api('spam.set', { addresses, spam })).spam); notice = spam ? 'Moved to Spam.' : 'Moved back to your conversations.'; if (!spam) doneSet = new Set([...doneSet].filter((a) => !addresses.includes(a))); if (spam && cat !== 'spam') openGuid = ''; } catch (e) { notice = (e as Error).message; }
   }
   /** Chat to send to / summarize for a row: its most recent member conversation. */
   const primary = (r: Row | undefined) => (r ? [...r.members].sort((a, b) => (chats.find((c) => c.guid === b)?.last?.at || 0) - (chats.find((c) => c.guid === a)?.last?.at || 0))[0] : '');
@@ -190,7 +191,7 @@
     <button class="tilebtn" class:on={!cat} onclick={() => (cat = '')} title="Unread, or waiting for your reply (last 30 days)"><span>💬</span><b>{needsAll.total}</b><small>Needs you{needsAll.unread ? ` · ${needsAll.unread} unread` : ''}</small></button>
     {#each CATEGORIES as t (t.id)}{@const n = tile(t.id)}<button class="tilebtn {t.id}" class:on={cat === t.id} class:zero={!n.total} onclick={() => (cat = cat === t.id ? '' : t.id)}><span>{t.icon}</span><b>{n.total}</b><small>{t.label}{n.unread ? ` · ${n.unread} unread` : ''}</small></button>{/each}
     <button class="tilebtn spam" class:on={cat === 'spam'} class:zero={!spamRows.length} onclick={() => (cat = cat === 'spam' ? '' : 'spam')} title="Senders you told to stop (never shown in the main view)"><span>🚫</span><b>{spamRows.length}</b><small>Spam</small></button>
-    <button class="tilebtn spam" class:on={cat === 'reports'} class:zero={!reportRows.length} onclick={() => (cat = cat === 'reports' ? '' : 'reports')} title="Your reports to the carrier spam line 7726 and AT&amp;T's replies"><span>📨</span><b>{reportRows.length}</b><small>Spam reports (7726)</small></button>
+    <button class="tilebtn spam" class:on={cat === 'reports'} class:zero={!reportRows.length} onclick={() => (cat = cat === 'reports' ? '' : 'reports')} title="Senders whose stop reply was delivered, plus your 7726 reports and AT&amp;T's replies"><span>📨</span><b>{reportRows.length}</b><small>Spam reports</small></button>
 
   </div>
   <div class="showall"><label><input type="checkbox" checked={data.showAll} onchange={(e) => goto(e.currentTarget.checked ? '?all=1' : '?', { keepFocus: true, noScroll: true })}> Show all conversations <small>(not only unread / awaiting reply · searches older history)</small></label>
@@ -214,7 +215,7 @@
       {#if !open}<p class="muted pad">Pick a conversation.</p>
       {:else}
         <header><button class="back" onclick={() => (openGuid = '')} aria-label="Back">‹</button><div><strong>{open.title}</strong>{#if open.group}<small>{open.participants.map(nameOf).join(', ')}</small>{:else}<small>{open.participants.map((p) => (nameOf(p) !== prettyAddress(p) ? `${nameOf(p)} · ${prettyAddress(p)}` : prettyAddress(p))).join(', ')}</small>{/if}</div>
-          {#if !open.group && !isReportRow(open)}{#if isSpamRow(open)}<button onclick={() => open && setSpam(open, false)}>Not spam</button>{:else}<button onclick={() => open && setSpam(open, true)} title="Move to Spam: never shown in your main view">🚫 Spam</button>{/if}{/if}
+          {#if !open.group && !open.participants.some((p) => addressKey(p) === '7726')}{#if isSpamRow(open) || isReportRow(open)}<button onclick={() => open && setSpam(open, false)}>Not spam</button>{:else}<button onclick={() => open && setSpam(open, true)} title="Move to Spam: never shown in your main view">🚫 Spam</button>{/if}{/if}
           {#if open.groupId}<button onclick={() => open?.groupId && ungroup(open.groupId)}>Ungroup</button>{:else if !open.group}<button onclick={() => { const n = prompt('Save this sender as (existing or new contact name):', openHint?.name || groups[0]?.name || ''); if (n && open) addToGroup(n, addrsOf(open.members), groups.find((g) => g.name.toLowerCase() === n.toLowerCase())?.id || ''); }}>🏷 Name sender…</button>{/if}
           {#if data.aiAvailable}<button onclick={summarize} disabled={summarizing}>✦ {summarizing ? 'Summarizing…' : 'Summarize'}</button>{/if}</header>
         {#if openHint}<div class="hint">Looks like <b>{openHint.name}</b>. <button class="primary small" onclick={() => open && openHint && addToGroup(openHint.name, addrsOf(open.members), openHint.id)}>{openHint.id ? `Add to ${openHint.name}` : `Create “${openHint.name}”`}</button> <span class="muted">— then Find similar to add the rest.</span></div>{/if}

@@ -132,3 +132,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 63. [x] Production PostgreSQL: `aados-db` (PG16, 5 Gi) + api migrations + web `AADOS_STORAGE=postgres`; secret keys postgres-password / credential-encryption-key / internal-api-token added by hand — `bin/oc-deploy.sh` should create them on fresh namespaces (owner edit)
 64. [x] AJMCP via in-cluster Service (http://ajmcp-server.ajmcp.svc) instead of the public host — public route timed out from pods
 65. [ ] Messages: Send follows SMS after a failed iMessage (iMessage/SMS chip per chat); Retry as SMS shows progress, falls back to /chat/new service SMS, rechecks delivery. Untested — owner to verify.
+66. [ ] Messages: spam senders whose stop reply was delivered move from Spam to Spam reports (state.messageSpamDone); Spam keeps only unhandled senders (may hold genuine messages); Not spam works from both. Untested.

@@ -41,7 +41,7 @@ export const POST = async ({ request }) => {
   if (op === 'spam.set') {
     const addrs: string[] = (Array.isArray(b.addresses) ? b.addresses : []).map((a: unknown) => addressKey(s(a, 120))).filter(Boolean);
     let spam: string[] = [];
-    await updateState((st) => { const cur = new Set(st.messageSpam ?? []); for (const a of addrs) { if (b.spam === false) cur.delete(a); else cur.add(a); } st.messageSpam = [...cur]; spam = st.messageSpam; });
+    await updateState((st) => { const cur = new Set(st.messageSpam ?? []); for (const a of addrs) { if (b.spam === false) cur.delete(a); else cur.add(a); } st.messageSpam = [...cur]; spam = st.messageSpam; if (b.spam === false) st.messageSpamDone = (st.messageSpamDone ?? []).filter((a) => !addrs.includes(a)); });
     return json({ spam });
   }
   // Canned replies (stored with AadOS state; no BlueBubbles needed).
