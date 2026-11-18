@@ -137,7 +137,7 @@ function matchesText(row: InboxRow, terms: string[]) {
 export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()): InboxResult {
   const view = query.view || 'all';
   // Pasted senders (\"Dunkin' Rewards <noreply@…>\") search as words: brackets, quotes and commas are ignored.
-  const terms = (query.q || '').toLowerCase().replace(/['’`]/g, '').replace(/[<>"(),;]/g, ' ').split(/\s+/).filter(Boolean);
+  const terms = (query.q || '').toLowerCase().replace(/['’`]/g, '').replace(/[<>"(),;!?]/g, ' ').split(/\s+/).filter(Boolean);
   const sender = (query.sender || '').toLowerCase();
   const from = query.from ? Date.parse(query.from) : NaN;
   const to = query.to ? Date.parse(query.to) + 86_399_999 : NaN;
@@ -161,7 +161,10 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
   counts.recent = Math.min(RECENT_COUNT, scoped.length);
   for (const r of rows) counts.accounts[r.accountId] = (counts.accounts[r.accountId] || 0) + 1;
 
-  const filtered = scoped.filter((r) =>
+  // Searching works like a mail client: the whole account (or all inboxes), every folder and tab — not just the tab/folder on screen.
+  const searching = terms.length > 0;
+  const pool = searching ? rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider)) : scoped;
+  const filtered = pool.filter((r) => searching ? matchesText(r, terms) : (
     (view !== 'inbox' || r.inInbox) && (view !== 'unread' || r.unread) && (view !== 'important' || r.importance === 'high') && (view !== 'needs-reply' || needsReply(r))
     && (view !== 'read' || !r.unread)
     && (view !== 'attention' || isAttention(r, now)) && (view !== 'people' || isPeople(r)) && (view !== 'bills' || isBills(r, now)) && (view !== 'bulk' || isBulk(r))
@@ -172,7 +175,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     && (query.importance !== 'high' || r.importance === 'high')
     && (!query.pipeline || r.copyIds.some((id) => id.startsWith(`${query.pipeline}:`)))
     && (!query.thread || r.threadId === query.thread)
-    && matchesText(r, terms));
+    && matchesText(r, terms)));
   // Recent is simply the newest messages, no paging.
   if (view === 'recent') { const rows = filtered.slice(0, RECENT_COUNT); return { rows, total: rows.length, page: 1, pageSize: RECENT_COUNT, pages: 1, counts: { ...counts, recent: Math.min(RECENT_COUNT, filtered.length) } }; }
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));

@@ -17,7 +17,9 @@ export const POST = async ({ request, locals }) => {
   const scope = { account: String(body.account || ''), folder: String(body.folder || ''), pipeline: String(body.pipeline || ''), q: String(body.q || '').slice(0, 200) };
   // Only mailboxes this user can see are refreshed (the owner's, a member's shared + own).
   const allowed = new Set(scopeState(await readState(), locals.user).accounts.map((a) => a.id));
-  if (globalThis.__aadosSyncRunning || syncJob().running) return json({ changed: false, skipped: 'busy' });
+  // Only a full mail sync blocks this. The 15-minute background pass no longer touches mail (calendars, finance, Asana),
+  // so it must not stop the open folder from refreshing.
+  if (syncJob().running) return json({ changed: false, skipped: 'busy' });
   const key = `${scope.account}|${scope.folder}|${scope.pipeline}|${scope.q}`;
   const last = (globalThis.__aadosLiveLast ??= new Map()), running = (globalThis.__aadosLiveRunning ??= new Set());
   if (running.has(key) || Date.now() - (last.get(key) || 0) < MIN_GAP_MS) return json({ changed: false, skipped: 'recent' });
