@@ -47,8 +47,9 @@
   const conf = (c: number) => (c >= 0.8 ? 'high' : c >= 0.5 ? 'medium' : 'low');
 </script>
 <section class="ai" aria-label="AI tools">
-  <div class="bar">
-    <span class="lbl">✦ AI</span>
+  <details class="commands">
+    <summary>✦ AI tools</summary>
+    <div class="bar">
     <button onclick={() => askAi('summarize', 'Summary')} disabled={!!busy}>Summarize</button>
     <button onclick={() => askAi('explain', 'Why it matters')} disabled={!!busy}>Explain importance</button>
     <button onclick={() => askAi('followup', 'Suggested follow-up')} disabled={!!busy}>Suggest follow-up</button>
@@ -57,7 +58,8 @@
     <button onclick={reviewed} disabled={!!busy}>Mark reviewed</button>
     <button onclick={loadAtts} disabled={!!busy}>Attachments</button>
     {#if busy && busy !== 'loading'}<span class="busy">Working…</span><button class="link" onclick={() => controller?.abort()}>Cancel</button>{/if}
-  </div>
+    </div>
+  </details>
   {#if error}<p class="err">{error}</p>{/if}
   {#if note}<p class="ok">{note}</p>{/if}
 
@@ -94,7 +96,7 @@
 </section>
 <style>
   .ai{border-bottom:1px solid #e4e9f2;padding:10px 18px;background:#fbfcff;font-size:13px;max-height:48vh;overflow:auto}
-  .bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.lbl{font-weight:800;color:#7c4dde;font-size:12px;margin-right:4px}
+  .commands summary{width:max-content;color:#7c4dde;font-size:12px;font-weight:800;cursor:pointer;list-style:none}.commands summary::-webkit-details-marker{display:none}.commands summary::after{content:' ▾';color:#8a95a8}.commands[open] summary::after{content:' ▴'}.bar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:7px}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 9px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}
   .link{border:0;background:none;padding:0;color:#3157de}.busy{font-size:11px;color:#8a95a8}.err{color:#a5414d;margin:6px 0 0}.ok{color:#0f7f74;margin:6px 0 0}.muted{color:#8a95a8;margin:6px 0 0}
   .insight,.out,.draft{margin-top:9px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:9px 11px}.insight p,.out p{margin:0 0 5px;white-space:pre-wrap}.why{color:#53607a;font-size:12px}

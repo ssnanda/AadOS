@@ -61,6 +61,8 @@
   }
   const allShown = $derived(rows.length > 0 && selected.length === rows.length);
   const viewingIndex = $derived(viewing ? rows.findIndex((r) => r.key === viewing?.key) : -1);
+  // Opening a message marks it read in the mailbox; reflect that immediately in the preview.
+  const openViewing = (row: PageData['rows'][number]) => viewing = { ...row, unread: false };
   const toggle = (key: string, checked: boolean) => selected = checked ? [...new Set([...selected, key])] : selected.filter((x) => x !== key);
   const toggleAll = (checked: boolean) => selected = checked ? rows.map((r) => r.key) : [];
   $effect(() => { const visibleKeys = rows.map((row) => row.key); selected = visibleKeys.filter(() => false); });
@@ -80,12 +82,12 @@
     if (deleting) void invalidateAll(); else await invalidateAll();
     return true;
   }
-  function move(offset: number) { const row = rows[viewingIndex + offset]; if (row) viewing = row; }
+  function move(offset: number) { const row = rows[viewingIndex + offset]; if (row) openViewing(row); }
   async function deleteViewing() {
     if (!viewing) return;
     const current = viewing;
     const replacement = rows[viewingIndex + 1] ?? rows[viewingIndex - 1] ?? null;
-    viewing = replacement;
+    if (replacement) openViewing(replacement); else viewing = null;
     if (!(await act('delete', [current.key]))) viewing = current;
   }
   // Mark unread is the stop-reading action: return to the list instead of advancing.
@@ -98,7 +100,8 @@
   async function keepUnreadNext() {
     if (!viewing) return;
     const current = viewing;
-    viewing = rows[viewingIndex + 1] ?? null;
+    const next = rows[viewingIndex + 1];
+    if (next) openViewing(next); else viewing = null;
     await act('mark-unread', [current.key]);
   }
 </script>
@@ -142,9 +145,9 @@
   {#if rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages yet.' : 'No messages match.'}</div>{/if}
   <ul class="list">{#each rows as r (r.key)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-    <li class:unread={r.unread} class:selected={selected.includes(r.key)} class:active={viewing?.key === r.key} onclick={(e) => { if (!(e.target as HTMLElement).closest('input,button,a,select,label,form')) viewing = r; }}>
+    <li class:unread={r.unread} class:selected={selected.includes(r.key)} class:active={viewing?.key === r.key} onclick={(e) => { if (!(e.target as HTMLElement).closest('input,button,a,select,label,form')) openViewing(r); }}>
       <div class="email-line"><button type="button" class="ic" title={r.unread ? 'Mark read' : 'Mark unread'} aria-label={r.unread ? 'Mark read' : 'Mark unread'} onclick={() => act(r.unread ? 'mark-read' : 'mark-unread', [r.key])}>{r.unread ? '✉' : '📭'}</button><button type="button" class="ic" title="Move to Trash" aria-label="Delete" onclick={() => act('delete', [r.key])}>🗑</button><input class="pick" type="checkbox" checked={selected.includes(r.key)} aria-label={`Select ${r.subject || 'email'}`} onchange={(e) => toggle(r.key, e.currentTarget.checked)}>
-      <button type="button" class="row" onclick={() => viewing = r}>
+      <button type="button" class="row" onclick={() => openViewing(r)}>
         <span class="from">{#if r.importance === 'high'}<b class="star" title="Important">★</b>{/if}{name(r.sender)}</span>
         <span class="subj"><strong>{r.subject || '(no subject)'}</strong><em>{r.summary}</em></span>
         <time>{ago(r.receivedAt)}</time>
@@ -163,7 +166,7 @@
         </form>
       </div>
     </li>{/each}</ul></section>
-  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => (viewing = { ...(rows.find((x) => x.key === r.key) ?? r) })} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={markViewingUnread} onkeepunread={keepUnreadNext} onchanged={() => invalidateAll()} ai={data.aiAvailable} aiBlocked={data.aiBlocked} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
+  {#if viewing}<div class="pane"><EmailViewer embedded accountId={viewing.accountId || viewing.key.split(':')[0]} onopen={(r) => openViewing(rows.find((x) => x.key === r.key) ?? r)} item={viewing} unread={viewing.unread} onmarkread={() => viewing && act('mark-read', [viewing.key])} onmarkunread={markViewingUnread} onkeepunread={keepUnreadNext} onchanged={() => invalidateAll()} ai={data.aiAvailable} aiBlocked={data.aiBlocked} onclose={() => viewing = null} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={deleteViewing} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < rows.length - 1} /></div>{/if}
   </div>
   {#if data.pages > 1}<div class="pager">{#if data.page > 1}<a href={href({ page: data.page - 1 })}>← Newer</a>{/if}<span>Page {data.page} of {data.pages} · {data.total} messages</span>{#if data.page < data.pages}<a href={href({ page: data.page + 1 })}>Older →</a>{/if}</div>{/if}
   {/if}
