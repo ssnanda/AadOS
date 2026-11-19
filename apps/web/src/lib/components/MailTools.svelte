@@ -11,7 +11,7 @@
   let note = $state('');
   let menu = $state(false);
   let busy = $state('');
-  let compose = $state<{ mode: 'reply' | 'replyAll' | 'forward'; to: string; cc: string; bcc: string; subject: string; text: string; quoted: string; showQuoted: boolean; showBcc: boolean; attachments: boolean; provider: string } | null>(null);
+  let compose = $state<{ mode: 'reply' | 'replyAll' | 'forward'; from: string; to: string; cc: string; bcc: string; subject: string; text: string; quoted: string; showQuoted: boolean; showBcc: boolean; attachments: boolean; provider: string; residential: boolean; templateTitle: string } | null>(null);
   let findOpen = $state(false);
   let term = $state('');
   let rulesOpen = $state(false);
@@ -39,8 +39,14 @@
     menu = false;
     const p = await run('compose', () => call('prepare', { mode }));
     if (!p) return;
-    compose = { mode, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: '', quoted: p.quoted, showQuoted: false, showBcc: false, attachments: mode === 'forward', provider: p.provider };
+    compose = { mode, from: p.from, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: '', quoted: p.quoted, showQuoted: false, showBcc: false, attachments: mode === 'forward', provider: p.provider, residential: false, templateTitle: '' };
     if (withAi) await aiDraft();
+  }
+  async function startResidential() {
+    menu = false;
+    const p = await run('compose', () => call('prepareResidential'));
+    if (!p) return;
+    compose = { mode: 'reply', from: p.from, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: p.template, quoted: p.quoted, showQuoted: false, showBcc: false, attachments: false, provider: p.provider, residential: true, templateTitle: p.templateTitle };
   }
   async function aiDraft() {
     if (!compose) return;
@@ -52,7 +58,7 @@
   async function sendNow() {
     if (!compose) return;
     const c = compose;
-    const r = await run('send', () => call('send', { mode: c.mode, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: `${c.text}${c.quoted}`, attachments: c.attachments }));
+    const r = await run('send', () => call('send', { mode: c.mode, to: c.to, cc: c.cc, bcc: c.bcc, subject: c.subject, text: `${c.text}${c.quoted}`, attachments: c.attachments, residential: c.residential }));
     if (r) { compose = null; note = r.note ? `Sent. ${r.note}` : 'Sent.'; }
   }
   async function openRules() {
@@ -83,6 +89,7 @@
         <button role="menuitem" onclick={() => startCompose('reply')}>Reply</button>
         <button role="menuitem" onclick={() => startCompose('replyAll')}>Reply All</button>
         <button role="menuitem" onclick={() => startCompose('forward')}>Forward</button>
+        {#if info?.provider === 'zoho' && info.account.toLowerCase().endsWith('@intlord.com')}<hr><button role="menuitem" onclick={startResidential}>Reply with Residential Template</button>{/if}
         <hr><button role="menuitem" disabled={!aiAvailable} title={aiBlocked} onclick={() => startCompose('reply', true)}>✦ Reply using AI</button><button role="menuitem" disabled={!aiAvailable} title={aiBlocked} onclick={() => startCompose('replyAll', true)}>✦ Reply All using AI</button>
         {#if !aiAvailable && aiBlocked}<a class="aihint" href="/settings/ai">{aiBlocked}</a>{/if}
       </div>{/if}
@@ -109,6 +116,7 @@
 
   {#if compose}
     <form class="compose" onsubmit={(e) => { e.preventDefault(); sendNow(); }}>
+      <div class="row"><label>From</label><strong>{compose.from}</strong>{#if compose.residential}<small>{compose.templateTitle}</small>{/if}</div>
       <div class="row"><label for="c-to">To</label><input id="c-to" bind:value={compose.to} placeholder="name@example.com, …">{#if !compose.showBcc}<button type="button" class="link" onclick={() => compose && (compose.showBcc = true)}>Bcc</button>{/if}</div>
       <div class="row"><label for="c-cc">Cc</label><input id="c-cc" bind:value={compose.cc}></div>
       {#if compose.showBcc}<div class="row"><label for="c-bcc">Bcc</label><input id="c-bcc" bind:value={compose.bcc}></div>{/if}
@@ -120,7 +128,7 @@
         <button class="send" disabled={busy === 'send'}>Send</button>
         {#if aiAvailable}<button type="button" onclick={aiDraft} disabled={!!busy}>✦ {compose.text.trim() ? 'Polish with AI' : 'Draft with AI'}</button>{/if}
         {#if compose.mode === 'forward'}<label class="chk"><input type="checkbox" bind:checked={compose.attachments}> Include attachments{compose.provider === 'zoho' ? ' (Gmail only)' : ''}</label>{/if}
-        <span class="sp"></span><small>From {info?.account}</small><button type="button" onclick={() => (compose = null)}>Discard</button>
+        <span class="sp"></span><button type="button" onclick={() => (compose = null)}>Discard</button>
       </div>
     </form>
   {/if}

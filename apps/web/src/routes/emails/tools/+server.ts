@@ -1,6 +1,6 @@
 import { keyAllowed } from '$lib/server/scope';
 import { json } from '@sveltejs/kit';
-import { createRule, details, prepare, related, removeRule, rules, send } from '$lib/server/mail-tools';
+import { createRule, details, prepare, prepareResidential, related, removeRule, rules, send } from '$lib/server/mail-tools';
 import { rateLimited } from '$lib/server/ai/service';
 import type { Mode } from '$lib/server/compose';
 
@@ -15,10 +15,11 @@ export const POST = async ({ request, locals }) => {
     switch (op) {
       case 'details': { const d = await details(key); const { headers: _h, text: _t, ...rest } = d; return json(rest); }
       case 'prepare': return json(await prepare(key, MODES.includes(b.mode) ? b.mode : 'reply'));
+      case 'prepareResidential': return json(await prepareResidential(key));
       case 'send': {
         if (rateLimited('send', 20)) return json({ error: 'Too many messages in a minute.' }, { status: 429 });
         const mode: Mode = MODES.includes(b.mode) ? b.mode : 'reply';
-        return json(await send(key, { mode, to: String(b.to || '').slice(0, 2000), cc: String(b.cc || '').slice(0, 2000), bcc: String(b.bcc || '').slice(0, 2000), subject: String(b.subject || '').slice(0, 500), text: String(b.text || '').slice(0, 100_000), attachments: b.attachments === true }));
+        return json(await send(key, { mode, to: String(b.to || '').slice(0, 2000), cc: String(b.cc || '').slice(0, 2000), bcc: String(b.bcc || '').slice(0, 2000), subject: String(b.subject || '').slice(0, 500), text: String(b.text || '').slice(0, 100_000), attachments: b.attachments === true, residential: b.residential === true }));
       }
       case 'related': return json(await related(key, b.scope === 'domain' ? 'domain' : 'sender', b.sameSubject === true));
       case 'rules': return json(await rules(String(b.accountId || '')));

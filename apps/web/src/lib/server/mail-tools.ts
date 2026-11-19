@@ -3,7 +3,7 @@
 import { readState, updateStateDetached, type AadOSState, type MailAccount } from './aados-store';
 import { buildRows, type InboxRow } from './inbox';
 import { createGmailFilter, deleteGmailFilter, fetchGmailAttachment, fetchGmailBody, gmailHeaders, listGmailAttachments, listGmailFilters, sendGmail, type GmailFilter } from './gmail';
-import { fetchZohoBody, replyZoho, sendZoho, zohoHeaders } from './zoho';
+import { fetchZohoBody, replyZoho, sendZoho, zohoHeaders, zohoRequest } from './zoho';
 import { addresses, buildMime, quote, recipients, subjectFor, threading, unsubscribeFromHeader, unsubscribeFromHtml, validAddressList, type Attachment, type Headers, type Mode } from './compose';
 import { htmlToText } from './ai/email-ai';
 
@@ -48,11 +48,37 @@ export async function prepare(key: string, mode: Mode) {
   return { mode, from: d.account, to: r.to.join(', '), cc: r.cc.join(', '), subject: subjectFor(mode, d.subject), quoted: quote(mode, { ...d.headers, from: d.from, subject: d.subject, date: d.date }, d.text), canSend: d.canSend, provider: d.provider };
 }
 
+const RESIDENTIAL_ADDRESS = 'leads@intlord.com';
+const RESIDENTIAL_TEMPLATE = 'Schedule Your Showing – Text Us Directly';
+
+/** Toolbox-compatible residential reply: use the real saved Zoho template and the leads alias. */
+export async function prepareResidential(key: string) {
+  const reply = await prepare(key, 'reply');
+  let template = '';
+  await updateStateDetached(async (s) => {
+    const { account } = locate(s, key);
+    if (account.provider !== 'zoho') throw new Error('Residential templates are available for Zoho email.');
+    if (!account.email.toLowerCase().endsWith('@intlord.com')) throw new Error('Residential templates are available for Intlord mailboxes.');
+    const folder = account.folders.find((f) => f.name.toLowerCase() === 'templates' || f.type.toLowerCase() === 'templates');
+    if (!folder) throw new Error('No Zoho Templates folder was found for this account.');
+    const q = new URLSearchParams({ folderId: folder.id, start: '1', limit: '200' });
+    const page = await zohoRequest(s, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/messages/view?${q}`);
+    const row = (Array.isArray(page.data) ? page.data : []).find((m: Record<string, unknown>) => String(m.subject || '').localeCompare(RESIDENTIAL_TEMPLATE, undefined, { sensitivity: 'accent' }) === 0);
+    if (!row) throw new Error(`Couldn't find the saved Zoho template “${RESIDENTIAL_TEMPLATE}”.`);
+    const messageId = String(row.messageId || '');
+    const body = await zohoRequest(s, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(folder.id)}/messages/${encodeURIComponent(messageId)}/content`);
+    template = htmlToText(String(body.data?.content || body.data?.htmlContent || '')).trim();
+    if (!template) throw new Error(`The saved Zoho template “${RESIDENTIAL_TEMPLATE}” is empty.`);
+  });
+  const cc = Array.from(new Set([...list(reply.cc), RESIDENTIAL_ADDRESS])).join(', ');
+  return { ...reply, from: RESIDENTIAL_ADDRESS, cc, template, templateTitle: RESIDENTIAL_TEMPLATE, residential: true };
+}
+
 const list = (v: string) => v.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
 const MAX_FORWARD_BYTES = 20 * 1024 * 1024;
 
 /** Send what the owner wrote. Reply/reply-all stay in the original thread; Gmail forwards can carry the attachments. */
-export async function send(key: string, m: { mode: Mode; to: string; cc: string; bcc: string; subject: string; text: string; attachments: boolean }) {
+export async function send(key: string, m: { mode: Mode; to: string; cc: string; bcc: string; subject: string; text: string; attachments: boolean; residential?: boolean }) {
   for (const [label, v] of [['To', m.to], ['Cc', m.cc], ['Bcc', m.bcc]] as const) if (v.trim() && !validAddressList(v)) throw new Error(`${label} contains an invalid address.`);
   if (!list(m.to).length && !list(m.cc).length && !list(m.bcc).length) throw new Error('Add at least one recipient.');
   if (!m.subject.trim()) throw new Error('Add a subject.');
@@ -74,7 +100,11 @@ export async function send(key: string, m: { mode: Mode; to: string; cc: string;
       const raw = buildMime({ from: account.email, to: list(m.to), cc: list(m.cc), bcc: list(m.bcc), subject: m.subject, text: m.text, inReplyTo: t.inReplyTo, references: t.references, attachments: files });
       await sendGmail(s, account, raw, m.mode === 'forward' ? '' : threadId);
     } else {
-      const out = { from: account.email, to: list(m.to), cc: list(m.cc), bcc: list(m.bcc), subject: m.subject, text: m.text };
+      const residential = m.residential === true;
+      if (residential && !account.email.toLowerCase().endsWith('@intlord.com')) throw new Error('Residential templates are available for Intlord mailboxes.');
+      const cc = list(m.cc);
+      if (residential && !cc.some((a) => a.toLowerCase() === RESIDENTIAL_ADDRESS)) cc.push(RESIDENTIAL_ADDRESS);
+      const out = { from: residential ? RESIDENTIAL_ADDRESS : account.email, to: list(m.to), cc, bcc: list(m.bcc), subject: m.subject, text: m.text };
       if (m.mode === 'forward') { await sendZoho(s, account, out); if (m.attachments) note = 'Zoho forwards are sent without the original attachments.'; }
       else await replyZoho(s, account, item.messageId, out);
     }

@@ -138,3 +138,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 69. [ ] Messages: senders reported to 7726 go to Spam reports at send time; existing reports backfilled from the numbers you texted 7726. Untested.
 70. [ ] Messages folders match the Mac: Messages · Unknown Senders (BlueBubbles isFiltered) · Spam · Spam reports, + Unread only. Loads 1000 chats (BB lastmessage sort is not newest-first; 150 dropped known senders → "Needs you 0"). Badge = known-sender unread. Untested.
 71. [ ] Zoho reply "Invalid Input": action sent as "Reply" → now "reply"; Zoho errors show errorCode/moreInfo. Untested (no test send by agent).
+72. [x] Email Reply menu: residential reply loads “Schedule Your Showing – Text Us Directly” from the live Zoho Templates folder and composes from/Cc `leads@intlord.com`. Awaiting owner verification; no message sent by agent.
