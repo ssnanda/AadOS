@@ -13,7 +13,7 @@
   const me = $derived(page.data.shell?.user as { name: string; owner: boolean; permissions: string[]; ownAccounts?: boolean } | null | undefined);
   const may = (p: string) => !me || me.owner || me.permissions.includes(p) || (Boolean(me.ownAccounts) && (p === 'emails' || p === 'calendar'));
   // Close the Settings menu on any click outside it, on Escape, and after navigating.
-  $effect(() => { void page.url.pathname; settingsOpen = false; });
+  $effect(() => { void page.url.pathname; settingsOpen = false; open = false; });
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number; total: number }[]);
   let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number; folders: { id: string; name: string; total: number; unread: number }[] }[]);
@@ -43,6 +43,7 @@
 <svelte:window onclick={(e) => { if (settingsOpen && !(e.target as HTMLElement).closest('.menuwrap')) settingsOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') settingsOpen = false; }} />
 <ReminderNotifier enabled={Boolean(page.data.shell?.notifyBrowser)} />
 <div class="workspace">
+  {#if open}<button class="nav-scrim" aria-label="Close navigation" onclick={() => open = false}></button>{/if}
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
     <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
@@ -56,13 +57,14 @@
     {#if may('reminders')}<a class="nav violet" class:active={here('/reminders')} href="/reminders"><span>◔</span>Reminders{#if notifications > 0}<b title="Unread notifications">{notifications}</b>{/if}</a>{/if}
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation">☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if me?.owner !== false}<button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Clears the email copies stored in AadOS. Your Gmail/Zoho mailboxes are not touched; open folders re-sync automatically. Messages, calendar, tasks and finance are not affected.">⌫ Purge emails</button>{/if}{#if me?.owner !== false}<div class="menuwrap"><button class="btn cfg" class:on={page.url.pathname.startsWith('/settings') || settingsOpen} aria-haspopup="menu" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>⚙ Settings ▾</button>{#if settingsOpen}<div class="smenu" role="menu">{#each SETTINGS_PAGES as s (s.href)}<a role="menuitem" href={s.href} class:cur={page.url.pathname === s.href}><span>{s.icon}</span>{s.label}</a>{/each}<hr><a role="menuitem" href="/asana" class:cur={page.url.pathname === '/asana'}><span>◉</span>Asana connection</a></div>{/if}</div>{:else}{#if me?.ownAccounts}<a class="btn cfg" class:on={page.url.pathname.startsWith('/me')} href="/me/accounts">⚙ My accounts</a>{/if}<small class="who">{me?.name}</small>{/if}<form method="POST" action="/logout"><button class="btn out" type="submit">Sign out</button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation" aria-expanded={open}>☰</button><strong>{title}</strong><form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form><div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if me?.owner !== false}<button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Clears the email copies stored in AadOS. Your Gmail/Zoho mailboxes are not touched; open folders re-sync automatically. Messages, calendar, tasks and finance are not affected.">⌫ <span class="btn-label">Purge emails</span></button>{/if}{#if me?.owner !== false}<div class="menuwrap"><button class="btn cfg" class:on={page.url.pathname.startsWith('/settings') || settingsOpen} aria-label="Settings" aria-haspopup="menu" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>⚙ <span class="btn-label">Settings ▾</span></button>{#if settingsOpen}<div class="smenu" role="menu">{#each SETTINGS_PAGES as s (s.href)}<a role="menuitem" href={s.href} class:cur={page.url.pathname === s.href}><span>{s.icon}</span>{s.label}</a>{/each}<hr><a role="menuitem" href="/asana" class:cur={page.url.pathname === '/asana'}><span>◉</span>Asana connection</a></div>{/if}</div>{:else}{#if me?.ownAccounts}<a class="btn cfg" class:on={page.url.pathname.startsWith('/me')} href="/me/accounts">⚙ <span class="btn-label">My accounts</span></a>{/if}<small class="who">{me?.name}</small>{/if}<form method="POST" action="/logout"><button class="btn out" type="submit"><span class="wide-label">Sign out</span><span class="short-label" aria-hidden="true">↪</span></button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
 <SyncProgress />
 </div>
 <style>
   .workspace{display:flex;min-height:100vh;color:#283044}
+  .nav-scrim{display:none}
   .actions small.ver{color:#8a95a8;font-weight:600;font-size:11px}
   .sidebar{width:230px;flex:none;background:#fff;border-right:1px solid #e9ecf4;display:flex;flex-direction:column;padding:28px 14px 18px;gap:3px;min-height:100vh}
   .brand{display:flex;align-items:center;gap:11px;padding:0 10px 26px;font-weight:780;font-size:23px;letter-spacing:-1.3px;line-height:1;color:inherit;text-decoration:none}
@@ -93,5 +95,7 @@
   .purge{background:#fff0f1;color:#c24457}.purge:hover{background:#c24457;color:#fff}
   .content{max-width:2200px;margin:auto;padding:32px}
   .menu{display:none;border:0;background:transparent;color:#4b5e86;font-size:19px}
-  @media(max-width:900px){.sidebar{position:fixed;z-index:20;transform:translateX(-100%);transition:transform .2s;height:100%}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.menu{display:inline-block}.topbar{padding:0 16px}.content{padding:20px 14px}.topbar strong{display:none}.search{margin:0}}
+  .short-label{display:none}
+  @media(max-width:900px){.sidebar{position:fixed;z-index:60;transform:translateX(-100%);transition:transform .2s;height:100%;max-height:100dvh;overflow-y:auto;overscroll-behavior:contain}.sidebar.expanded{transform:none;box-shadow:10px 0 25px #151c2d18}.nav-scrim{display:block;position:fixed;inset:0;z-index:59;border:0;background:#151c2d66}.menu{display:inline-grid;place-items:center;min-width:40px;min-height:40px}.topbar{padding:0 12px;position:sticky;top:0;z-index:40}.content{padding:20px 14px}.topbar strong{display:none}.search{margin:0}.purge,.ver{display:none!important}}
+  @media(max-width:600px){.topbar{gap:7px;height:56px}.search{padding:0 9px;min-width:0}.search input{font-size:16px}.search input::placeholder{color:transparent}.actions{gap:5px}.btn{min-width:40px;min-height:40px;justify-content:center;padding:8px 10px;font-size:14px}.btn-label,.wide-label,.who{display:none}.short-label{display:inline}.smenu{position:fixed;left:10px;right:10px;top:58px;max-height:calc(100dvh - 68px);overflow-y:auto}.content{padding:14px 10px 24px}}
 </style>
