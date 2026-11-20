@@ -71,13 +71,18 @@ export async function sharedMessages(state: AadOSState, account: MailAccount, ad
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, '').replace(/\s+/g, ' ').trim();
+// Zoho does not accept a phrase with spaces after `subject:`. Each word must be its own
+// clause joined with `::` (the same syntax used by the normal Zoho mailbox search).
+const subjectSearchKey = (subject: string) => norm(subject).split(/\s+/).map((word) => word.replace(/["<>:]/g, '').trim()).filter((word) => /[\p{L}\p{N}]/u.test(word)).map((word) => `subject:${word}`).join('::');
 /** Full body from the member's own copy (same subject, closest time within 6 h); else the summary with a note. */
 export async function sharedBody(state: AadOSState, account: MailAccount, id: string): Promise<{ html: string; text: string; note: string }> {
   const m = msgCache().get(`${account.id}|${id}`);
   if (!m) return { html: '', text: '', note: 'Reload the list and open the message again.' };
   try {
-    const q = m.subject.replace(/[:"]/g, ' ').trim().slice(0, 120);
-    const found = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/messages/search?searchKey=${encodeURIComponent(`subject:${q}`)}&limit=25`);
+    const searchKey = subjectSearchKey(m.subject);
+    if (!searchKey) return { html: '', text: m.summary, note: 'Full body unavailable — this message has no searchable subject.' };
+    const query = new URLSearchParams({ searchKey, limit: '50', start: '1', includeto: 'true' });
+    const found = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/messages/search?${query}`);
     const rows: Raw[] = Array.isArray(found.data) ? found.data : [];
     const want = norm(m.subject);
     const best = rows.filter((r) => r.folderId && (norm(String(r.subject || '')) === want || norm(String(r.subject || '')).includes(want) || want.includes(norm(String(r.subject || '')))))
