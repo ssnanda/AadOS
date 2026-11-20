@@ -1,10 +1,12 @@
 import { scopeState } from '$lib/server/scope';
 import { error, fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { readState, updateState } from '$lib/server/aados-store';
+import { hasDatabase, readState, updateState } from '$lib/server/aados-store';
 import { clean, parseMessage } from '$lib/server/pipeline-parser';
 import { filterItems, isUnread } from '$lib/server/search';
 import { digestView, markDigestItem, runDigest } from '$lib/server/ai/weekly-digest-service';
+import { messageKey } from '$lib/server/inbox';
+import { aiConfigured } from '$lib/server/ai/service';
 
 const count = (values: string[]) => {
   const map = new Map<string, number>();
@@ -20,8 +22,8 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
   const kind = url.searchParams.get('kind') || '';
   const store = url.searchParams.get('store') || '';
   const q = (url.searchParams.get('q') || '').trim();
-  // View mode shows every email in the view by default; ?view=unread narrows to unread.
-  const view = url.searchParams.get('view') === 'unread' ? 'unread' : 'all';
+  // Custom views open on unread mail; All remains an explicit option.
+  const view = url.searchParams.get('view') === 'all' ? 'all' : 'unread';
   const unread = view === 'unread';
   const matching = filterItems(all, { q });
   const unreadCount = matching.filter(isUnread).length;
@@ -35,8 +37,13 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     kinds: count(searched.map((item) => item.kind)),
     stores: count(searched.map((item) => String(item.facts.store || ''))).slice(0, 14),
     kind, store, q, view, unreadCount, allCount: matching.length,
+    aiAvailable: hasDatabase(),
+    aiBlocked: !aiConfigured(state) ? 'Connect the AJMCP gateway in Settings → AI' : !state.ai.enabled ? 'Turn on AI in Settings → AI' : !state.ai.share.email ? 'Allow Email in Settings → AI' : !hasDatabase() ? 'AI drafts need PostgreSQL storage' : '',
     matched: shown.length,
-    items: shown.slice(0, 250),
+    items: shown.slice(0, 250).map((item) => {
+      const accountId = item.accountId || pipeline.accountId;
+      return { ...item, accountId, key: messageKey(accountId, item.messageId) };
+    }),
     // Weekly review views: AI review of the last 7 days + tutoring session trends.
     review: pipeline.parser === 'digest' ? digestView(state, pipeline) : null
   };

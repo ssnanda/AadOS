@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit';
 import { readState, updateStateDetached, type AadOSState, type MailAccount } from '$lib/server/aados-store';
 import { scopeState } from '$lib/server/scope';
 import { setSharedRead, sharedBody, sharedBoxes, sharedMessages, trashShared } from '$lib/server/zoho-shared';
+import { sendZoho } from '$lib/server/zoho';
 
 // Zoho shared mailboxes: list boxes, list messages, read a body, mark read/unread, move to Trash. Live from Zoho.
 const s = (v: unknown, max = 300) => String(v ?? '').slice(0, max);
@@ -31,6 +32,16 @@ export const POST = async ({ request, locals }) => {
       case 'body': return json(await withAccount(accountId, (st, a) => sharedBody(st, a, id)));
       case 'read': await withAccount(accountId, (st, a) => setSharedRead(st, a, address, id, b.read !== false)); return json({ ok: true });
       case 'trash': await withAccount(accountId, (st, a) => trashShared(st, a, address, id)); return json({ ok: true });
+      case 'send': {
+        if (!visible.find((a) => a.id === accountId)?.canSend) throw new Error('Allow changes for this Zoho account in Settings → Emails.');
+        const to = s(b.to, 2000).split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+        if (!to.length || to.some((x) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x.replace(/^.*<([^>]+)>$/, '$1')))) throw new Error('Add a valid recipient.');
+        await withAccount(accountId, async (st, a) => {
+          if (!(await sharedBoxes(st, a)).some((box) => box.address === address)) throw new Error('Shared mailbox not found.');
+          await sendZoho(st, a, { from: address, to, cc: [], bcc: [], subject: s(b.subject, 500), text: s(b.text, 100_000) });
+        });
+        return json({ ok: true });
+      }
     }
     return json({ error: 'Unknown action.' }, { status: 400 });
   } catch (e) {

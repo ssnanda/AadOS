@@ -8,7 +8,7 @@
   const meta = kindMeta;
   const href = (kind: string, store: string, withQuery = true, view = data.view) => {
     const q = new URLSearchParams();
-    if (view === 'unread') q.set('view', 'unread');
+    q.set('view', view);
     if (kind) q.set('kind', kind);
     if (store) q.set('store', store);
     if (withQuery && data.q) q.set('q', data.q);
@@ -39,7 +39,7 @@
   {/if}
 
   <section>{#if data.items.length === 0}<div class="empty">{data.total ? (data.view === 'unread' ? 'No unread emails match this filter.' : 'No emails match this filter.') : 'No messages synced from this folder yet.'}</div>{/if}
-    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q, unread: data.view === 'unread' }} /></section>
+    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q, unread: data.view === 'unread' }} aiAvailable={data.aiAvailable} aiBlocked={data.aiBlocked} /></section>
   {/snippet}
   {#if data.review}<details class="evidence"><summary>Source emails <i>{data.total}</i></summary><div class="evidence-body">{@render sourceEmails()}</div></details>{:else}{@render sourceEmails()}{/if}
 </main>

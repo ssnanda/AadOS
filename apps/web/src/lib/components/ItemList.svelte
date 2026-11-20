@@ -2,9 +2,11 @@
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
   import { kindMeta } from '$lib/kinds';
-  type Item = { id: string; pipelineId: string; messageId: string; unread?: boolean; seen?: boolean; subject: string; sender: string; receivedAt: string; summary: string; kind: string; facts: Record<string, string | number | boolean> };
+  import EmailViewer from '$lib/components/EmailViewer.svelte';
+  import { mailAction } from '$lib/mail-action';
+  type Item = { id: string; key: string; accountId: string; pipelineId: string; messageId: string; unread?: boolean; seen?: boolean; subject: string; sender: string; receivedAt: string; summary: string; kind: string; facts: Record<string, string | number | boolean> };
   // `filters` is what "select all matching" re-applies on the server; `names` labels the view in search results.
-  let { items, matched, filters = {}, names }: { items: Item[]; matched: number; filters?: { kind?: string; store?: string; q?: string; unread?: boolean }; names?: Record<string, string> } = $props();
+  let { items, matched, filters = {}, names, aiAvailable = false, aiBlocked = '' }: { items: Item[]; matched: number; filters?: { kind?: string; store?: string; q?: string; unread?: boolean }; names?: Record<string, string>; aiAvailable?: boolean; aiBlocked?: string } = $props();
   let selected = $state<string[]>([]);
   let allMatching = $state(false);
   let count = $derived(allMatching ? matched : selected.length);
@@ -14,25 +16,18 @@
   const toggleShown = (on: boolean) => { allMatching = false; selected = on ? items.map((i) => i.id) : []; };
   // Email viewer: body is fetched on demand (read-only) and rendered in a sandboxed iframe.
   let viewing = $state<Item | null>(null);
-  let body = $state<{ html: string; text: string } | null>(null);
-  let loadError = $state('');
-  let loading = $state(false);
-  let images = $state(false);
-  const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
-  async function view(item: Item) {
-    viewing = item; body = null; loadError = ''; images = false; loading = true;
-    try {
-      const res = await fetch(`/pipelines/${item.pipelineId}/message/${encodeURIComponent(item.messageId)}`);
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || `HTTP ${res.status}`);
-      body = await res.json();
-      item.seen = true;
-    } catch (cause) { loadError = cause instanceof Error ? cause.message : 'Could not load this email.'; }
-    loading = false;
+  const viewingIndex = $derived(viewing ? items.findIndex((item) => item.key === viewing?.key) : -1);
+  const view = (item: Item) => { viewing = { ...item, unread: false }; item.seen = true; };
+  const move = (offset: number) => { const item = items[viewingIndex + offset]; if (item) view(item); };
+  async function actCurrent(op: 'delete' | 'mark-unread', closeAfter = false) {
+    if (!viewing) return;
+    const current = viewing, index = viewingIndex;
+    const replacement = closeAfter ? null : (items[index + 1] ?? items[index - 1] ?? null);
+    viewing = replacement ? { ...replacement, unread: false } : null;
+    const result = await mailAction(op, [current.key]);
+    if (!result.ok) viewing = current;
+    await invalidateAll();
   }
-  async function close() { viewing = null; await invalidateAll(); }
-  // No scripts, no forms; remote images are blocked until asked for (tracking pixels).
-  const doc = (b: { html: string; text: string }, allowImages: boolean) =>
-    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${allowImages ? 'https:' : ''}; style-src 'unsafe-inline'; font-src data:"><base target="_blank"><style>body{font:14px/1.5 system-ui,sans-serif;margin:16px;color:#29344c;word-break:break-word}img{max-width:100%;height:auto}</style>${b.html || `<pre style="white-space:pre-wrap;font:inherit">${esc(b.text)}</pre>`}`;
   function guard({ cancel }: { cancel: () => void }) {
     if (!confirm(`Delete ${count} email${count === 1 ? '' : 's'} from AadOS?\n\nYour mailbox is not changed (access is read-only) and these will not be synced back.`)) cancel();
     return async ({ update }: { update: () => Promise<void> }) => { await update(); selected = []; allMatching = false; };
@@ -56,22 +51,9 @@
     </article>{/each}</div>
 </form>
 {/if}
-{#if viewing}
-  <div class="backdrop" role="presentation" onclick={close}></div>
-  <aside class="viewer" aria-label="Email">
-    <header><div><h3>{viewing.subject || '(no subject)'}</h3><p>{viewing.sender} · {new Date(viewing.receivedAt).toLocaleString()}</p></div>
-      {#if body?.html && !images}<button type="button" class="open" onclick={() => images = true}>Load images</button>{/if}<button type="button" class="open" onclick={close}>✕ Close</button></header>
-    {#if loading}<div class="msg">Loading…</div>
-    {:else if loadError}<div class="msg err">{loadError}</div>
-    {:else if body}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body, images)}></iframe>{/if}
-  </aside>
-{/if}
+{#if viewing}<EmailViewer item={viewing} accountId={viewing.accountId} unread={viewing.unread} ai={aiAvailable} {aiBlocked} onclose={() => (viewing = null)} onprevious={() => move(-1)} onnext={() => move(1)} ondelete={() => actCurrent('delete')} ondeleteclose={() => actCurrent('delete', true)} onmarkunread={() => actCurrent('mark-unread', true)} onkeepunread={() => actCurrent('mark-unread')} onmarkread={() => viewing && mailAction('mark-read', [viewing.key])} onchanged={() => invalidateAll()} canPrevious={viewingIndex > 0} canNext={viewingIndex >= 0 && viewingIndex < items.length - 1} />{/if}
 <style>
   h2.unread{font-weight:800}.open{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:3px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}.open:hover{border-color:#8da2f0;color:#3157de}.facts .open{margin-left:auto}
-  .backdrop{position:fixed;inset:0;background:#151c2d55;z-index:40}
-  .viewer{position:fixed;top:0;right:0;bottom:0;width:min(900px,96vw);background:#fff;z-index:41;display:flex;flex-direction:column;box-shadow:-10px 0 30px #151c2d30}
-  .viewer header{display:flex;gap:10px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #e4e9f2}.viewer header>div{flex:1;min-width:0}.viewer h3{margin:0;font-size:16px}.viewer header p{margin:3px 0 0;font-size:12px;color:#8792a6}
-  .viewer iframe{flex:1;border:0;width:100%;background:#fff}.msg{padding:30px;color:#8792a6}.msg.err{color:#a5414d}
   .bulk{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:8px 14px;margin-bottom:10px;font-size:12px;color:#53607a;position:sticky;top:0;z-index:5}
   .bulk.on{background:#fff4f6;border-color:#f3c9d1}.bulk label{display:flex;gap:7px;align-items:center;font-weight:700;cursor:pointer}.bulk small{margin-left:auto;color:#8a95a8}
   .link{border:0;background:none;color:#3157de;font-weight:700;cursor:pointer;padding:0;font-size:12px}.n{font-weight:700;color:#c24457}
