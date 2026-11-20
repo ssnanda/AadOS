@@ -27,6 +27,19 @@ const deepStr = (root: unknown, keys: string[]) => { for (const k of keys) { con
 const entities = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const time = (v: unknown) => { const n = Number(v); if (Number.isFinite(n) && n > 0) return n > 1e11 ? n : n * 1000; const t = Date.parse(String(v || '')); return Number.isNaN(t) ? 0 : t; };
 const bool = (v: unknown) => v === true || v === 1 || v === 'true' || v === '1';
+const decodeMimePart = (part: string) => {
+  const split = part.search(/\r?\n\r?\n/); if (split < 0) return '';
+  const headers = part.slice(0, split), raw = part.slice(split).replace(/^\r?\n\r?\n/, '').trim();
+  if (/content-transfer-encoding:\s*base64/i.test(headers)) { try { return Buffer.from(raw.replace(/\s+/g, ''), 'base64').toString('utf8'); } catch { return raw; } }
+  if (/content-transfer-encoding:\s*quoted-printable/i.test(headers)) return raw.replace(/=\r?\n/g, '').replace(/=([0-9a-f]{2})/gi, (_m, h) => String.fromCharCode(parseInt(h, 16)));
+  return raw;
+};
+const mimeBody = (mime: string) => {
+  const parts = mime.split(/\r?\n--[^\r\n]+(?:--)?\r?\n/);
+  const html = parts.find((p) => /^content-type:\s*text\/html/im.test(p)); if (html) return { html: decodeMimePart(html), text: '' };
+  const plain = parts.find((p) => /^content-type:\s*text\/plain/im.test(p)); if (plain) return { html: '', text: decodeMimePart(plain) };
+  return { html: '', text: '' };
+};
 
 declare global { var __aadosSharedBoxes: Map<string, { at: number; boxes: SharedBox[] }> | undefined; var __aadosSharedMsgs: Map<string, SharedMessage> | undefined; }
 const msgCache = () => (globalThis.__aadosSharedMsgs ??= new Map());
@@ -81,14 +94,20 @@ export async function sharedBody(state: AadOSState, account: MailAccount, addres
     const sharedIds = deepFind(detail.data, 'sharedMailIds');
     const messageIds = [...new Set([...(Array.isArray(sharedIds) ? sharedIds.map(String) : []), deepStr(detail.data, ['lastMessageId']), deepStr(detail.data, ['entityId']), id].filter(Boolean))];
     const accountIds = [...new Set([deepStr(detail.data, ['accountId']), deepStr(detail.data, ['mailSpaceId']), account.remoteId].filter(Boolean))];
-    if (folderId) {
-      for (const accountId of accountIds) for (const messageId of messageIds) {
+    for (const accountId of accountIds) for (const messageId of messageIds) {
+      if (folderId) {
         try {
           const full = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);
           const raw = typeof full.data?.content === 'string' ? full.data.content : deepStr(full.data, ['htmlContent', 'content']);
           if (raw) return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '', note: '' } : { html: '', text: raw, note: '' };
         } catch (e) { failures.push(e instanceof Error ? e.message : 'content request failed'); }
       }
+      try {
+        const original = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(accountId)}/messages/${encodeURIComponent(messageId)}/originalmessage`);
+        const mime = String(original.data?.content || '');
+        const body = mimeBody(mime);
+        if (body.html || body.text) return { ...body, note: '' };
+      } catch (e) { failures.push(e instanceof Error ? e.message : 'original message request failed'); }
     }
     const content = deepStr(detail.data, ['htmlContent', 'messageBody', 'body', 'content']);
     if (content && content !== m.summary) return /<[a-z][\s\S]*>/i.test(content) ? { html: content, text: '', note: '' } : { html: '', text: content, note: '' };
