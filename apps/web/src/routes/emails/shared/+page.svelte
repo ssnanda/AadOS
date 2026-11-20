@@ -15,7 +15,8 @@
   let open = $state<Msg | null>(null), body = $state<{ html: string; text: string; note: string } | null>(null);
   let asanaFor = $state<{ name: string; notes: string; day: string } | null>(null);
   let compose = $state<{ to: string; subject: string; text: string } | null>(null), findOpen = $state(false), findTerm = $state(''), senderOnly = $state('');
-  let visibleMsgs = $derived(msgs.filter((m) => !senderOnly || m.from === senderOnly));
+  const senderKey = (from: string) => from.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0].toLowerCase() || from.trim().toLowerCase();
+  let visibleMsgs = $derived(msgs.filter((m) => !senderOnly || senderKey(m.from) === senderOnly));
   let openIndex = $derived(open ? visibleMsgs.findIndex((m) => m.id === open?.id) : -1);
 
   const api = async (op: string, payload: Record<string, unknown> = {}) => {
@@ -33,7 +34,7 @@
     if (!sel) { const want = accounts.flatMap((a) => a.boxes.map((x) => ({ accountId: a.accountId, ...x }))).find((x) => (!data.box || x.address === data.box) && (!data.account || x.accountId === data.account)); if (want) choose(want.accountId, want); }
   }
   async function choose(accountId: string, box: Box) {
-    sel = { accountId, address: box.address, name: box.name }; open = null; body = null;
+    sel = { accountId, address: box.address, name: box.name }; open = null; body = null; senderOnly = '';
     const u = new URL(page.url); u.searchParams.set('account', accountId); u.searchParams.set('box', box.address); replaceState(u, {});
     await loadList();
   }
@@ -50,6 +51,17 @@
   }
   const nextMessage = (m: Msg) => { const i = visibleMsgs.findIndex((x) => x.id === m.id); return visibleMsgs[i + 1] ?? visibleMsgs[i - 1] ?? null; };
   async function move(offset: number) { const m = visibleMsgs[openIndex + offset]; if (m) await show(m); }
+  async function moreFromSender() {
+    if (senderOnly) { senderOnly = ''; return; }
+    if (!open) return;
+    senderOnly = senderKey(open.from);
+    if (unreadOnly) {
+      unreadOnly = false;
+      await loadList();
+      // The message can fall outside Zoho's first page of All mail; keep it visible in that case.
+      if (open && !msgs.some((m) => m.id === open?.id)) msgs = [open, ...msgs];
+    }
+  }
   const counts = (delta: number) => { for (const a of accounts) for (const b of a.boxes) if (a.accountId === sel?.accountId && b.address === sel?.address) b.unread = Math.max(0, b.unread + delta); };
   async function markPreviewRead(m: Msg) {
     m.unread = false; counts(-1);
@@ -110,7 +122,7 @@
     </section>
     {#if open}<section class="pane">
       <header><button class="back" onclick={() => { open = null; body = null; }}>✕</button><div><h3>{open.subject}</h3><small>{open.from}{open.to ? ` → ${open.to}` : ''} · {new Date(open.at).toLocaleString()}</small></div>
-        <div class="acts"><div class="pair"><button class="del" onclick={() => open && trash(open)}>🗑 Delete</button><button class="alt del" onclick={() => open && trashClose(open)}>Delete &amp; close</button></div><div class="pair"><button onclick={() => open && unread(open)}>✉ Unread</button><button class="alt" onclick={() => open && unread(open, true)}>Unread &amp; close</button></div><button onclick={() => open && (compose = { to: open.from.replace(/^.*<([^>]+)>$/, '$1'), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, text: '' })}>↩ Reply</button><button onclick={() => (findOpen = !findOpen)}>⌕ Find</button><button class:on={Boolean(senderOnly)} onclick={() => (senderOnly = senderOnly ? '' : open?.from || '')}>More from sender</button>{#if data.asana}<button class="asana" onclick={() => open && (asanaFor = { name: open.subject, notes: `From: ${open.from}\nTo: ${open.to}\nDate: ${new Date(open.at).toLocaleString()}\nShared mailbox: ${sel?.name}\n\n${body?.text || open.summary}`, day: new Date().toISOString().slice(0, 10) })}>→ Asana</button>{/if}<nav><button disabled={openIndex <= 0} onclick={() => move(-1)}>↑</button><button disabled={openIndex < 0 || openIndex >= visibleMsgs.length - 1} onclick={() => move(1)}>↓</button></nav></div></header>
+        <div class="acts"><div class="pair"><button class="del" onclick={() => open && trash(open)}>🗑 Delete</button><button class="alt del" onclick={() => open && trashClose(open)}>Delete &amp; close</button></div><div class="pair"><button onclick={() => open && unread(open)}>✉ Unread</button><button class="alt" onclick={() => open && unread(open, true)}>Unread &amp; close</button></div><button onclick={() => open && (compose = { to: open.from.replace(/^.*<([^>]+)>$/, '$1'), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, text: '' })}>↩ Reply</button><button onclick={() => (findOpen = !findOpen)}>⌕ Find</button><button class:on={Boolean(senderOnly)} onclick={moreFromSender}>More from sender</button>{#if data.asana}<button class="asana" onclick={() => open && (asanaFor = { name: open.subject, notes: `From: ${open.from}\nTo: ${open.to}\nDate: ${new Date(open.at).toLocaleString()}\nShared mailbox: ${sel?.name}\n\n${body?.text || open.summary}`, day: new Date().toISOString().slice(0, 10) })}>→ Asana</button>{/if}<nav><button disabled={openIndex <= 0} onclick={() => move(-1)}>↑</button><button disabled={openIndex < 0 || openIndex >= visibleMsgs.length - 1} onclick={() => move(1)}>↓</button></nav></div></header>
       {#if findOpen}<div class="find"><input bind:value={findTerm} placeholder="Find in this email" aria-label="Find in this email"></div>{/if}
       {#if body?.note}<p class="note">{body.note}</p>{/if}
       {#if !body}<p class="muted pad">Loading…</p>{:else}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body)}></iframe>{/if}
