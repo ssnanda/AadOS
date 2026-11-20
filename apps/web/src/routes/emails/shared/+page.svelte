@@ -3,6 +3,7 @@
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import AppShell from '$lib/components/AppShell.svelte';
+  import SharedRelatedPanel from '$lib/components/SharedRelatedPanel.svelte';
   import { asanaApi } from '$lib/asana-client';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
@@ -14,9 +15,8 @@
   let msgs = $state<Msg[]>([]), next = $state<number | null>(null), loading = $state(false), notice = $state('');
   let open = $state<Msg | null>(null), body = $state<{ html: string; text: string; note: string } | null>(null);
   let asanaFor = $state<{ name: string; notes: string; day: string } | null>(null);
-  let compose = $state<{ to: string; subject: string; text: string } | null>(null), findOpen = $state(false), findTerm = $state(''), senderOnly = $state(''), senderBusy = $state(false);
-  const senderKey = (from: string) => from.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0].toLowerCase() || from.trim().toLowerCase();
-  let visibleMsgs = $derived(msgs.filter((m) => !senderOnly || senderKey(m.from) === senderOnly));
+  let compose = $state<{ to: string; subject: string; text: string } | null>(null), findOpen = $state(false), findTerm = $state(''), moreOpen = $state(false);
+  let visibleMsgs = $derived(msgs);
   let openIndex = $derived(open ? visibleMsgs.findIndex((m) => m.id === open?.id) : -1);
 
   const api = async (op: string, payload: Record<string, unknown> = {}) => {
@@ -34,7 +34,7 @@
     if (!sel) { const want = accounts.flatMap((a) => a.boxes.map((x) => ({ accountId: a.accountId, ...x }))).find((x) => (!data.box || x.address === data.box) && (!data.account || x.accountId === data.account)); if (want) choose(want.accountId, want); }
   }
   async function choose(accountId: string, box: Box) {
-    sel = { accountId, address: box.address, name: box.name }; open = null; body = null; senderOnly = '';
+    sel = { accountId, address: box.address, name: box.name }; open = null; body = null; moreOpen = false;
     const u = new URL(page.url); u.searchParams.set('account', accountId); u.searchParams.set('box', box.address); replaceState(u, {});
     await loadList();
   }
@@ -51,27 +51,11 @@
   }
   const nextMessage = (m: Msg) => { const i = visibleMsgs.findIndex((x) => x.id === m.id); return visibleMsgs[i + 1] ?? visibleMsgs[i - 1] ?? null; };
   async function move(offset: number) { const m = visibleMsgs[openIndex + offset]; if (m) await show(m); }
-  async function moreFromSender() {
-    if (senderBusy) return;
-    if (senderOnly) { senderOnly = ''; await loadList(); return; }
-    if (!open) return;
-    senderOnly = senderKey(open.from);
-    senderBusy = true; unreadOnly = false; notice = '';
-    try {
-      // Zoho's shared-mailbox API has no sender search. Scan older All-mail pages so this
-      // action searches the mailbox instead of filtering only the 50 rows already on screen.
-      const matches: Msg[] = []; let start: number | null = 0; let pages = 0;
-      while (start !== null && pages < 10) {
-        const r = await api('list', { accountId: sel!.accountId, address: sel!.address, unreadOnly: false, start });
-        matches.push(...(r.messages as Msg[]).filter((m) => senderKey(m.from) === senderOnly));
-        start = r.next; pages += 1;
-      }
-      if (open && !matches.some((m) => m.id === open?.id)) matches.unshift(open);
-      msgs = matches; next = null;
-      if (start !== null) notice = `Showing ${matches.length} matching messages from the first ${pages * 50} emails.`;
-    } catch (e) {
-      senderOnly = ''; notice = (e as Error).message;
-    } finally { senderBusy = false; }
+  function relatedChanged(op: 'read' | 'trash', ids: string[], read = true) {
+    if (op === 'trash') msgs = msgs.filter((m) => !ids.includes(m.id));
+    else for (const m of msgs) if (ids.includes(m.id)) m.unread = !read;
+    if (open && ids.includes(open.id) && op === 'trash') { open = null; body = null; moreOpen = false; }
+    void loadBoxes(true);
   }
   const counts = (delta: number) => { for (const a of accounts) for (const b of a.boxes) if (a.accountId === sel?.accountId && b.address === sel?.address) b.unread = Math.max(0, b.unread + delta); };
   async function markPreviewRead(m: Msg) {
@@ -121,7 +105,7 @@
       </div>{:else}{#if !loadingBoxes}<p class="muted">No Zoho account with shared mailboxes.</p>{/if}{/each}
     </aside>
     <section class="list">
-      {#if sel}<header><strong>{sel.name}</strong><small>{sel.address}{senderOnly ? ` · ${visibleMsgs.length} from sender` : ''}</small><span class="sp"></span>
+      {#if sel}<header><strong>{sel.name}</strong><small>{sel.address}</small><span class="sp"></span>
         <div class="seg"><button class:on={unreadOnly} onclick={() => { unreadOnly = true; loadList(); }}>Unread</button><button class:on={!unreadOnly} onclick={() => { unreadOnly = false; loadList(); }}>All</button></div></header>
         {#if loading && !msgs.length}<p class="muted pad">Loading…</p>{/if}
         <ul>{#each visibleMsgs as m (m.id)}<li class:unread={m.unread} class:on={open?.id === m.id}>
@@ -133,10 +117,12 @@
     </section>
     {#if open}<section class="pane">
       <header><button class="back" onclick={() => { open = null; body = null; }}>✕</button><div><h3>{open.subject}</h3><small>{open.from}{open.to ? ` → ${open.to}` : ''} · {new Date(open.at).toLocaleString()}</small></div>
-        <div class="acts"><div class="pair"><button class="del" onclick={() => open && trash(open)}>🗑 Delete</button><button class="alt del" onclick={() => open && trashClose(open)}>Delete &amp; close</button></div><div class="pair"><button onclick={() => open && unread(open)}>✉ Unread</button><button class="alt" onclick={() => open && unread(open, true)}>Unread &amp; close</button></div><button onclick={() => open && (compose = { to: open.from.replace(/^.*<([^>]+)>$/, '$1'), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, text: '' })}>↩ Reply</button><button onclick={() => (findOpen = !findOpen)}>⌕ Find</button><button class:on={Boolean(senderOnly)} onclick={moreFromSender} disabled={senderBusy}>{senderBusy ? 'Finding…' : senderOnly ? 'Show all mail' : 'More from sender'}</button>{#if data.asana}<button class="asana" onclick={() => open && (asanaFor = { name: open.subject, notes: `From: ${open.from}\nTo: ${open.to}\nDate: ${new Date(open.at).toLocaleString()}\nShared mailbox: ${sel?.name}\n\n${body?.text || open.summary}`, day: new Date().toISOString().slice(0, 10) })}>→ Asana</button>{/if}<nav><button disabled={openIndex <= 0} onclick={() => move(-1)}>↑</button><button disabled={openIndex < 0 || openIndex >= visibleMsgs.length - 1} onclick={() => move(1)}>↓</button></nav></div></header>
+        <div class="acts"><div class="pair"><button class="del" onclick={() => open && trash(open)}>🗑 Delete</button><button class="alt del" onclick={() => open && trashClose(open)}>Delete &amp; close</button></div><div class="pair"><button onclick={() => open && unread(open)}>✉ Unread</button><button class="alt" onclick={() => open && unread(open, true)}>Unread &amp; close</button></div><button onclick={() => open && (compose = { to: open.from.replace(/^.*<([^>]+)>$/, '$1'), subject: /^re:/i.test(open.subject) ? open.subject : `Re: ${open.subject}`, text: '' })}>↩ Reply</button><button onclick={() => (findOpen = !findOpen)}>⌕ Find</button><button class:on={moreOpen} onclick={() => (moreOpen = !moreOpen)}>More from sender</button>{#if data.asana}<button class="asana" onclick={() => open && (asanaFor = { name: open.subject, notes: `From: ${open.from}\nTo: ${open.to}\nDate: ${new Date(open.at).toLocaleString()}\nShared mailbox: ${sel?.name}\n\n${body?.text || open.summary}`, day: new Date().toISOString().slice(0, 10) })}>→ Asana</button>{/if}<nav><button disabled={openIndex <= 0} onclick={() => move(-1)}>↑</button><button disabled={openIndex < 0 || openIndex >= visibleMsgs.length - 1} onclick={() => move(1)}>↓</button></nav></div></header>
       {#if findOpen}<div class="find"><input bind:value={findTerm} placeholder="Find in this email" aria-label="Find in this email"></div>{/if}
-      {#if body?.note}<p class="note">{body.note}</p>{/if}
-      {#if !body}<p class="muted pad">Loading…</p>{:else}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body)}></iframe>{/if}
+      <div class="paneBody"><div class="messageBody">{#if body?.note}<p class="note">{body.note}</p>{/if}
+        {#if !body}<p class="muted pad">Loading…</p>{:else}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body)}></iframe>{/if}</div>
+        {#if moreOpen && sel}<SharedRelatedPanel item={open} accountId={sel.accountId} address={sel.address} onopen={show} onchanged={relatedChanged} onclose={() => (moreOpen = false)} />{/if}
+      </div>
     </section>{/if}
   </div>
   {#if asanaFor}<div class="backdrop" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) asanaFor = null; }}><form class="sheet" onsubmit={(e) => { e.preventDefault(); createAsana(); }}><h3>Create Asana task</h3><input bind:value={asanaFor.name} aria-label="Title"><label class="rowl">Due <input type="date" bind:value={asanaFor.day}></label><textarea rows="8" bind:value={asanaFor.notes}></textarea><small class="muted">The message is marked read after the task is created.</small><div class="end"><button type="button" onclick={() => (asanaFor = null)}>Cancel</button><button class="primary">Create task</button></div></form></div>{/if}
@@ -161,7 +147,7 @@
   .more{margin:10px auto}.pad{padding:14px}.muted{color:#8a95a8}.err{color:#a5414d}
   .pane header{align-items:flex-start}.pane header div{flex:1;min-width:0}.pane h3{margin:0;font-size:15px}.pane small{color:#8a95a8}.acts{display:flex;gap:6px;flex-wrap:wrap}.del{color:#b53c50}.asana{background:#fdeeee;border-color:#f5c9cb;color:#d2474c}
   .pair{display:flex!important;flex:none!important}.pair>button:first-child{border-radius:7px}.alt{max-width:0;opacity:0;overflow:hidden;white-space:nowrap;padding-left:0;padding-right:0;border-width:1px 0;pointer-events:none;transition:.15s}.pair:hover>button:first-child,.pair:focus-within>button:first-child{border-radius:7px 0 0 7px}.pair:hover .alt,.pair:focus-within .alt{max-width:120px;opacity:1;padding:5px 10px;border-width:1px;border-left:0;border-radius:0 7px 7px 0;pointer-events:auto}.acts nav{display:flex;gap:4px}.acts button.on{background:#eef1ff;color:#3157de}.find{padding:7px 12px;border-bottom:1px solid #eef0f5}.find input{width:100%;box-sizing:border-box}
-  .note{margin:0;padding:6px 12px;background:#fff8e6;color:#8a6a1c;font-size:12px}iframe{flex:1;border:0;width:100%;min-height:300px}
+  .paneBody{display:flex;flex:1;min-height:0}.messageBody{display:flex;flex:1;min-width:0;flex-direction:column}.note{margin:0;padding:6px 12px;background:#fff8e6;color:#8a6a1c;font-size:12px}iframe{flex:1;border:0;width:100%;min-height:300px}
   .backdrop{position:fixed;inset:0;background:#151c2d55;z-index:60;display:grid;place-items:start center;padding:8vh 16px}.sheet{background:#fff;border-radius:14px;padding:18px;width:min(520px,100%);display:grid;gap:9px}.sheet h3{margin:0}
   input,textarea{border:1px solid #d9dfeb;border-radius:7px;padding:6px 8px;font:inherit}.sheet label{display:grid;gap:4px;font-weight:700}.rowl{display:flex!important;gap:6px;align-items:center;font-weight:600;color:#53607a}.end{display:flex;gap:8px;justify-content:flex-end}.primary{background:#e95f63;border-color:#e95f63;color:#fff}.send{background:#3157de;border-color:#3157de;color:#fff}
   @media(max-width:900px){.wrap,.wrap.reading{grid-template-columns:1fr;height:auto}.wrap.reading .list,.wrap.reading .boxes{display:none}}

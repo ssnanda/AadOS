@@ -88,7 +88,7 @@ Keep scope small: deliver useful inbox access before extending to household task
 19. [ ] Canned replies
 20. [ ] Send-as + signatures
 21. [x] Email → Asana task: preview button, AI draft (title/due/project/notes), attachments, marks email read
-22. [ ] Zoho shared mailboxes
+22. [x] Zoho shared mailboxes with the same right-side “More from sender” experience as regular email and saved views (owner browser verification pending)
 
 ### Asana module (live from Asana, token encrypted; nothing mirrored)
 23. [x] Connect with personal access token; Refresh; Disconnect
