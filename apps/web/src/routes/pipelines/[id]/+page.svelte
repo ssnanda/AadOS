@@ -27,6 +27,7 @@
 
   {#if data.review}<DigestPanel review={data.review} />{/if}
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
+  {#snippet sourceEmails()}
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'unread'}<input type="hidden" name="view" value="unread">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
   <div class="views"><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a></div>
   <div class="tiles">
@@ -39,6 +40,8 @@
 
   <section>{#if data.items.length === 0}<div class="empty">{data.total ? (data.view === 'unread' ? 'No unread emails match this filter.' : 'No emails match this filter.') : 'No messages synced from this folder yet.'}</div>{/if}
     <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q, unread: data.view === 'unread' }} /></section>
+  {/snippet}
+  {#if data.review}<details class="evidence"><summary>Source emails <i>{data.total}</i></summary><div class="evidence-body">{@render sourceEmails()}</div></details>{:else}{@render sourceEmails()}{/if}
 </main>
 </AppShell>
 <style>
@@ -47,6 +50,7 @@
   header{display:flex;gap:25px;align-items:flex-start;margin-bottom:16px}header>div{flex:1}h1{margin:3px 0}header p,header small{color:#8994a8;margin:0}
   header button{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer}header form{margin:0}
   .alert,.ok{padding:10px 14px;border-radius:9px;margin-bottom:12px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.ok{background:#e3f6f3;color:#0f7f74}
+  .evidence{margin-top:12px}.evidence>summary{cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:#53607a;font-size:13px;font-weight:750}.evidence>summary i{font-style:normal;background:#e8edf6;border-radius:99px;padding:1px 8px;font-size:11px}.evidence-body{padding-top:12px}
   .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:12px}
   .tile{--c:#3157de;--bg:#edf1ff;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;background:#fff;border:1px solid #e4e9f2;border-top:3px solid var(--c);border-radius:12px;padding:12px;text-decoration:none;color:#29344c}
   .tile .ico{grid-row:span 2;width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:var(--bg);font-size:18px}

@@ -143,3 +143,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 74. [x] Dashboard receives only open AAD actions; dates, updates, and FYIs remain in the full AAD report. Awaiting owner verification.
 75. [x] Emails header: account and unread-folder pills collapse by default behind an Accounts toggle on desktop and mobile. Message sender/subject/preview typography enlarged for scanning. Awaiting owner verification.
 76. [x] API OpenShift build: Hex/Rebar/dependency downloads use a 180-second Hex timeout, lower concurrency, and three bounded attempts. Awaiting owner deployment verification after build 56 timed out.
+77. [x] AAD intelligence page: legacy AAD view auto-upgrades from generic to digest; report requires priority, owner, category, direct link and operational details; action overview is primary and source emails collapse as evidence. Awaiting owner verification.

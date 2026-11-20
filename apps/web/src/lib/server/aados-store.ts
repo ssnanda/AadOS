@@ -32,6 +32,13 @@ export type Pipeline = {
   lastSync: string;
   lastError: string;
 };
+
+/** The original AAD folder view predates AI reviews; upgrade only that exact legacy view in place. */
+const isLegacyAadView = (pipeline: Partial<Pipeline>) => !pipeline.system && pipeline.parser === 'generic' && (
+  /^aad$/i.test(String(pipeline.name || '').trim()) ||
+  /(^|[\/-])aad$/i.test(String(pipeline.folderName || '').trim()) ||
+  /-aad$/i.test(String(pipeline.id || ''))
+);
 export type PipelineItem = {
   id: string;
   pipelineId: string;
@@ -217,7 +224,7 @@ export function normalizeState(saved: Partial<AadOSState> & { zoho?: Record<stri
     aiStatus: { ...defaultAiStatus(), ...(saved.aiStatus || {}) },
     notify: { browser: false, ...(saved.notify || {}) },
     integrations: { ajmcp: { ...defaultIntegrations().ajmcp, ...(saved.integrations?.ajmcp || {}) }, asana: { ...defaultIntegrations().asana, ...(saved.integrations?.asana || {}) }, bluebubbles: { ...defaultIntegrations().bluebubbles, ...(saved.integrations?.bluebubbles || {}) }, etrade: { ...defaultEtrade(), ...(saved.integrations?.etrade || {}) }, plaid: { ...defaultPlaid(), ...(saved.integrations?.plaid || {}), items: saved.integrations?.plaid?.items || [] }, s3: { ...defaultIntegrations().s3, ...(saved.integrations?.s3 || {}) } },
-    pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
+    pipelines: (saved.pipelines || []).map((pipeline) => ({ ...pipeline, parser: isLegacyAadView(pipeline) ? 'digest' : pipeline.parser, source: pipeline.source || 'zoho', accountId: pipeline.accountId || firstAccount(pipeline.source || 'zoho'), folders: pipeline.folders?.length ? pipeline.folders : [{ id: pipeline.folderId, name: pipeline.folderName }] }))
   } as AadOSState;
 }
 

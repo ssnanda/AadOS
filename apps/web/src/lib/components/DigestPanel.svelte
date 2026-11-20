@@ -15,6 +15,9 @@
   const when = (iso: string) => (iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'never');
   const open = (list: DigestEntry[]) => list.filter((i) => showDone || !i.mark);
   const late = (i: DigestEntry) => i.due && i.due < review.today;
+  const activeActions = $derived(d.actions.filter((i) => !i.mark));
+  const urgentActions = $derived(activeActions.filter((i) => i.priority === 'urgent' || late(i)));
+  const nextDate = $derived(d.dates.filter((i) => !i.mark && i.due >= review.today).sort((a, b) => a.due.localeCompare(b.due))[0]);
   const maxWeek = $derived(Math.max(1, ...(s?.trends.weeks.map((w) => w.sessions) || [1])));
 </script>
 
@@ -28,10 +31,17 @@
 
   {#if tab === 'week'}
     <p class="meta">AJMCP reviewed {d.reviewed} of {d.inWindow} emails since {fmt(d.from.slice(0, 10))}, including readable PDFs · {d.ignored.length} not for this focus{d.pending.length ? ` · ${d.pending.length} waiting` : ''}{d.failed.length ? ` · ${d.failed.length} failed` : ''} · <label class="inline"><input type="checkbox" bind:checked={showDone}> show done</label></p>
+    <div class="overview">
+      <div class:hot={urgentActions.length > 0}><b>{urgentActions.length}</b><span>urgent</span><small>{urgentActions[0]?.title || 'Nothing urgent'}</small></div>
+      <div><b>{activeActions.length}</b><span>open actions</span><small>{activeActions.length ? 'Assigned to parent, Aad, or both' : 'Nothing waiting'}</small></div>
+      <div><b>{nextDate ? fmt(nextDate.due) : '—'}</b><span>next date</span><small>{nextDate?.title || 'No upcoming date'}</small></div>
+      <div><b>{d.updates.length}</b><span>updates</span><small>{d.fyi.length} additional FYI</small></div>
+    </div>
     {#snippet entry(i: DigestEntry)}
       <li class:muted={i.mark} class:late={late(i) && !i.mark}>
-        <div class="main"><b>{i.title}</b>{#if i.due}<span class="due">{i.kind === 'action' ? 'Due ' : ''}{fmt(i.due)}</span>{/if}{#if i.audience}<span class="aud">{i.audience}</span>{/if}
+        <div class="main"><b>{i.title}</b>{#if i.priority && i.kind === 'action'}<span class="priority {i.priority}">{i.priority}</span>{/if}{#if i.owner}<span class="owner">{i.owner}</span>{/if}{#if i.due}<span class="due">{i.kind === 'action' ? 'Due ' : ''}{fmt(i.due)}</span>{/if}{#if i.audience}<span class="aud">{i.audience}</span>{/if}
           {#if i.detail}<p>{i.detail}</p>{/if}
+          {#if i.url}<a class="go" href={i.url} target="_blank" rel="noreferrer">Open form or link ↗</a>{/if}
           <small>{#each i.sources as src, n}{n ? ' · ' : ''}<a href={src.href}>{src.subject}</a> ({src.receivedAt.slice(5, 10)}){/each}</small></div>
         <div class="ops">
           {#if i.mark}<form method="POST" action="?/reviewMark" use:enhance><input type="hidden" name="item" value={i.id}><button name="op" value="clear">Undo</button></form>
@@ -88,6 +98,7 @@
   .meta{color:#8a95a8;font-size:12px;margin:6px 0;flex:1}.inline{display:inline-flex;gap:4px;align-items:center;cursor:pointer}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;color:#43516c;cursor:pointer}button:disabled{opacity:.5}
   .alert{padding:8px 12px;background:#fff0f1;color:#a5414d;border-radius:8px;margin:8px 0;font-size:13px}
+  .overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 4px}.overview>div{display:grid;gap:2px;border:1px solid #e4e9f2;border-radius:10px;padding:10px 12px;min-width:0}.overview>div.hot{background:#fff3f4;border-color:#efc2c8}.overview b{font-size:20px;color:#29344c}.overview span{font-size:10px;font-weight:800;color:#7d899f;text-transform:uppercase;letter-spacing:.06em}.overview small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#53607a;font-size:11px}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.cols.three{grid-template-columns:1fr 1fr 1fr}
   h3{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#8a95a8;margin:12px 0 6px}
   ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}.none{color:#a3adbf;font-size:12px;margin:0}
@@ -95,6 +106,7 @@
   li.late{border-color:#f1c2c8;background:#fff8f9}li.muted{opacity:.5}li.muted b{text-decoration:line-through}
   .main p{margin:3px 0;color:#53607a;font-size:12px}.main small,.plain small{color:#8a95a8;font-size:11px}.main a,.plain a{color:#3157de;text-decoration:none}
   .due{margin-left:7px;font-size:11px;font-weight:700;color:#c27a12}.late .due{color:#a5414d}.aud{margin-left:6px;font-size:10px;background:#f0f2f7;border-radius:99px;padding:1px 7px;color:#6f7c94}
+  .priority,.owner{margin-left:6px;font-size:9px;font-weight:800;text-transform:uppercase;border-radius:99px;padding:2px 7px}.priority{background:#eef1ff;color:#3157de}.priority.urgent{background:#fde8eb;color:#a5414d}.priority.soon{background:#fff4df;color:#9b6a18}.owner{background:#e3f6f3;color:#0f7f74}.go{display:inline-block;margin:1px 0 3px;font-size:11px;font-weight:700;color:#3157de!important}
   .ops form{display:flex;gap:4px;margin:0}.ops button{padding:3px 7px}.task{font-size:11px;color:#7c4dde;align-self:center}
   .plain li{border:0;padding:2px 0;display:block;font-size:13px}
   details{margin-top:10px;font-size:13px}summary{cursor:pointer;color:#43516c;font-weight:700;font-size:12px}
@@ -103,5 +115,5 @@
   .narr{background:#f5f8ff;border-radius:9px;padding:9px 12px;margin-top:10px;font-size:13px;white-space:pre-line}.narr p{margin:0 0 4px}.narr small{color:#8a95a8;font-size:11px}
   .chart{width:100%;height:90px}.chart rect{fill:#3157de}.chart .m{fill:#1e7a47}.chart line{stroke:#dbe1eb}
   table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #edf0f5;vertical-align:top}th{color:#8a95a8;font-size:11px}
-  @media(max-width:760px){.cols,.cols.three{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:760px){.overview{grid-template-columns:1fr 1fr}.cols,.cols.three{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
 </style>
