@@ -210,6 +210,12 @@ export async function digestTick() {
 export function digestView(state: AadOSState, pipeline: Pipeline) {
   const d = state.digests?.[pipeline.id] || emptyDigest();
   const focus = focusOf(pipeline), today = todayIn(tzOf(state));
+  const blocked = !state.ai.enabled ? 'Turn on AI in Settings → AI.'
+    : !aiConfigured(state) ? 'Connect AJMCP in Settings → AI.'
+    : !state.ai.share.email ? 'Allow Email in Settings → AI.'
+    : !state.ai.emailBodies ? 'Allow full email text in Settings → AI.' : '';
+  // A configuration error from an earlier run is stale once the corresponding settings are enabled.
+  const error = blocked || (/^(Turn on AI|Connect AJMCP|Allow email sharing|Allow Email|Allow full email text)/.test(d.error) ? '' : d.error);
   const emails = emailsOf(state, pipeline);
   const school = emails.filter((e) => !e.session);
   const fps = Object.fromEntries(school.map((e) => [e.key, reviewFingerprint(e, focus)]));
@@ -220,7 +226,7 @@ export function digestView(state: AadOSState, pipeline: Pipeline) {
   const sessionFailed = sessionEmails.filter((e) => ss.records[e.key]?.error).length;
   const sessionPending = sessionEmails.filter((e) => !ss.records[e.key]).length;
   return {
-    focus, lastRun: d.lastRun, error: d.error, progress: digestProgress(pipeline.id), digest, today,
+    focus, lastRun: d.lastRun, error, progress: digestProgress(pipeline.id), digest, today,
     sessions: sessionEmails.length ? { label: sessionSourceOf(sessionEmails[0].item)!.label, trends: sessionTrends(rows, today), narrative: ss.narrative?.text || '', narrativeAt: ss.narrative?.at || '', failed: sessionFailed, pending: sessionPending } : null
   };
 }

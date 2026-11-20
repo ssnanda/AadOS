@@ -23,9 +23,9 @@
 
 <section class="review" id="review">
   <div class="bar">
+    <form method="POST" action="?/review" use:enhance={() => async () => { await invalidateAll(); }}><button class="review-now" disabled={review.progress.running}>{review.progress.running ? `Reading ${review.progress.done}/${review.progress.total}…` : 'Review now'}</button></form>
     <div class="tabs"><button class:on={tab === 'week'} onclick={() => (tab = 'week')}>Action report <i>{d.actions.filter((i) => !i.mark).length}</i></button>{#if s}<button class:on={tab === 'sessions'} onclick={() => (tab = 'sessions')}>{s.label} <i>{s.trends.totals.sessions}</i></button>{/if}</div>
     <span class="meta">{#if review.progress.running}Reading {review.progress.done}/{review.progress.total}… {review.progress.note}{:else}Reviewed {when(review.lastRun)}{/if}</span>
-    <form method="POST" action="?/review" use:enhance={() => async () => { await invalidateAll(); }}><button disabled={review.progress.running}>↻ Review now</button></form>
   </div>
   {#if review.error}<div class="alert">{review.error}</div>{/if}
 
@@ -97,6 +97,7 @@
   .tabs button{border:0;background:#fff;padding:6px 13px;font-weight:700;font-size:13px;color:#53607a;cursor:pointer}.tabs button.on{background:#3157de;color:#fff}.tabs i{font-style:normal;font-size:11px;opacity:.75;margin-left:4px}
   .meta{color:#8a95a8;font-size:12px;margin:6px 0;flex:1}.inline{display:inline-flex;gap:4px;align-items:center;cursor:pointer}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:5px 10px;font-weight:700;font-size:12px;color:#43516c;cursor:pointer}button:disabled{opacity:.5}
+  button.review-now{background:#168a55;border-color:#168a55;color:#fff;border-radius:10px;padding:11px 22px;font-size:15px;box-shadow:0 4px 12px #168a5530}button.review-now:hover{background:#107446;border-color:#107446}
   .alert{padding:8px 12px;background:#fff0f1;color:#a5414d;border-radius:8px;margin:8px 0;font-size:13px}
   .overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 4px}.overview>div{display:grid;gap:2px;border:1px solid #e4e9f2;border-radius:10px;padding:10px 12px;min-width:0}.overview>div.hot{background:#fff3f4;border-color:#efc2c8}.overview b{font-size:20px;color:#29344c}.overview span{font-size:10px;font-weight:800;color:#7d899f;text-transform:uppercase;letter-spacing:.06em}.overview small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#53607a;font-size:11px}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.cols.three{grid-template-columns:1fr 1fr 1fr}

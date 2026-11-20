@@ -18,10 +18,10 @@
 <svelte:head><title>{data.pipeline.name} · AadOS</title></svelte:head>
 <AppShell title={data.pipeline.name}>
 <main class="shell">
-  <header>
+  {#if !data.review}<header>
     <div><small>{data.pipeline.folderName}</small><h1>{data.pipeline.name}</h1><p>{data.pipeline.parser === 'digest' ? 'Weekly review' : `${data.pipeline.parser} parser`} · Last sync {data.pipeline.lastSync ? new Date(data.pipeline.lastSync).toLocaleString() : 'never'}</p></div>
 <form method="POST" action="?/reparse"><button title="Re-run the parser on stored emails">↻ Re-parse</button></form>
-  </header>
+  </header>{/if}
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if form && 'reparsed' in form}<div class="ok">Re-parsed {data.total} emails · {form.reparsed} changed category.</div>{/if}
 
