@@ -70,42 +70,31 @@ export async function sharedMessages(state: AadOSState, account: MailAccount, ad
   return { messages, next: items.length === limit ? start + limit : null };
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, '').replace(/\s+/g, ' ').trim();
-// Zoho does not accept a phrase with spaces after `subject:`. Each word must be its own
-// clause joined with `::` (the same syntax used by the normal Zoho mailbox search).
-const subjectSearchKey = (subject: string) => norm(subject).split(/\s+/).map((word) => word.replace(/["<>:]/g, '').trim()).filter((word) => /[\p{L}\p{N}]/u.test(word)).map((word) => `subject:${word}`).join('::');
-/** Full body from the member's own copy (same subject, closest time within 6 h); else the summary with a note. */
+/** Full body from the shared message's underlying Zoho mail record. */
 export async function sharedBody(state: AadOSState, account: MailAccount, address: string, id: string): Promise<{ html: string; text: string; note: string }> {
   const m = msgCache().get(`${account.id}|${id}`);
   if (!m) return { html: '', text: '', note: 'Reload the list and open the message again.' };
+  const failures: string[] = [];
   try {
     const detail = await zohoRequest(state, account, 'GET', `/v2/sharedmailbox/${encodeURIComponent(address)}/messages/${encodeURIComponent(id)}`);
-    const ownerAccountId = deepStr(detail.data, ['accountId']) || account.remoteId;
     const folderId = deepStr(detail.data, ['folderId']);
-    if (ownerAccountId && folderId) {
-      const full = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(ownerAccountId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(id)}/content`);
-      const raw = typeof full.data?.content === 'string' ? full.data.content : deepStr(full.data, ['htmlContent', 'content']);
-      if (raw) return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '', note: '' } : { html: '', text: raw, note: '' };
+    const sharedIds = deepFind(detail.data, 'sharedMailIds');
+    const messageIds = [...new Set([...(Array.isArray(sharedIds) ? sharedIds.map(String) : []), deepStr(detail.data, ['lastMessageId']), deepStr(detail.data, ['entityId']), id].filter(Boolean))];
+    const accountIds = [...new Set([deepStr(detail.data, ['accountId']), deepStr(detail.data, ['mailSpaceId']), account.remoteId].filter(Boolean))];
+    if (folderId) {
+      for (const accountId of accountIds) for (const messageId of messageIds) {
+        try {
+          const full = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(accountId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(messageId)}/content`);
+          const raw = typeof full.data?.content === 'string' ? full.data.content : deepStr(full.data, ['htmlContent', 'content']);
+          if (raw) return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '', note: '' } : { html: '', text: raw, note: '' };
+        } catch (e) { failures.push(e instanceof Error ? e.message : 'content request failed'); }
+      }
     }
     const content = deepStr(detail.data, ['htmlContent', 'messageBody', 'body', 'content']);
     if (content && content !== m.summary) return /<[a-z][\s\S]*>/i.test(content) ? { html: content, text: '', note: '' } : { html: '', text: content, note: '' };
-  } catch { /* Keep the legacy lookup below as a compatibility fallback. */ }
-  try {
-    const searchKey = subjectSearchKey(m.subject);
-    if (!searchKey) return { html: '', text: m.summary, note: 'Full body unavailable — this message has no searchable subject.' };
-    const query = new URLSearchParams({ searchKey, limit: '50', start: '1', includeto: 'true' });
-    const found = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/messages/search?${query}`);
-    const rows: Raw[] = Array.isArray(found.data) ? found.data : [];
-    const want = norm(m.subject);
-    const best = rows.filter((r) => r.folderId && (norm(String(r.subject || '')) === want || norm(String(r.subject || '')).includes(want) || want.includes(norm(String(r.subject || '')))))
-      .map((r) => ({ r, diff: Math.abs(time(r.receivedTime || r.sentDateInGMT) - m.at) })).sort((a, b) => a.diff - b.diff)[0];
-    if (best && best.diff < 6 * 3_600_000) {
-      const c = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(account.remoteId)}/folders/${encodeURIComponent(best.r.folderId)}/messages/${encodeURIComponent(best.r.messageId)}/content`);
-      const raw = String(c.data?.content ?? '');
-      return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '', note: '' } : { html: '', text: raw, note: '' };
-    }
-    return { html: '', text: m.summary, note: 'Full body unavailable — no matching copy in your own mailbox; showing the summary.' };
-  } catch (e) { return { html: '', text: m.summary, note: `Full body unavailable (${e instanceof Error ? e.message : 'error'}); showing the summary.` }; }
+  } catch (e) { failures.push(e instanceof Error ? e.message : 'message detail request failed'); }
+  console.warn('[aados] Zoho shared-mailbox content unavailable:', [...new Set(failures)].join('; ').slice(0, 500));
+  return { html: '', text: m.summary, note: 'Full body unavailable — Zoho did not return content for this shared message; showing the summary.' };
 }
 
 export async function setSharedRead(state: AadOSState, account: MailAccount, address: string, id: string, read: boolean) {
