@@ -28,8 +28,8 @@ export const POST = async ({ request, locals }) => {
         }
         return json({ accounts: out });
       }
-      case 'list': return json(await withAccount(accountId, (st, a) => sharedMessages(st, a, address, b.unreadOnly === true, Number(b.start) || 0)));
-      case 'body': return json(await withAccount(accountId, (st, a) => sharedBody(st, a, id)));
+      case 'list': return json(await withAccount(accountId, (st, a) => sharedMessages(st, a, address, b.unreadOnly === true, Number(b.start) || 0, Math.min(200, Math.max(1, Number(b.limit) || 50)))));
+      case 'body': return json(await withAccount(accountId, (st, a) => sharedBody(st, a, address, id)));
       case 'read': await withAccount(accountId, (st, a) => setSharedRead(st, a, address, id, b.read !== false)); return json({ ok: true });
       case 'trash': await withAccount(accountId, (st, a) => trashShared(st, a, address, id)); return json({ ok: true });
       case 'send': {

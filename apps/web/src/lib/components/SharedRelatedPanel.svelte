@@ -1,9 +1,10 @@
 <script lang="ts">
   type Msg = { id: string; subject: string; from: string; to: string; summary: string; at: number; unread: boolean; attachments: boolean };
-  let { item, accountId, address, onopen, onchanged, onclose }: { item: Msg; accountId: string; address: string; onopen: (m: Msg) => void; onchanged: (op: 'read' | 'trash', ids: string[], read?: boolean) => void; onclose: () => void } = $props();
+  let { item, initial = [], accountId, address, onopen, onchanged, onclose }: { item: Msg; initial?: Msg[]; accountId: string; address: string; onopen: (m: Msg) => void; onchanged: (op: 'read' | 'trash', ids: string[], read?: boolean) => void; onclose: () => void } = $props();
 
   let scope = $state<'sender' | 'domain'>('sender'), sameSubject = $state(false), unreadOnly = $state(false);
-  let rows = $state<Msg[]>([]), selected = $state<string[]>([]), loading = $state(false), error = $state(''), scanned = $state(0);
+  // Show matches from the open mailbox page immediately while older pages fill in behind them.
+  let sourceRows = $state<Msg[]>(initial), selected = $state<string[]>([]), loading = $state(false), error = $state(''), scanned = $state(initial.length);
   const senderKey = (from: string) => from.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0].toLowerCase() || from.trim().toLowerCase();
   const domain = (from: string) => senderKey(from).split('@')[1] || '';
   const subjectKey = (subject: string) => subject.toLowerCase().replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, '').replace(/\s+/g, ' ').trim();
@@ -18,22 +19,23 @@
     loading = true; error = ''; selected = [];
     try {
       const found: Msg[] = [], seen = new Set<string>(); let start: number | null = 0, pages = 0, checked = 0;
-      const wantedSender = senderKey(item.from), wantedDomain = domain(item.from), wantedSubject = subjectKey(item.subject);
-      while (start !== null && pages < 10) {
-        const result = await api('list', { unreadOnly: false, start });
+      while (start !== null && pages < 5) {
+        const result = await api('list', { unreadOnly: false, start, limit: 200 });
         const batch = result.messages as Msg[]; checked += batch.length;
-        for (const m of batch) {
-          const match = scope === 'sender' ? senderKey(m.from) === wantedSender : Boolean(wantedDomain) && domain(m.from) === wantedDomain;
-          if (match && (!sameSubject || subjectKey(m.subject) === wantedSubject) && !seen.has(m.id)) { found.push(m); seen.add(m.id); }
-        }
+        for (const m of batch) if (!seen.has(m.id)) { found.push(m); seen.add(m.id); }
         start = result.next; pages += 1;
       }
-      rows = found; scanned = checked;
+      sourceRows = found; scanned = checked;
     } catch (e) { error = e instanceof Error ? e.message : 'Could not load.'; }
     finally { loading = false; }
   }
-  $effect(() => { void item.from; void item.subject; load(); });
+  // Fetch once when the sender changes. Scope, subject and unread controls filter this cache instantly.
+  $effect(() => { void item.from; load(); });
 
+  const rows = $derived(sourceRows.filter((m) => {
+    const senderMatch = scope === 'sender' ? senderKey(m.from) === senderKey(item.from) : Boolean(domain(item.from)) && domain(m.from) === domain(item.from);
+    return senderMatch && (!sameSubject || subjectKey(m.subject) === subjectKey(item.subject));
+  }));
   const shown = $derived(rows.filter((r) => !unreadOnly || r.unread));
   const unreadCount = $derived(rows.filter((r) => r.unread).length);
   const allSelected = $derived(shown.length > 0 && shown.every((r) => selected.includes(r.id)));
@@ -45,8 +47,8 @@
     if (op === 'trash' && ids.length > 1 && !confirm(`Move ${ids.length} emails to Trash?`)) return;
     try {
       await Promise.all(ids.map((id) => api(op, op === 'read' ? { id, read } : { id })));
-      if (op === 'trash') rows = rows.filter((r) => !ids.includes(r.id));
-      else for (const r of rows) if (ids.includes(r.id)) r.unread = !read;
+      if (op === 'trash') sourceRows = sourceRows.filter((r) => !ids.includes(r.id));
+      else sourceRows = sourceRows.map((r) => ids.includes(r.id) ? { ...r, unread: !read } : r);
       selected = selected.filter((id) => !ids.includes(id)); onchanged(op, ids, read);
     } catch (e) { error = e instanceof Error ? e.message : 'Action failed.'; }
   }
@@ -54,8 +56,8 @@
 
 <aside class="related" aria-label="More from sender">
   <header><strong>More from {scope === 'domain' ? `@${domain(item.from)}` : senderKey(item.from)}</strong><button class="x" onclick={onclose} title="Close" aria-label="Close">✕</button></header>
-  <div class="seg"><button class:on={scope === 'sender'} onclick={() => { scope = 'sender'; load(); }}>This sender</button><button class:on={scope === 'domain'} onclick={() => { scope = 'domain'; load(); }}>This domain</button></div>
-  <label class="chk"><input type="checkbox" bind:checked={sameSubject} onchange={load}> Same subject only</label>
+  <div class="seg"><button class:on={scope === 'sender'} onclick={() => (scope = 'sender')}>This sender</button><button class:on={scope === 'domain'} onclick={() => (scope = 'domain')}>This domain</button></div>
+  <label class="chk"><input type="checkbox" bind:checked={sameSubject}> Same subject only</label>
   <label class="chk"><input type="checkbox" bind:checked={unreadOnly}> Unread only</label>
   <small class="muted">{loading ? 'Loading…' : `${unreadCount} unread · ${rows.length} found in ${scanned} emails`}</small>
   {#if error}<p class="err">{error}</p>{/if}

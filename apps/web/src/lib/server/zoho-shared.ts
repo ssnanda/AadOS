@@ -3,8 +3,8 @@
 //   sendMailDetails with mode "group", grouped by display name since one box has several aliases); each is probed with
 //   GET /api/v2/sharedmailbox/{address}/counts and only HTTP 200 ones are real boxes the user can read.
 // - Messages: /api/v2/sharedmailbox/{address}/messages/{all|unread}; fields are nested, so they are looked up by key.
-// - Body: the shared API returns none. Group mail is also delivered to the member's own mailbox, so the copy with the
-//   same subject closest in time (≤ 6 h) is read through the normal endpoints; else the summary is shown.
+// - Body: V2 message detail supplies the shared message's owning account and folder. Use those identifiers with the
+//   normal content endpoint; shared mail intentionally is not duplicated into each member's personal inbox.
 import type { AadOSState, MailAccount } from './aados-store';
 import { zohoRequest } from './zoho';
 
@@ -75,9 +75,21 @@ const norm = (s: string) => s.toLowerCase().replace(/^\s*((re|fwd?|fw)\s*:\s*)+/
 // clause joined with `::` (the same syntax used by the normal Zoho mailbox search).
 const subjectSearchKey = (subject: string) => norm(subject).split(/\s+/).map((word) => word.replace(/["<>:]/g, '').trim()).filter((word) => /[\p{L}\p{N}]/u.test(word)).map((word) => `subject:${word}`).join('::');
 /** Full body from the member's own copy (same subject, closest time within 6 h); else the summary with a note. */
-export async function sharedBody(state: AadOSState, account: MailAccount, id: string): Promise<{ html: string; text: string; note: string }> {
+export async function sharedBody(state: AadOSState, account: MailAccount, address: string, id: string): Promise<{ html: string; text: string; note: string }> {
   const m = msgCache().get(`${account.id}|${id}`);
   if (!m) return { html: '', text: '', note: 'Reload the list and open the message again.' };
+  try {
+    const detail = await zohoRequest(state, account, 'GET', `/v2/sharedmailbox/${encodeURIComponent(address)}/messages/${encodeURIComponent(id)}`);
+    const ownerAccountId = deepStr(detail.data, ['accountId']) || account.remoteId;
+    const folderId = deepStr(detail.data, ['folderId']);
+    if (ownerAccountId && folderId) {
+      const full = await zohoRequest(state, account, 'GET', `/accounts/${encodeURIComponent(ownerAccountId)}/folders/${encodeURIComponent(folderId)}/messages/${encodeURIComponent(id)}/content`);
+      const raw = typeof full.data?.content === 'string' ? full.data.content : deepStr(full.data, ['htmlContent', 'content']);
+      if (raw) return /<[a-z][\s\S]*>/i.test(raw) ? { html: raw, text: '', note: '' } : { html: '', text: raw, note: '' };
+    }
+    const content = deepStr(detail.data, ['htmlContent', 'messageBody', 'body', 'content']);
+    if (content && content !== m.summary) return /<[a-z][\s\S]*>/i.test(content) ? { html: content, text: '', note: '' } : { html: '', text: content, note: '' };
+  } catch { /* Keep the legacy lookup below as a compatibility fallback. */ }
   try {
     const searchKey = subjectSearchKey(m.subject);
     if (!searchKey) return { html: '', text: m.summary, note: 'Full body unavailable — this message has no searchable subject.' };

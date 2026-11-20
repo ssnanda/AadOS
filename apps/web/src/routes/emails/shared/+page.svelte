@@ -121,7 +121,7 @@
       {#if findOpen}<div class="find"><input bind:value={findTerm} placeholder="Find in this email" aria-label="Find in this email"></div>{/if}
       <div class="paneBody"><div class="messageBody">{#if body?.note}<p class="note">{body.note}</p>{/if}
         {#if !body}<p class="muted pad">Loading…</p>{:else}<iframe title="Email body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={doc(body)}></iframe>{/if}</div>
-        {#if moreOpen && sel}<SharedRelatedPanel item={open} accountId={sel.accountId} address={sel.address} onopen={show} onchanged={relatedChanged} onclose={() => (moreOpen = false)} />{/if}
+        {#if moreOpen && sel}<SharedRelatedPanel item={open} initial={msgs} accountId={sel.accountId} address={sel.address} onopen={show} onchanged={relatedChanged} onclose={() => (moreOpen = false)} />{/if}
       </div>
     </section>{/if}
   </div>
