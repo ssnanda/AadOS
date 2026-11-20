@@ -29,6 +29,9 @@ async function ask(state: AadOSState, content: string) {
   return chat(state, [{ role: 'user', content }]);
 }
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** Non-PDF coverage stays bounded; every PDF attached to an AAD review email is inspected. */
+const MAX_OTHER_ATTACHMENTS = 4;
+const MAX_PDF_CHUNKS = 20;
 /** Background runs: at most once per this interval per view (only new mail is read, so this is cheap). */
 const AUTO_EVERY_MS = 12 * 3_600_000;
 
@@ -57,26 +60,33 @@ function emailsOf(state: AadOSState, pipeline: Pipeline, now = Date.now()): Emai
   return out;
 }
 
-/** Body + readable attachment text of one email (read-only provider calls on a detached snapshot). */
-async function readEmail(s: AadOSState, pipeline: Pipeline, item: PipelineItem): Promise<{ text: string; attachments: string[] }> {
+type ReadSource = { label: string; text: string; maxChunks?: number };
+/** Body + readable attachment text of one email (read-only provider calls on a detached snapshot). Every PDF is read. */
+async function readEmail(s: AadOSState, pipeline: Pipeline, item: PipelineItem): Promise<{ text: string; sources: ReadSource[]; attachments: string[] }> {
   const account = s.accounts.find((a) => a.id === ownerOf(s, item));
   if (!account) throw new Error('Account not connected.');
   const own = s.items.find((i) => i.id === item.id) || item;
   const b = account.provider === 'gmail' ? await fetchGmailBody(s, account, own) : await fetchZohoBody(s, account, pipeline, own);
-  let text = (b.text || htmlToText(b.html) || own.summary || '').trim();
+  const body = (b.text || htmlToText(b.html) || own.summary || '').trim();
+  const sources: ReadSource[] = [{ label: 'Email body', text: body }];
   const names: string[] = [];
   const list = await (account.provider === 'gmail' ? listGmailAttachments(s, account, own.messageId) : listZohoAttachments(s, account, own.folderId || '', own.messageId)).catch(() => []);
-  for (const a of list.slice(0, 4)) {
+  const pdfs = list.filter((a) => a.mime.toLowerCase() === 'application/pdf' || a.name.toLowerCase().endsWith('.pdf'));
+  const others = list.filter((a) => !pdfs.includes(a)).slice(0, MAX_OTHER_ATTACHMENTS);
+  for (const a of [...pdfs, ...others]) {
     if (a.size > MAX_ATTACHMENT_BYTES) { names.push(`${a.name} (too large)`); continue; }
     try {
       const bytes = account.provider === 'gmail' ? await fetchGmailAttachment(s, account, own.messageId, a.id) : await fetchZohoAttachment(s, account, own.folderId || '', own.messageId, a.id);
       const mime = sniff(bytes);
       const ex = mime ? await extractText(bytes, mime) : null;
-      if (ex?.status === 'done' && ex.text.trim()) { text += `\n\n[Attachment: ${a.name}]\n${ex.text}`; names.push(a.name); }
+      if (ex?.status === 'done' && ex.text.trim()) {
+        sources.push({ label: `Attachment: ${a.name}`, text: ex.text.trim(), maxChunks: pdfs.includes(a) ? MAX_PDF_CHUNKS : undefined });
+        names.push(a.name);
+      }
       else names.push(`${a.name} (not readable)`);
     } catch { names.push(`${a.name} (download failed)`); }
   }
-  return { text, attachments: names };
+  return { text: sources.map((x) => `[${x.label}]\n${x.text}`).join('\n\n'), sources, attachments: names };
 }
 
 async function pool<T>(list: T[], work: (t: T) => Promise<void>, stop: () => boolean) {
@@ -116,12 +126,17 @@ export async function runDigest(pipelineId: string): Promise<void> {
     let stop = '';
     const fatal = (e: unknown) => e instanceof AiError && ['auth', 'forbidden', 'rate_limit', 'not_configured', 'disabled', 'cancelled'].includes(e.kind);
     // Bodies are read on one detached snapshot per email so refreshed tokens are saved.
-    const read = async (e: Email) => { let out = { text: '', attachments: [] as string[] }; await updateStateDetached(async (s) => { out = await readEmail(s, view, e.item); }); return out; };
+    const read = async (e: Email) => { let out: Awaited<ReturnType<typeof readEmail>> = { text: '', sources: [], attachments: [] }; await updateStateDetached(async (s) => { out = await readEmail(s, view, e.item); }); return out; };
     await pool(toReview, async (e) => {
       const attempts = (prev.reviews[e.key]?.fp === e.fp ? prev.reviews[e.key]?.attempts || 0 : 0) + 1;
       try {
-        const { text, attachments } = await read(e);
-        const { chunks, truncated } = chunkText(text || e.item.summary);
+        const { sources, attachments } = await read(e);
+        const reviewSources: ReadSource[] = sources.length ? sources : [{ label: 'Email body', text: e.item.summary }];
+        const pieces = reviewSources.map((source) => {
+          const result = chunkText(source.text, undefined, source.maxChunks);
+          return { ...result, chunks: result.chunks.map((chunk) => `[${source.label}]\n${chunk}`) };
+        });
+        const chunks = pieces.flatMap((x) => x.chunks), truncated = pieces.some((x) => x.truncated);
         const parts = [];
         for (let i = 0; i < chunks.length; i++) {
           const r = await ask(state, reviewPrompt(focus, e, chunks[i], i + 1, chunks.length, today));
@@ -212,14 +227,13 @@ export function digestView(state: AadOSState, pipeline: Pipeline) {
 
 export type DigestViewData = ReturnType<typeof digestView>;
 
-/** Dashboard "Needs your attention": open actions and upcoming dates (next 14 days) of every review view. */
+/** Dashboard: only open actions. Dates, updates and FYIs stay in the full report. */
 export function digestAttention(state: AadOSState): Attention[] {
   const today = todayIn(tzOf(state));
-  const horizon = new Date(Date.parse(`${today}T00:00:00Z`) + 14 * 86_400_000).toISOString().slice(0, 10);
   return state.pipelines.filter((p) => p.parser === 'digest' && state.digests?.[p.id]).flatMap((p) => {
     const { digest } = digestView(state, p);
-    return [...digest.actions, ...digest.dates.filter((i) => i.due && i.due >= today && i.due <= horizon)]
-      .filter((i) => !i.mark && (i.kind === 'action' ? !i.due || i.due >= addDays(today, -3) : true))
+    return digest.actions
+      .filter((i) => !i.mark && (!i.due || i.due >= addDays(today, -3)))
       .map((i) => ({ id: `digest:${p.id}:${i.id}`, source: 'digest' as const, title: `${p.name}: ${i.title}`, why: [i.due ? (i.kind === 'action' ? `Due ${i.due}` : i.due) : '', i.detail].filter(Boolean).join(' · ').slice(0, 160), href: `/pipelines/${p.id}#review`, score: digestScore(i, today), at: i.sources[0]?.receivedAt }));
   });
 }

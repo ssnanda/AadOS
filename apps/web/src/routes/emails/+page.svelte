@@ -10,6 +10,7 @@
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let viewing = $state<PageData['rows'][number] | null>(null);
   let showFilters = $state(false);
+  let headerOpen = $state(false);
   let selected = $state<string[]>([]);
   let acting = $state(false);
   let notice = $state('');
@@ -108,11 +109,11 @@
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
 <main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
-  <header>
-    <div><h1>Emails</h1><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
+  <header class:open={headerOpen}>
+    <div><div class="title-row"><h1>Emails</h1><button class="header-toggle" aria-expanded={headerOpen} aria-controls="email-header-details" onclick={() => headerOpen = !headerOpen}>{headerOpen ? 'Hide' : 'Accounts'} <span>{headerOpen ? '▴' : '▾'}</span></button></div><div class="header-details" id="email-header-details"><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
       {#if data.accounts.length}<div class="checked">{#each data.accounts as a (a.id)}{@const sh = shellAccounts.find((x) => x.id === a.id)}<a class="acct" class:err={Boolean(a.lastError)} class:zero={!sh?.unread} href={unreadHref({ account: a.id, folder: '' })} title={a.lastError || `${a.email} · last check ${clock(checkedOf(a))}`}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i>{a.email.split('@')[0]}{#if sh?.unread}<b>{sh.unread}</b>{/if}<small>{a.paused ? 'paused' : a.lastError ? 'error' : clock(checkedOf(a))}</small></a>{/each}</div>{/if}
       {#if unreadFolders.length}<div class="ufolders"><small>Unread</small>{#each unreadFolders as u (`${u.account.id}:${u.folder.id}`)}<a class:on={data.query.account === u.account.id && data.query.folder === u.folder.id} href={unreadHref({ account: u.account.id, folder: u.folder.id })} title={u.account.email}><i class={u.account.provider}>{u.account.provider === 'gmail' ? 'G' : 'Z'}</i>{u.folder.name.replace(/^inbox\//i, '')}<b>{u.folder.unread}</b></a>{/each}</div>{/if}
-    </div>
+    </div></div>
   </header>
   {#if data.accounts.length === 0}<div class="empty">No accounts connected. <a href="/settings/emails">Connect Gmail or Zoho in Settings → Emails</a>.</div>{:else}
   {#each bad as a (a.id)}<div class="alert">{a.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {a.email}: {a.lastError} · <a href={`/settings/emails#acct-${a.id}`}>Fix in Settings</a></div>{/each}
@@ -179,6 +180,7 @@
   main.previewing .row{grid-template-columns:minmax(0,1fr) 60px;gap:2px 10px}main.previewing .subj{grid-column:1/-1;grid-row:2}main.previewing .meta .ops,main.previewing .meta .tag:not(.act),main.previewing .aitag{display:none}
   li{cursor:pointer}li.active{background:#eef3ff;box-shadow:inset 3px 0 0 #3157de}
   @media(max-width:900px){main.previewing .split{display:block}}header{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}header>div{flex:1}h1{margin:0 0 3px;font-size:22px}header p{margin:0;color:#8a95a8;font-size:12px}
+  .title-row{display:flex;align-items:center;gap:10px}.header-toggle{display:inline-flex;gap:6px;align-items:center;margin-left:auto;border:1px solid #d9dfeb;background:#fff;border-radius:8px;padding:6px 10px;color:#43516c;font-size:12px;font-weight:700}.header-details{display:none;padding-top:6px}header.open .header-details{display:block}
   header p .link{border:0;background:none;color:#3157de;font-weight:700;font-size:12px;padding:0 0 0 4px;cursor:pointer}header p .link:disabled{color:#a5b0c2;cursor:default}
   .checked,.ufolders{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;align-items:center}.ufolders>small{color:#8a95a8;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:2px}
   .checked a,.ufolders a{display:inline-flex;gap:5px;align-items:center;border:1px solid #e1e6f0;background:#fff;border-radius:999px;padding:2px 9px 2px 3px;font-size:11px;font-weight:600;color:#43516c;text-decoration:none}
@@ -202,14 +204,14 @@
   .list{list-style:none;margin:0;padding:0;background:#fff;border:1px solid #e4e9f2;border-radius:12px;overflow:hidden}
   li{padding:10px 14px;border-top:1px solid #eef0f5}li:first-child{border-top:0}li.unread{background:#fbfcff}li.selected{background:#f3f6ff}.email-line{display:grid;grid-template-columns:32px 32px 20px minmax(0,1fr);gap:6px;align-items:center}.ic{border:0;background:none;padding:3px;border-radius:6px;cursor:pointer;font-size:21px;line-height:1;color:#53607a;opacity:.85}.ic:hover{opacity:1;background:#eef1f8}.pick{width:15px;height:15px;margin:0;accent-color:#3157de}
   .row{display:grid;grid-template-columns:200px minmax(0,1fr) 70px;gap:14px;align-items:baseline;width:100%;border:0;background:none;text-align:left;padding:0;cursor:pointer;font:inherit;color:#29344c}
-  .from{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}li.unread .from,li.unread .subj strong{font-weight:800}.star{color:#e0a21b;margin-right:4px}
-  .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}.subj strong{font-weight:600}.subj em{font-style:normal;color:#8a95a8;margin-left:8px;font-size:12px}time{font-size:11px;color:#8a95a8;text-align:right}
+  .from{font-size:15px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}li.unread .from,li.unread .subj strong{font-weight:800}.star{color:#e0a21b;margin-right:4px}
+  .subj{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;line-height:1.35}.subj strong{font-weight:650}.subj em{font-style:normal;color:#7d899f;margin-left:8px;font-size:14px}time{font-size:13px;color:#7d899f;text-align:right}
   .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 0 89px}
-  .tag,.acct{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f0f2f7;color:#5b6a86;text-decoration:none}.acct{background:#eef1ff;color:#3157de;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acct.gmail{background:#fff0ee;color:#d94d43}
-  .aitag{font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:#f1ebff;color:#7c4dde;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tag,.acct{font-size:11px;font-weight:800;border-radius:6px;padding:3px 8px;background:#f0f2f7;color:#5b6a86;text-decoration:none}.acct{background:#eef1ff;color:#3157de;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acct.gmail{background:#fff0ee;color:#d94d43}
+  .aitag{font-size:11px;font-weight:800;border-radius:6px;padding:3px 8px;background:#f1ebff;color:#7c4dde;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tag.act{background:#fff4df;color:#a1752a}.tag.follow{background:#e3f6f3;color:#0f7f74}.tag.view{background:#f1ebff;color:#7c4dde}
   .ops{display:flex;gap:4px;margin:0 0 0 auto}.ops button{border:1px solid #e4e9f2;background:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#53607a;cursor:pointer}.ops button:hover{border-color:#8da2f0;color:#3157de}
   .pager{display:flex;gap:16px;align-items:center;justify-content:center;margin:16px 0;font-size:12px;color:#8a95a8}.pager a{color:#3157de;font-weight:700;text-decoration:none}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:35px;text-align:center;color:#8c96a8}.empty a{color:#3157de}
-  @media(max-width:700px){.bulk{align-items:flex-start;flex-wrap:wrap}.bulk-actions{margin-left:0;width:100%}.row{grid-template-columns:1fr 60px}.subj{grid-column:1/-1;grid-row:2}.ops{margin:6px 0 0;flex-wrap:wrap}}
+  @media(max-width:700px){header{margin-bottom:8px}.bulk{align-items:flex-start;flex-wrap:wrap}.bulk-actions{margin-left:0;width:100%}.row{grid-template-columns:1fr 60px}.from,.subj{font-size:16px}.subj{grid-column:1/-1;grid-row:2}.subj em{font-size:14px}.ops{margin:6px 0 0;flex-wrap:wrap}}
 </style>

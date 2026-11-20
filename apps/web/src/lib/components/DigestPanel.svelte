@@ -20,14 +20,14 @@
 
 <section class="review" id="review">
   <div class="bar">
-    <div class="tabs"><button class:on={tab === 'week'} onclick={() => (tab = 'week')}>This week <i>{d.actions.filter((i) => !i.mark).length}</i></button>{#if s}<button class:on={tab === 'sessions'} onclick={() => (tab = 'sessions')}>{s.label} <i>{s.trends.totals.sessions}</i></button>{/if}</div>
+    <div class="tabs"><button class:on={tab === 'week'} onclick={() => (tab = 'week')}>Action report <i>{d.actions.filter((i) => !i.mark).length}</i></button>{#if s}<button class:on={tab === 'sessions'} onclick={() => (tab = 'sessions')}>{s.label} <i>{s.trends.totals.sessions}</i></button>{/if}</div>
     <span class="meta">{#if review.progress.running}Reading {review.progress.done}/{review.progress.total}… {review.progress.note}{:else}Reviewed {when(review.lastRun)}{/if}</span>
     <form method="POST" action="?/review" use:enhance={() => async () => { await invalidateAll(); }}><button disabled={review.progress.running}>↻ Review now</button></form>
   </div>
   {#if review.error}<div class="alert">{review.error}</div>{/if}
 
   {#if tab === 'week'}
-    <p class="meta">{d.inWindow} emails since {fmt(d.from.slice(0, 10))} · {d.reviewed} reviewed · {d.ignored.length} not for this focus{d.pending.length ? ` · ${d.pending.length} waiting` : ''}{d.failed.length ? ` · ${d.failed.length} failed` : ''} · <label class="inline"><input type="checkbox" bind:checked={showDone}> show done</label></p>
+    <p class="meta">AJMCP reviewed {d.reviewed} of {d.inWindow} emails since {fmt(d.from.slice(0, 10))}, including readable PDFs · {d.ignored.length} not for this focus{d.pending.length ? ` · ${d.pending.length} waiting` : ''}{d.failed.length ? ` · ${d.failed.length} failed` : ''} · <label class="inline"><input type="checkbox" bind:checked={showDone}> show done</label></p>
     {#snippet entry(i: DigestEntry)}
       <li class:muted={i.mark} class:late={late(i) && !i.mark}>
         <div class="main"><b>{i.title}</b>{#if i.due}<span class="due">{i.kind === 'action' ? 'Due ' : ''}{fmt(i.due)}</span>{/if}{#if i.audience}<span class="aud">{i.audience}</span>{/if}

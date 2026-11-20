@@ -13,6 +13,8 @@ export const CHUNK_CHARS = 3600;
 /** At most this many chunks per email (~21k chars: body + a newsletter PDF or two). */
 export const MAX_CHUNKS = 6;
 export const MAX_ATTEMPTS = 3;
+/** Bump when coverage or instructions change so cached email reviews are refreshed. */
+export const REVIEW_VERSION = 2;
 
 export { DEFAULT_FOCUS } from '../../digest-defaults.ts';
 
@@ -39,7 +41,7 @@ const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0
 const isIso = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 const clip = (v: unknown, n: number) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
-export const reviewFingerprint = (email: { key: string; subject: string; receivedAt: string }, focus: string) => hash(`${email.key}|${email.subject}|${email.receivedAt}|${focus.trim()}`);
+export const reviewFingerprint = (email: { key: string; subject: string; receivedAt: string }, focus: string) => hash(`${REVIEW_VERSION}|${email.key}|${email.subject}|${email.receivedAt}|${focus.trim()}`);
 
 /** Split on paragraph/line boundaries into ≤ size pieces; the last piece is flagged when text had to be dropped. */
 export function chunkText(text: string, size = CHUNK_CHARS, max = MAX_CHUNKS): { chunks: string[]; truncated: boolean } {

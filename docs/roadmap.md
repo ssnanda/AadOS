@@ -139,3 +139,6 @@ Keep scope small: deliver useful inbox access before extending to household task
 70. [ ] Messages folders match the Mac: Messages · Unknown Senders (BlueBubbles isFiltered) · Spam · Spam reports, + Unread only. Loads 1000 chats (BB lastmessage sort is not newest-first; 150 dropped known senders → "Needs you 0"). Badge = known-sender unread. Untested.
 71. [ ] Zoho reply "Invalid Input": action sent as "Reply" → now "reply"; Zoho errors show errorCode/moreInfo. Untested (no test send by agent).
 72. [x] Email Reply menu: residential reply loads “Schedule Your Showing – Text Us Directly” from the live Zoho Templates folder and composes from/Cc `leads@intlord.com`. Awaiting owner verification; no message sent by agent.
+73. [x] AAD action report: AJMCP reviews every PDF attachment in the view (plus email body and bounded non-PDF attachments); cached reviews versioned for refresh. Awaiting owner verification.
+74. [x] Dashboard receives only open AAD actions; dates, updates, and FYIs remain in the full AAD report. Awaiting owner verification.
+75. [x] Emails header: account and unread-folder pills collapse by default behind an Accounts toggle on desktop and mobile. Message sender/subject/preview typography enlarged for scanning. Awaiting owner verification.
