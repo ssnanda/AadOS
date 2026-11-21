@@ -10,20 +10,27 @@ final class BrowserModel: ObservableObject {
     @Published var progress = 0.0
     @Published var errorMessage: String?
 
-    fileprivate weak var webView: WKWebView?
+    fileprivate weak var webView: WKWebView? {
+        didSet { if oldValue !== webView { requestedURL = nil } }
+    }
     private var pendingURL: URL?
+    /// The configured server URL last sent to the web view. Compared instead of
+    /// `webView.url`, which changes on server redirects (e.g. `/` → `/login`);
+    /// comparing against it re-issued the load on every SwiftUI update, causing
+    /// an endless reload loop and a blank screen.
+    private var requestedURL: URL?
 
-    func load(_ url: URL?) {
+    func load(_ url: URL?, force: Bool = false) {
         pendingURL = url
         guard let webView, let url else { return }
-        if webView.url?.absoluteString != url.absoluteString {
-            webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30))
-        }
+        guard force || requestedURL != url else { return }
+        requestedURL = url
+        webView.load(URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30))
     }
 
     func reload() {
         errorMessage = nil
-        if webView?.url != nil { webView?.reload() } else { load(pendingURL) }
+        if webView?.url != nil { webView?.reload() } else { load(pendingURL, force: true) }
     }
 
     func goBack() { webView?.goBack() }
