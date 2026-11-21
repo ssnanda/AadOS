@@ -81,11 +81,13 @@ private struct ServerSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("AadOS server") {
+                Section {
                     TextField("https://os.aadnanda.com", text: $serverURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                } header: {
+                    Text("AadOS server")
                 } footer: {
                     Text("Use HTTPS except when connecting to localhost during development.")
                 }
