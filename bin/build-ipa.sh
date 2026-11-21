@@ -110,6 +110,13 @@ package="$(mktemp -d "${TMPDIR:-/tmp}/aados-ipa.XXXXXX")"
 mkdir -p "$package/Payload"
 ditto "$app" "$package/Payload/AadOS.app"
 ipa="$output/aados.ipa"
+# Fail fast on an empty/stub bundle: a .app with no compiled binary or no
+# CFBundleIdentifier is rejected by AltStore/SideLoader ("bundle ID differs").
+plist="$package/Payload/AadOS.app/Info.plist"
+app_bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null || true)"
+app_exec="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist" 2>/dev/null || true)"
+[[ "$app_bundle" == "$bundle" ]] || { echo "ERROR: built Info.plist CFBundleIdentifier '$app_bundle' != '$bundle'." >&2; exit 1; }
+[[ -n "$app_exec" && -s "$package/Payload/AadOS.app/$app_exec" ]] || { echo "ERROR: built .app has no executable ('$app_exec'); no sources were compiled. Logs: $log" >&2; exit 1; }
 if [[ -e "$ipa" ]]; then
   osascript -e "tell application \"Finder\" to delete POSIX file \"$ipa\"" >/dev/null
 fi

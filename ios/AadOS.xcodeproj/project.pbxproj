@@ -30,6 +30,7 @@
 			buildPhases = (A10000000000000000000007 /* Sources */, A10000000000000000000008 /* Frameworks */, A10000000000000000000009 /* Resources */);
 			buildRules = ();
 			dependencies = ();
+			fileSystemSynchronizedGroups = (A10000000000000000000011 /* AadOS */);
 			name = AadOS;
 			packageProductDependencies = ();
 			productName = AadOS;
@@ -49,8 +50,14 @@
 		};
 		A10000000000000000000011 /* AadOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (A10000000000000000000012 /* Exceptions for "AadOS" folder in "AadOS" target */);
 			path = AadOS;
 			sourceTree = "<group>";
+		};
+		A10000000000000000000012 /* Exceptions for "AadOS" folder in "AadOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (Info.plist);
+			target = A10000000000000000000002 /* AadOS */;
 		};
 		A10000000000000000000010 /* AadOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AadOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000007 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
