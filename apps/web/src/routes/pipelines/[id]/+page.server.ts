@@ -3,11 +3,12 @@ import { error, fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { hasDatabase, readState, updateState } from '$lib/server/aados-store';
 import { clean, parseMessage } from '$lib/server/pipeline-parser';
-import { filterItems, isUnread } from '$lib/server/search';
+import { filterItems } from '$lib/server/search';
 import { digestView, markDigestItem, runDigest } from '$lib/server/ai/weekly-digest-service';
 import { messageKey } from '$lib/server/inbox';
 import { aiConfigured } from '$lib/server/ai/service';
 
+const PAGE = 50;
 const count = (values: string[]) => {
   const map = new Map<string, number>();
   for (const value of values) if (value) map.set(value, (map.get(value) || 0) + 1);
@@ -22,25 +23,24 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
   const kind = url.searchParams.get('kind') || '';
   const store = url.searchParams.get('store') || '';
   const q = (url.searchParams.get('q') || '').trim();
-  // Custom views open on unread mail; All remains an explicit option.
-  const view = url.searchParams.get('view') === 'all' ? 'all' : 'unread';
-  const unread = view === 'unread';
-  const matching = filterItems(all, { q });
-  const unreadCount = matching.filter(isUnread).length;
-  // Tiles and store chips count what matches the search + read filter, so they narrow as you type.
-  const searched = filterItems(matching, { unread });
-  const shown = filterItems(searched, { kind, store }).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  // Views are about every email in them (no read/unread switch). The page opens on the view's own tiles (Shopping:
+  // categories + stores); the email list loads only once a tile, a store or a search is picked, or "Show all" (paged).
+  const showAll = url.searchParams.get('show') === 'all';
+  const listing = Boolean(kind || store || q || showAll);
+  const pages = Math.min(Math.max(Number(url.searchParams.get('pages')) || 1, 1), 40);
+  const searched = filterItems(all, { q });
+  const shown = listing ? filterItems(searched, { kind, store }).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)) : [];
   return {
     pipeline,
     total: all.length,
     searched: searched.length,
     kinds: count(searched.map((item) => item.kind)),
     stores: count(searched.map((item) => String(item.facts.store || ''))).slice(0, 14),
-    kind, store, q, view, unreadCount, allCount: matching.length,
+    kind, store, q, showAll, listing, pages, pageSize: PAGE,
     aiAvailable: hasDatabase(),
     aiBlocked: !aiConfigured(state) ? 'Connect the AJMCP gateway in Settings → AI' : !state.ai.enabled ? 'Turn on AI in Settings → AI' : !state.ai.share.email ? 'Allow Email in Settings → AI' : !hasDatabase() ? 'AI drafts need PostgreSQL storage' : '',
     matched: shown.length,
-    items: shown.slice(0, 250).map((item) => {
+    items: shown.slice(0, pages * PAGE).map((item) => {
       const accountId = item.accountId || pipeline.accountId;
       return { ...item, accountId, key: messageKey(accountId, item.messageId) };
     }),

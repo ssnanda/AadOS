@@ -6,9 +6,10 @@
   onMount(() => { const auto = startAutoSync(() => ({ pipeline: data.pipeline.id }), () => invalidateAll()); void auto.run(); return () => auto.stop(); });
 
   const meta = kindMeta;
-  const href = (kind: string, store: string, withQuery = true, view = data.view) => {
+  const href = (kind: string, store: string, withQuery = true, all = false, pages = 1) => {
     const q = new URLSearchParams();
-    q.set('view', view);
+    if (all) q.set('show', 'all');
+    if (pages > 1) q.set('pages', String(pages));
     if (kind) q.set('kind', kind);
     if (store) q.set('store', store);
     if (withQuery && data.q) q.set('q', data.q);
@@ -28,25 +29,27 @@
   {#if data.review}<DigestPanel review={data.review} />{/if}
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
   {#snippet sourceEmails()}
-  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.view === 'unread'}<input type="hidden" name="view" value="unread">{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
-  <div class="views"><a class="seg" class:on={data.view === 'all'} href={href('', '', true, 'all')}>All<i>{data.allCount}</i></a><a class="seg" class:on={data.view === 'unread'} href={href('', '', true, 'unread')}>Unread<i>{data.unreadCount}</i></a></div>
+  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
   <div class="tiles">
-    <a class="tile all" class:on={!data.kind && !data.store} href={href('', '')}><span class="ico">▦</span><b>{data.searched}</b><small>All</small></a>
+    <a class="tile all" class:on={data.showAll && !data.kind && !data.store} href={href('', '', true, true)} title="List every email in this view (50 at a time)"><span class="ico">▦</span><b>{data.searched}</b><small>Show all</small></a>
     {#each data.kinds as [kind, n] (kind)}{@const m = meta(kind)}<a class="tile {m.tone}" class:on={data.kind === kind} href={href(kind, data.store)}><span class="ico">{m.icon}</span><b>{n}</b><small>{m.label}</small></a>{/each}
   </div>
   {#if data.stores.length}
     <div class="stores"><span class="lbl">Stores</span>{#each data.stores as [name, n] (name)}<a class="chip" class:on={data.store === name} href={href(data.kind, data.store === name ? '' : name)}>{name}<i>{n}</i></a>{/each}</div>
   {/if}
 
-  <section>{#if data.items.length === 0}<div class="empty">{data.total ? (data.view === 'unread' ? 'No unread emails match this filter.' : 'No emails match this filter.') : 'No messages synced from this folder yet.'}</div>{/if}
-    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q, unread: data.view === 'unread' }} aiAvailable={data.aiAvailable} aiBlocked={data.aiBlocked} /></section>
+  {#if data.listing}
+  <section>{#if data.items.length === 0}<div class="empty">{data.total ? 'No emails match this filter.' : 'No messages synced from this folder yet.'}</div>{/if}
+    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q }} aiAvailable={data.aiAvailable} aiBlocked={data.aiBlocked} />
+    {#if data.matched > data.items.length}<a class="more" href={href(data.kind, data.store, true, data.showAll, data.pages + 1)} data-sveltekit-noscroll>Show {Math.min(data.pageSize, data.matched - data.items.length)} more · {data.items.length} of {data.matched}</a>{/if}</section>
+  {:else if !data.total}<div class="empty">No messages synced from this folder yet.</div>{/if}
   {/snippet}
   {#if data.review}<details class="evidence"><summary>Source emails <i>{data.total}</i></summary><div class="evidence-body">{@render sourceEmails()}</div></details>{:else}{@render sourceEmails()}{/if}
 </main>
 </AppShell>
 <style>
   .shell{max-width:none}
-  .views{display:inline-flex;gap:0;margin-bottom:12px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;overflow:hidden}.seg{display:inline-flex;gap:8px;align-items:center;padding:7px 16px;font-size:13px;font-weight:700;color:#53607a;text-decoration:none}.seg i{font-style:normal;background:#f0f2f7;border-radius:99px;padding:1px 8px;font-size:11px;color:#8a95a8}.seg.on{background:#3157de;color:#fff}.seg.on i{background:#ffffff33;color:#fff}
+  .more{display:block;margin-top:10px;text-align:center;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:9px;font-size:12px;font-weight:700;color:#3157de;text-decoration:none}.more:hover{border-color:#8da2f0}
   header{display:flex;gap:25px;align-items:flex-start;margin-bottom:16px}header>div{flex:1}h1{margin:3px 0}header p,header small{color:#8994a8;margin:0}
   header button{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer}header form{margin:0}
   .alert,.ok{padding:10px 14px;border-radius:9px;margin-bottom:12px;font-size:13px}.alert{background:#fff0f1;color:#a5414d}.ok{background:#e3f6f3;color:#0f7f74}
