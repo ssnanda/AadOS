@@ -13,7 +13,7 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSAppleCalendar")
+    guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSAppleCalendar") else { return }
     let channel = FlutterMethodChannel(name: "com.aadnanda.aados/apple_calendar", binaryMessenger: registrar.messenger())
     channel.setMethodCallHandler { [weak self] call, result in
       guard call.method == "createEvent", let values = call.arguments as? [String: Any] else {
