@@ -61,6 +61,10 @@ if [[ -n "${IOS_WORKSPACE:-}" && -d "$IOS_WORKSPACE" ]]; then
   target=(-workspace "$IOS_WORKSPACE")
 elif [[ -n "${IOS_PROJECT:-}" && -d "$IOS_PROJECT" ]]; then
   target=(-project "$IOS_PROJECT")
+elif [[ -d ./ios/AadOS.xcodeproj ]]; then
+  IOS_PROJECT=./ios/AadOS.xcodeproj
+  target=(-project "$IOS_PROJECT")
+  echo "Using native AadOS project: $IOS_PROJECT"
 else
   workspaces=()
   while IFS= read -r path; do workspaces+=("$path"); done < <(find . -type d -name '*.xcworkspace' ! -path '*/.build/*' ! -path '*/build/*' ! -path '*/Pods/*' ! -path '*.xcodeproj/project.xcworkspace' -print)
