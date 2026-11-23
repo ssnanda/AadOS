@@ -118,12 +118,18 @@ if [[ -z "${IOS_SCHEME:-}" ]]; then
 fi
 command -v ditto >/dev/null || { echo 'ERROR: macOS ditto is required.' >&2; exit 1; }
 command -v zip >/dev/null || { echo 'ERROR: zip is required.' >&2; exit 1; }
-settings="$(xcodebuild "${target[@]}" -scheme "$IOS_SCHEME" -configuration Release MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" CODE_SIGNING_ALLOWED=NO -showBuildSettings 2>/dev/null)" || { echo 'ERROR: cannot inspect Xcode settings.' >&2; exit 1; }
-bundle="$(printf '%s\n' "$settings" | sed -n 's/^ *PRODUCT_BUNDLE_IDENTIFIER = //p' | head -n 1)"
-[[ -n "$bundle" ]] || { echo 'ERROR: missing iOS bundle identifier.' >&2; exit 1; }
 output="${IOS_OUTPUT_DIR:-$PWD/build/ios/ipa}"
 derived="${IOS_DERIVED_DATA_DIR:-$PWD/build/ios/derived-data}"
-mkdir -p "$output"
+mkdir -p "$output" "$derived"
+settings_log="$output/xcodebuild-settings.log"
+if ! xcodebuild "${target[@]}" -scheme "$IOS_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$derived" MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" CODE_SIGNING_ALLOWED=NO -showBuildSettings >"$settings_log" 2>&1; then
+  echo "ERROR: cannot inspect Xcode settings. See $settings_log" >&2
+  tail -n 40 "$settings_log" >&2 || true
+  exit 1
+fi
+settings="$(<"$settings_log")"
+bundle="$(printf '%s\n' "$settings" | sed -n 's/^ *PRODUCT_BUNDLE_IDENTIFIER = //p' | head -n 1)"
+[[ -n "$bundle" ]] || { echo 'ERROR: missing iOS bundle identifier.' >&2; exit 1; }
 log="$output/xcodebuild.log"
 trap 'echo "Build/package failed; see $log" >&2; tail -n 40 "$log" >&2 || true' ERR
 echo 'Building unsigned iPhoneOS app for AltStore-style installation...'
