@@ -15,10 +15,10 @@
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "0.1.91",
-          "buildVersion": "114",
-          "date": "2026-11-21",
-          "localizedDescription": "AadOS 0.1.91 build 114",
+          "version": "0.1.94",
+          "buildVersion": "119",
+          "date": "2026-11-23",
+          "localizedDescription": "AadOS 0.1.94 build 119",
           "downloadURL": "https://github.com/ssnanda/AadOS/releases/download/ios-latest/aados.ipa",
           "size": 1230749,
           "minOSVersion": "17.0"
