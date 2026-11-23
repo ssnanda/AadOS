@@ -82,12 +82,36 @@ else
 fi
 if [[ -z "${IOS_SCHEME:-}" ]]; then
   schemes=()
-  while IFS= read -r scheme; do schemes+=("$scheme"); done < <(xcodebuild "${target[@]}" -list 2>/dev/null | awk '/^[[:space:]]*Schemes:/{found=1;next} found && /^[[:space:]]*$/{exit} found{sub(/^[[:space:]]+/, ""); if(length) print}')
+  if [[ -n "${IOS_PROJECT:-}" ]]; then
+    scheme_root="$IOS_PROJECT"
+  else
+    scheme_root="$(dirname "$IOS_WORKSPACE")"
+  fi
+  while IFS= read -r scheme_file; do
+    schemes+=("$(basename "$scheme_file" .xcscheme)")
+  done < <(find "$scheme_root" -path '*/xcshareddata/xcschemes/*.xcscheme' ! -path '*/Pods/*' -print | sort -u)
+
+  list_error=''
+  if [[ ${#schemes[@]} -eq 0 ]]; then
+    list_output_file="$(mktemp "${TMPDIR:-/tmp}/aados-xcode-list.XXXXXX")"
+    if xcodebuild "${target[@]}" -list >"$list_output_file" 2>&1; then
+      while IFS= read -r scheme; do schemes+=("$scheme"); done < <(awk '/^[[:space:]]*Schemes:/{found=1;next} found && /^[[:space:]]*$/{exit} found{sub(/^[[:space:]]+/, ""); if(length) print}' "$list_output_file")
+    else
+      list_error="$(tail -n 12 "$list_output_file")"
+    fi
+    osascript -e "tell application \"Finder\" to delete POSIX file \"$list_output_file\"" >/dev/null
+  fi
   if [[ ${#schemes[@]} -eq 1 ]]; then
     IOS_SCHEME="${schemes[0]}"
     echo "Auto-detected scheme: $IOS_SCHEME"
   else
     echo 'ERROR: IOS_SCHEME not configured and a single shared scheme could not be detected.' >&2
+    if [[ -n "$list_error" ]]; then
+      echo 'xcodebuild -list failed:' >&2
+      printf '%s\n' "$list_error" >&2
+    elif [[ ${#schemes[@]} -gt 1 ]]; then
+      printf 'Detected shared schemes: %s\n' "${schemes[*]}" >&2
+    fi
     echo "Run xcodebuild ${target[*]} -list, then export IOS_SCHEME='YourScheme'." >&2
     exit 1
   fi
