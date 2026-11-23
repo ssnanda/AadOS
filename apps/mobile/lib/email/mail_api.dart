@@ -17,8 +17,8 @@ class MailApi {
 
   /// delete | mark-read | mark-unread | importance-high | importance-normal | follow-up | clear-follow-up |
   /// actionable | reviewed | dismissed | clear-action. Returns a warning for partly failed changes ('' = none).
-  Future<String> mark(String op, List<String> keys) async {
-    final r = await api.post('/api/mobile/emails/mark', {'op': op, 'keys': keys}, timeout: const Duration(seconds: 60));
+  Future<String> mark(String op, List<String> keys, {String value = ''}) async {
+    final r = await api.post('/api/mobile/emails/mark', {'op': op, 'keys': keys, if (value.isNotEmpty) 'value': value}, timeout: const Duration(seconds: 60));
     return r is Map ? (r['warning'] ?? '').toString() : '';
   }
 

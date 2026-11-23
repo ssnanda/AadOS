@@ -27,7 +27,9 @@ class EmailRow {
         followUp = _str(j['followUp']).isNotEmpty,
         threadId = _str(j['threadId']),
         threadCount = _int(j['threadCount']),
-        pipelines = _strings(j['pipelines']);
+        pipelines = _strings(j['pipelines']),
+        savedKind = _str(j['savedKind']),
+        savedExpiry = _str(j['savedExpiry']);
 
   /// Related-email rows ("More from sender") carry fewer fields.
   EmailRow.related(Map<String, dynamic> j, {required String fallbackAccount})
@@ -52,23 +54,31 @@ class EmailRow {
         followUp = false,
         threadId = '',
         threadCount = 0,
-        pipelines = const [];
+        pipelines = const [],
+        savedKind = '',
+        savedExpiry = '';
 
-  final String key, id, pipelineId, messageId, subject, sender, summary, accountId, accountEmail, provider, actionReason, due, threadId;
+  final String key, id, pipelineId, messageId, subject, sender, summary, accountId, accountEmail, provider, due, threadId;
   final DateTime? receivedAt;
   final List<String> categories, pipelines;
-  final String? action;
+  String actionReason;
+  String? action;
+  String savedKind, savedExpiry;
   final int threadCount;
   // Changed optimistically by the app before the server confirms.
   bool unread, important, reviewed, followUp;
 
-  String get actionLabel => switch (action) {
-        'reply' => 'Needs reply',
-        'financial' => 'Payment',
-        'appointment' => 'Appointment',
-        null => '',
-        _ => 'To-do',
-      };
+  bool get manuallyPending => actionReason == 'Marked by you' && !reviewed;
+  String get actionLabel {
+    if (manuallyPending) return 'Pending action';
+    return switch (action) {
+      'reply' => 'Needs reply',
+      'financial' => 'Payment',
+      'appointment' => 'Appointment',
+      null => '',
+      _ => 'To-do',
+    };
+  }
   bool get needsAction => action != null && !reviewed;
 }
 
@@ -169,7 +179,9 @@ class InboxPage {
         views = [for (final v in (j['views'] as List? ?? const [])) SavedView.fromJson(v as Map<String, dynamic>)],
         folderName = _str(j['folderName']),
         aiAvailable = j['aiAvailable'] == true,
-        aiBlocked = _str(j['aiBlocked']);
+        aiBlocked = _str(j['aiBlocked']),
+        savedCoupons = [for (final x in (((j['saved'] as Map?)?['coupons'] as List?) ?? const [])) SavedEmailValue.fromJson(x as Map<String, dynamic>)],
+        savedGiftCards = [for (final x in (((j['saved'] as Map?)?['giftCards'] as List?) ?? const [])) SavedEmailValue.fromJson(x as Map<String, dynamic>)];
 
   /// Accounts joined with their folder drawer entries (`folders`, sent by /api/mobile/emails).
   static List<MailAccount> _accounts(Map<String, dynamic> j) {
@@ -192,7 +204,17 @@ class InboxPage {
   final List<SavedView> views;
   final String folderName, aiBlocked;
   final bool aiAvailable;
+  final List<SavedEmailValue> savedCoupons, savedGiftCards;
   bool get aiReady => aiAvailable && aiBlocked.isEmpty;
+}
+
+class SavedEmailValue {
+  SavedEmailValue.fromJson(Map<String, dynamic> j)
+      : key = _str(j['key']),
+        subject = _str(j['subject']),
+        sender = _str(j['sender']),
+        expiresOn = _str(j['expiresOn']);
+  final String key, subject, sender, expiresOn;
 }
 
 class MessageBody {

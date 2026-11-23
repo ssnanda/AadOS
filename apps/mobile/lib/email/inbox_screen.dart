@@ -99,6 +99,7 @@ class _InboxScreenState extends State<InboxScreen> {
       'mark-unread' => await c.setUnread(keys, true),
       'important' => await c.setImportant(keys, true),
       'follow-up' => await c.setFollowUp(keys, true),
+      'pending-action' => await c.review('actionable', keys),
       _ => await c.review('reviewed', keys),
     };
     if (mounted && msg.isNotEmpty) toast(context, msg);
@@ -149,6 +150,7 @@ class _InboxScreenState extends State<InboxScreen> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'important', child: Text('★ Important')),
               PopupMenuItem(value: 'follow-up', child: Text('＋ Follow-up')),
+              PopupMenuItem(value: 'pending-action', child: Text('⚑ Pending action')),
               PopupMenuItem(value: 'reviewed', child: Text('✓ Reviewed')),
             ],
           ),
@@ -217,6 +219,21 @@ class _InboxScreenState extends State<InboxScreen> {
     return '$unread unread${checked != null ? ' · checked ${shortTime(checked)}' : ''}';
   }
 
+  Widget _savedTiles() {
+    final d = c.data;
+    if (d == null || c.query.account.isNotEmpty || c.query.folder.isNotEmpty || (d.savedCoupons.isEmpty && d.savedGiftCards.isEmpty)) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      child: Row(children: [
+        if (d.savedCoupons.isNotEmpty)
+          Expanded(child: _SavedTile(icon: Icons.local_offer_outlined, label: 'Coupon', count: d.savedCoupons.length, detail: 'Next expires ${d.savedCoupons.first.expiresOn}')),
+        if (d.savedCoupons.isNotEmpty && d.savedGiftCards.isNotEmpty) const SizedBox(width: 8),
+        if (d.savedGiftCards.isNotEmpty)
+          Expanded(child: _SavedTile(icon: Icons.card_giftcard_outlined, label: 'Gift Card', count: d.savedGiftCards.length, detail: 'No expiry')),
+      ]),
+    );
+  }
+
   Widget _filters() {
     final q = c.query;
     final chips = <Widget>[
@@ -277,6 +294,7 @@ class _InboxScreenState extends State<InboxScreen> {
                   const LinearProgressIndicator(minHeight: 2)
                 else
                   const SizedBox(height: 2),
+                _savedTiles(),
                 _filters(),
                 for (final a in errors) _Banner('${a.email}: ${a.lastError}'),
                 if (c.error.isNotEmpty) _Banner(c.error),
@@ -381,6 +399,25 @@ class _InboxScreenState extends State<InboxScreen> {
       },
     );
   }
+}
+
+class _SavedTile extends StatelessWidget {
+  const _SavedTile({required this.icon, required this.label, required this.count, required this.detail});
+  final IconData icon;
+  final String label, detail;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: const Color(0xFFFFF8E5), border: Border.all(color: const Color(0xFFE4D6A5)), borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [
+          Icon(icon, color: const Color(0xFF80621A)),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Color(0xFF806D3D)))])),
+          Text('$count', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF55451E))),
+        ]),
+      );
 }
 
 class _Banner extends StatelessWidget {

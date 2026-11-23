@@ -49,6 +49,10 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
   const query = parseInboxQuery(params, opts.pageSize ?? 50);
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
   const result = queryInbox(rows, query);
+  const saved = {
+    coupons: rows.filter((r) => r.savedKind === 'coupon' && r.savedExpiry).sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, expiresOn: r.savedExpiry })),
+    giftCards: rows.filter((r) => r.savedKind === 'gift-card').sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender }))
+  };
   // Cached AI insights for the visible rows only (never computed here).
   const insights: Record<string, { summary: string; category: string; confidence: number; needsReply: boolean; paymentDue: string | null }> = {};
   if (hasDatabase()) for (const [k, v] of await getInsights(await database(), result.rows.map((r) => r.key)).catch(() => new Map())) if (v.status === 'done' && v.insight) insights[k] = { summary: v.insight.summary, category: v.insight.category, confidence: v.insight.confidence, needsReply: v.insight.needsReply, paymentDue: v.insight.paymentDue };
@@ -57,7 +61,7 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
     folderName, insights, aiAvailable: hasDatabase(),
     // Why AI replies are unavailable ('' = ready); the Reply menu shows this instead of hiding the options.
     aiBlocked: !aiConfigured(state) ? 'Connect the AJMCP gateway in Settings → AI' : !state.ai.enabled ? 'Turn on AI in Settings → AI' : !state.ai.share.email ? 'Allow Email in Settings → AI' : !hasDatabase() ? 'AI drafts need PostgreSQL storage' : '',
-    query, ...result,
+    query, ...result, saved,
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', unreadCheckedAt: a.unreadCheckedAt || '', paused: Boolean(a.paused), total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),
     views: visiblePipelines(state).map((v) => ({ id: v.id, name: v.name, parser: v.parser, total: state.items.filter((i) => i.pipelineId === v.id).length, unread: state.items.filter((i) => i.pipelineId === v.id && isUnread(i)).length })),
@@ -119,6 +123,12 @@ export async function markEmails(user: SessionUser | null, rawKeys: string[], op
         else if (op === 'clear-follow-up') delete item.followUp;
         else if (op === 'importance-high' || op === 'importance-normal') item.importance = op === 'importance-high' ? 'high' : 'normal';
         else if (op === 'clear-importance') delete item.importance;
+        else if (op === 'save-coupon') {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T12:00:00Z`))) throw new Error('Choose a valid coupon expiry date.');
+          item.savedValue = { kind: 'coupon', expiresOn: value, savedAt: new Date().toISOString() };
+        }
+        else if (op === 'save-gift-card') item.savedValue = { kind: 'gift-card', savedAt: new Date().toISOString() };
+        else if (op === 'clear-saved-value') delete item.savedValue;
         else if (op === 'categories') { const list = value.split(',').filter((c) => (CATEGORIES as readonly string[]).includes(c)); if (list.length) item.categories = list; else delete item.categories; }
         else throw new Error('Unknown action.');
       }

@@ -59,6 +59,8 @@ export type PipelineItem = {
   categories?: string[];
   importance?: 'high' | 'normal';
   actionState?: 'actionable' | 'dismissed' | 'reviewed';
+  /** Saved value from this email. Coupons require an expiry; gift cards intentionally do not expire. */
+  savedValue?: { kind: 'coupon' | 'gift-card'; expiresOn?: string; savedAt: string };
   /** ISO time a local follow-up was created for this message. */
   followUp?: string;
   /** Mailbox the message came from (views can span accounts); missing = the view's account. */

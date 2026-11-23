@@ -67,7 +67,7 @@
   const toggle = (key: string, checked: boolean) => selected = checked ? [...new Set([...selected, key])] : selected.filter((x) => x !== key);
   const toggleAll = (checked: boolean) => selected = checked ? rows.map((r) => r.key) : [];
   $effect(() => { const visibleKeys = rows.map((row) => row.key); selected = visibleKeys.filter(() => false); });
-  async function act(op: string, keys = selected) {
+  async function act(op: string, keys = selected, value = '') {
     const deleting = op === 'delete';
     // Deletes never wait for each other (the row is already gone); other actions run one at a time.
     if (!keys.length || (acting && !deleting)) return false;
@@ -75,13 +75,17 @@
     if (deleting && keys.length > 1 && !confirm(`Move ${keys.length} emails to Trash in Gmail/Zoho?`)) return false;
     if (deleting) { hidden = [...hidden, ...keys]; selected = selected.filter((key) => !keys.includes(key)); }
     else acting = true;
-    const result = await mailAction(op, keys);
+    const result = await mailAction(op, keys, value);
     if (!deleting) acting = false;
     notice = result.message;
     if (!result.ok) { if (deleting) hidden = hidden.filter((key) => !keys.includes(key)); return false; }
     selected = selected.filter((key) => !keys.includes(key));
     if (deleting) void invalidateAll(); else await invalidateAll();
     return true;
+  }
+  async function saveCoupon(key: string) {
+    const expiry = prompt('Coupon expiry date (YYYY-MM-DD)');
+    if (expiry) await act('save-coupon', [key], expiry.trim());
   }
   function move(offset: number) { const row = rows[viewingIndex + offset]; if (row) openViewing(row); }
   async function deleteViewing() {
@@ -126,6 +130,13 @@
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if notice}<div class="alert">{notice}{#if /read-only access/.test(notice)} <a href="/settings/emails">Open Settings</a>{/if} <button class="link" onclick={() => notice = ''}>Dismiss</button></div>{/if}
 
+  {#if !data.query.account && !data.query.folder && (data.saved.coupons.length || data.saved.giftCards.length)}
+    <section class="saved-tiles" aria-label="Saved email value">
+      {#if data.saved.coupons.length}<a href="?view=all"><span>Coupon</span><b>{data.saved.coupons.length}</b><small>Next expires {data.saved.coupons[0].expiresOn}</small></a>{/if}
+      {#if data.saved.giftCards.length}<a href="?view=all"><span>Gift Card</span><b>{data.saved.giftCards.length}</b><small>No expiry</small></a>{/if}
+    </section>
+  {/if}
+
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.query.q} placeholder="Search all accounts…" aria-label="Search all accounts">
     {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread, folder: data.query.folder }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
     {#if data.query.view === 'all'}<button type="button" class="link" onclick={() => showFilters = !showFilters}>Filters{hasFilters ? ' •' : ''}</button>{/if}</form>
@@ -166,10 +177,12 @@
         {#each r.pipelines as p (p)}<span class="tag view">{p}</span>{/each}
         {#if r.action && !r.reviewed}<span class="tag act" title={r.actionReason}>{r.action === 'reply' ? 'Needs reply' : r.action === 'financial' ? 'Payment' : r.action === 'appointment' ? 'Appointment' : 'To-do'}{r.due ? ` · ${r.due}` : ''}</span>{/if}
         {#if r.followUp}<span class="tag follow">Follow-up</span>{/if}
+        {#if r.savedKind === 'coupon'}<span class="tag saved">Coupon · expires {r.savedExpiry}</span>{:else if r.savedKind === 'gift-card'}<span class="tag saved">Gift Card · no expiry</span>{/if}
         <form method="POST" action="?/mark" use:enhance class="ops"><input type="hidden" name="key" value={r.key}>
           {#if r.action === 'reply' && !r.reviewed}<button name="op" value="reviewed" title="Mark reviewed">✓ Reviewed</button><button name="op" value="dismissed" title="Not actionable">✕ Not needed</button>{:else if !r.action}<button name="op" value="actionable" title="Mark as needing action">⚑ Needs action</button>{:else}<button name="op" value="clear-action">↺ Reset</button>{/if}
           {#if r.followUp}<button name="op" value="clear-follow-up">Remove follow-up</button>{:else}<button name="op" value="follow-up">＋ Follow-up</button>{/if}
           <button name="op" value={r.importance === 'high' ? 'importance-normal' : 'importance-high'}>{r.importance === 'high' ? '☆ Not important' : '★ Important'}</button>
+          {#if r.savedKind}<button name="op" value="clear-saved-value">Remove saved item</button>{:else}<button type="button" onclick={() => saveCoupon(r.key)}>Coupon</button><button name="op" value="save-gift-card">Gift card</button>{/if}
         </form>
       </div>
     </li>{/each}</ul></section>
@@ -195,6 +208,7 @@
   .checked i,.ufolders i{font-style:normal;font-weight:800;font-size:9px;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:#eef1fb;color:#3157de}.checked i.gmail,.ufolders i.gmail{background:#fdecea;color:#c5392f}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px}.btn:hover{border-color:#8da2f0}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
+  .saved-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:10px}.saved-tiles a{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:12px 14px;border:1px solid #e4d6a5;border-radius:11px;background:#fffaf0;color:#55451e;text-decoration:none}.saved-tiles span{font-size:12px;font-weight:800;text-transform:uppercase}.saved-tiles b{grid-row:1/3;grid-column:2;font-size:25px}.saved-tiles small{color:#806d3d}.tag.saved{background:#fff3c7;color:#735a12}
   .find{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:0 12px;margin-bottom:10px}.find:focus-within{border-color:#8da2f0}.find span{color:#8a95a8;font-size:18px}.find input[type=search]{border:0;outline:0;flex:1;padding:10px 0;font-size:14px;background:transparent}
   .link{border:0;background:none;color:#3157de;font-weight:700;cursor:pointer;padding:0;font-size:12px;text-decoration:none}
   .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:12px;margin-bottom:10px}

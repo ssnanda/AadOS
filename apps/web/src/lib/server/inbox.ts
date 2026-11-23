@@ -13,6 +13,7 @@ export type InboxRow = {
   key: string; id: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; summary: string;
   unread: boolean; accountId: string; accountEmail: string; provider: 'zoho' | 'gmail' | ''; categories: string[];
   importance: 'high' | 'normal'; action: ActionKind | null; actionReason: string; due: string; reviewed: boolean; followUp: string;
+  savedKind: 'coupon' | 'gift-card' | ''; savedExpiry: string;
   inInbox: boolean; threadId: string; threadCount: number; pipelines: string[]; copyIds: string[]; folders: string[];
 };
 export type InboxResult = {
@@ -87,7 +88,8 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       categories: copies.find((c) => c.categories?.length)?.categories,
       importance: copies.find((c) => c.importance)?.importance,
       actionState: copies.find((c) => c.actionState)?.actionState,
-      followUp: copies.find((c) => c.followUp)?.followUp
+      followUp: copies.find((c) => c.followUp)?.followUp,
+      savedValue: copies.find((c) => c.savedValue)?.savedValue
     };
     const ctx = { accountEmail: account?.email, familyNames: input.familyNames, now: input.now };
     const categories = classify(merged, ctx);
@@ -102,6 +104,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       accountId, accountEmail: account?.email || '', provider: account?.provider || '', categories,
       importance: importance(merged, categories, ctx), action: suggestion?.kind || null, actionReason: suggestion?.reason || '', due: suggestion?.due || '',
       reviewed: merged.actionState === 'reviewed', followUp: merged.followUp || '',
+      savedKind: merged.savedValue?.kind || '', savedExpiry: merged.savedValue?.expiresOn || '',
       inInbox: copies.some((c) => byPipeline.get(c.pipelineId)?.system), threadId, threadCount: 1,
       pipelines: [...new Set(copies.map((c) => byPipeline.get(c.pipelineId)).filter((p): p is Pipeline => Boolean(p && !p.system)).map((p) => p.name))],
       copyIds: copies.map((c) => c.id),

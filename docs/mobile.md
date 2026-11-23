@@ -51,6 +51,8 @@ The list and mark logic moved from `routes/emails/+page.server.ts` into `lib/ser
 | Find in email | Find highlights matches (JavaScript stays off, so it cannot scroll to them) |
 | Details, unsubscribe | ⋯ → Details & unsubscribe |
 | ★ Important, Follow-up, Needs action / Reviewed | Star in the app bar; ⋯ menu |
+| Manually flag an email for action | Reader ⋯ → Pending action; also available for multi-selected messages |
+| Coupon or gift-card email | Save as Coupon with a required expiry date, or Gift Card with no expiry; conditional tiles appear above All inboxes |
 | AI insight tag, Summarize, Follow-up suggestion | Insight card in the reader; ⋯ → Summarize / Suggest follow-up |
 | Event details in an email | Detect event-like mail, review/edit the details, and add it to Apple Calendar |
 

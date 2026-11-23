@@ -150,8 +150,52 @@ class InboxController extends ChangeNotifier {
 
   Future<String> setFollowUp(List<String> keys, bool on) => _optimistic(on ? 'follow-up' : 'clear-follow-up', keys, (r) => r.followUp = on, (r, was) => r.followUp = was, (r) => r.followUp);
 
+  Future<String> saveValue(String key, {required String kind, String expiry = ''}) async {
+    final row = rows.where((r) => r.key == key).firstOrNull;
+    final oldKind = row?.savedKind ?? '', oldExpiry = row?.savedExpiry ?? '';
+    if (row != null) { row.savedKind = kind; row.savedExpiry = expiry; notifyListeners(); }
+    final op = kind == 'coupon' ? 'save-coupon' : kind == 'gift-card' ? 'save-gift-card' : 'clear-saved-value';
+    try {
+      final warning = await mail.mark(op, [key], value: expiry);
+      await load(quiet: true);
+      return warning;
+    } on ApiException catch (e) {
+      if (row != null) { row.savedKind = oldKind; row.savedExpiry = oldExpiry; notifyListeners(); }
+      return e.message;
+    }
+  }
+
   /// reviewed | dismissed | actionable | clear-action (AadOS-only review state).
-  Future<String> review(String op, List<String> keys) => _optimistic(op, keys, (r) => r.reviewed = op == 'reviewed' || op == 'dismissed', (r, was) => r.reviewed = was, (r) => r.reviewed);
+  Future<String> review(String op, List<String> keys) async {
+    final touched = [for (final r in rows) if (keys.contains(r.key)) (r, r.action, r.actionReason, r.reviewed)];
+    for (final (r, _, _, _) in touched) {
+      if (op == 'actionable') {
+        r.action = 'reply';
+        r.actionReason = 'Marked by you';
+        r.reviewed = false;
+      } else if (op == 'clear-action') {
+        r.action = null;
+        r.actionReason = '';
+        r.reviewed = false;
+      } else {
+        r.reviewed = op == 'reviewed' || op == 'dismissed';
+      }
+    }
+    notifyListeners();
+    try {
+      final warning = await mail.mark(op, keys);
+      unawaited(load(quiet: true));
+      return warning;
+    } on ApiException catch (e) {
+      for (final (r, action, reason, reviewed) in touched) {
+        r.action = action;
+        r.actionReason = reason;
+        r.reviewed = reviewed;
+      }
+      notifyListeners();
+      return e.message;
+    }
+  }
 
   Future<String> _optimistic(String op, List<String> keys, void Function(EmailRow) apply, void Function(EmailRow, bool) undo, bool Function(EmailRow) read) async {
     final touched = [for (final r in rows) if (keys.contains(r.key)) (r, read(r))];

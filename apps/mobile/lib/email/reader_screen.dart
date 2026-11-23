@@ -143,6 +143,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
     setState(() {});
   }
 
+  Future<void> _saveCoupon() async {
+    final date = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 30)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 3650)));
+    if (date == null) return;
+    final expiry = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    await _run(() => widget.inbox.saveValue(_row.key, kind: 'coupon', expiry: expiry));
+  }
+
   Future<T?> _busy<T>(Future<T> work) async {
     showDialog<void>(
       context: context,
@@ -379,6 +386,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
         );
       case 'actionable':
         _run(() => widget.inbox.review('actionable', [row.key]));
+      case 'clear-action':
+        _run(() => widget.inbox.review('clear-action', [row.key]));
+      case 'save-coupon':
+        _saveCoupon();
+      case 'save-gift-card':
+        _run(() => widget.inbox.saveValue(row.key, kind: 'gift-card'));
+      case 'clear-saved-value':
+        _run(() => widget.inbox.saveValue(row.key, kind: ''));
       case 'find':
         setState(() => _finding = true);
       case 'details':
@@ -475,7 +490,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     ),
                   ),
                 ),
-                if (row.action != null)
+                if (row.manuallyPending)
+                  const PopupMenuItem(
+                    value: 'clear-action',
+                    child: ListTile(
+                      leading: Icon(Icons.outlined_flag),
+                      title: Text('Clear pending action'),
+                    ),
+                  )
+                else if (row.action != null)
                   PopupMenuItem(
                     value: 'reviewed',
                     child: ListTile(
@@ -490,9 +513,25 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     value: 'actionable',
                     child: ListTile(
                       leading: Icon(Icons.outlined_flag),
-                      title: Text('Needs action'),
+                      title: Text('Pending action'),
                     ),
                   ),
+                const PopupMenuDivider(),
+                if (row.savedKind.isNotEmpty)
+                  const PopupMenuItem(
+                    value: 'clear-saved-value',
+                    child: ListTile(leading: Icon(Icons.bookmark_remove_outlined), title: Text('Remove saved item')),
+                  )
+                else ...[
+                  const PopupMenuItem(
+                    value: 'save-coupon',
+                    child: ListTile(leading: Icon(Icons.local_offer_outlined), title: Text('Save as coupon')),
+                  ),
+                  const PopupMenuItem(
+                    value: 'save-gift-card',
+                    child: ListTile(leading: Icon(Icons.card_giftcard_outlined), title: Text('Save as gift card')),
+                  ),
+                ],
                 const PopupMenuItem(
                   value: 'find',
                   child: ListTile(
@@ -729,6 +768,10 @@ class _EmailPage extends StatelessWidget {
                       const Tag('Follow-up', color: AppColors.follow),
                   ],
                 ),
+              ],
+              if (row.savedKind.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Tag(row.savedKind == 'coupon' ? 'Coupon · expires ${row.savedExpiry}' : 'Gift Card · no expiry', color: AppColors.star),
               ],
             ],
           ),
