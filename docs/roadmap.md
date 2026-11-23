@@ -146,3 +146,20 @@ Keep scope small: deliver useful inbox access before extending to household task
 77. [x] AAD intelligence page: legacy AAD view auto-upgrades from generic to digest; report requires priority, owner, category, direct link and operational details; action overview is primary and source emails collapse as evidence. Awaiting owner verification.
 78. [x] AAD report cleanup: remove legacy folder/parser header, move a large green Review now button left, and suppress stale AI-setting errors once current settings satisfy the review gate. Awaiting owner verification.
 79. [x] Email action parity: Delete/Unread advance with hover/focus “& close” alternatives; custom views default to Unread and use the full sequential reader; shared mailboxes add advancing preview, reply, find, sender filtering, Asana and navigation. Awaiting owner verification.
+
+### Native mobile app — Flutter, iOS + Android, Email first (2026-11-23) — see docs/mobile.md
+80. [x] Server: bearer-token auth (same signed session token), 401 JSON for app/API calls — untested
+81. [x] Server: `/api/mobile/login` (shared lockout via `lib/server/login.ts`), `/api/mobile/me` — untested
+82. [x] Server: `/api/mobile/emails` + `/api/mobile/emails/mark`; list/mark logic shared with `/emails` via `lib/server/email-list.ts` — `npm run check` 0 errors; owner to verify the web Emails page is unchanged
+83. [x] `apps/mobile` Flutter project (iOS + Android), bundle id `com.aadnanda.aadosapp` — owner: `flutter pub get && flutter analyze` (never compiled yet)
+84. [x] Sign-in, Keychain/Keystore token, server address, auto sign-out on 401
+85. [x] Inbox: view chips + counts, folder/views/categories drawer, search, pull to refresh, 2-min live sync + on resume, infinite scroll, cached first page
+86. [x] Swipe read/unread and delete; long-press multi-select bulk actions
+87. [x] Reader: HTML (JS off, CSP), swipe between emails, Delete/Unread advance, “& close” variants, next prefetched
+88. [x] Reply / Reply all / Forward / Residential template; AI draft & polish; Send
+89. [x] More from sender (sender/domain, per-row + bulk), details, unsubscribe, find (highlight)
+90. [x] AI insight card, Summarize, Suggest follow-up; Important / Follow-up / Needs action / Reviewed
+91. [x] More tab: other sections (Calendar, Tasks, Finance, …) in a signed-in web view; settings; sign out; version; dark mode
+92. [ ] Owner: build + run on iPhone and Android; report issues
+93. [ ] `bin/` script for mobile IPA/APK + AltStore (owner-maintained scripts; modelled on ajopsios 2a/2e)
+94. [ ] Native next: shared mailboxes, Email → Asana, attachments, then Calendar/Tasks

@@ -1,5 +1,12 @@
 # Development handoff
 
+## Native mobile app (2026-11-23, uncommitted, not compiled)
+Flutter app in `apps/mobile` (iOS + Android), Email native, other sections in a signed-in web view. Details, endpoint list and feature map: `docs/mobile.md`. Roadmap items 80–94.
+- **Server**: `hooks.server.ts` accepts `Authorization: Bearer <session token>` (`bearerToken` in `auth.ts`) and answers 401 JSON for `/api/*` and bearer calls. New `routes/api/mobile/{login,me,emails,emails/mark}`. `/emails` load + mark action and the layout's folder list moved to `lib/server/email-list.ts` (behaviour unchanged); login credential check + lockout moved to `lib/server/login.ts` (web form now checks its CSRF token before the lockout counter).
+- **Verified**: `npm run check` 0 errors (7 pre-existing warnings). Nothing else: no Node tests, no Docker, no `flutter pub get`/analyze/build (owner's step). The Dart code was checked by reading only; expect a few analyzer fixes on first `flutter analyze`.
+- **`bin/build-ipa.sh` now auto-detects the Flutter `Runner.xcworkspace`**: run `IOS_PROJECT=ios/AadOS.xcodeproj ./bin/build-ipa.sh` until the owner adds `! -path './apps/*'` to its two `find` commands (bin scripts are owner-edited).
+- **Risks**: bearer token = 30-day session token stored on the phone (Keychain/Keystore); "Sign out everywhere" revokes it. Web sections set it as the `aados_session` cookie in the app's web view.
+
 ## After v0.1.32 (uncommitted, verified locally)
 - **Settings → AI / Storage are editable**: AJMCP URL + token and RustFS endpoint/bucket/region/keys/path-style/prefix can be entered in the UI. Secrets are write-only (never rendered back) and stored in the encrypted credential vault (`mail_credentials` scope `app:integrations`, AES-256-GCM); environment variables still win and show as "Set by environment". Resolution: `lib/server/integrations.ts`.
 - **Owner password change** (Settings → General): verifies the current password, ≥12 characters, stores only a new scrypt hash in `security.json` (0600), signs out every other device, keeps this browser signed in. A deployment reset (`dev-local.sh --reset-user` / `oc-deploy.sh --reset-user`) makes the override inactive (recovery path).

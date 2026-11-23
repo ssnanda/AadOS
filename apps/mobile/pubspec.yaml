@@ -1,0 +1,33 @@
+name: aados_mobile
+description: "AadOS native app (iOS + Android). Email first; other sections open signed-in."
+publish_to: 'none'
+# Kept in step with the AadOS VERSION by hand for now (see docs/mobile.md).
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # JSON API to the AadOS server (bearer token; mailbox credentials never leave the server)
+  http: ^1.2.2
+  # Session token + server URL in the iOS Keychain / Android Keystore
+  flutter_secure_storage: ^10.3.3
+  # Last inbox page for an instant start
+  shared_preferences: ^2.3.5
+  # Email HTML (JavaScript off) and the signed-in web sections
+  webview_flutter: ^4.10.0
+  # Links from emails open in the browser; unsubscribe mailto
+  url_launcher: ^6.3.1
+  intl: ^0.19.0
+  package_info_plus: ^10.2.2
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
