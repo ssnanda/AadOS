@@ -61,6 +61,8 @@ export type PipelineItem = {
   actionState?: 'actionable' | 'dismissed' | 'reviewed';
   /** Saved value from this email. Coupons require an expiry; gift cards intentionally do not expire. */
   savedValue?: { kind: 'coupon' | 'gift-card'; expiresOn?: string; savedAt: string };
+  /** Prevent an automatically detected coupon from reappearing after the owner removes it. */
+  savedValueDismissed?: boolean;
   /** ISO time a local follow-up was created for this message. */
   followUp?: string;
   /** Mailbox the message came from (views can span accounts); missing = the view's account. */

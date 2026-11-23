@@ -45,10 +45,6 @@ export const load: PageServerLoad = async ({ locals }) => {
   });
   // Deduplicated across accounts and views; the page size of 1 keeps this cheap (only counts are used).
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
-  const saved = {
-    coupons: rows.filter((r) => r.savedKind === 'coupon' && r.savedExpiry).sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry)).map((r) => ({ key: r.key, subject: r.subject, expiresOn: r.savedExpiry })),
-    giftCards: rows.filter((r) => r.savedKind === 'gift-card').sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((r) => ({ key: r.key, subject: r.subject }))
-  };
   const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 });
   const brief = overview({ rows, tasks: state.tasks, accounts: state.accounts, today: todayIn(state.prefs.timeZone) }, 8);
   const tz = validZone(state.prefs.timeZone) ? state.prefs.timeZone : 'UTC';
@@ -120,7 +116,7 @@ export const load: PageServerLoad = async ({ locals }) => {
     attention, messages, finance,
     greetingName: user?.name || '',
     asana,
-    tiles, accounts: state.accounts.length, unread: counts.unread, inbox, saved,
+    tiles, accounts: state.accounts.length, unread: counts.unread, inbox,
     tz,
     briefing: { cached: can(user, 'assistant') ? await cachedBriefing() : null, aiEnabled: state.ai.enabled, configured: aiConfigured(state) },
     calendar: { enabled: calendarAccounts.length, today: cal.today, todayEvents: cal.todayEvents.map(occ), next: cal.next ? occ(cal.next) : null, week: cal.week, weekTotal: cal.weekTotal,

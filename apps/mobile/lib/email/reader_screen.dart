@@ -143,13 +143,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     setState(() {});
   }
 
-  Future<void> _saveCoupon() async {
-    final date = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 30)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 3650)));
-    if (date == null) return;
-    final expiry = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-    await _run(() => widget.inbox.saveValue(_row.key, kind: 'coupon', expiry: expiry));
-  }
-
   Future<T?> _busy<T>(Future<T> work) async {
     showDialog<void>(
       context: context,
@@ -388,8 +381,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _run(() => widget.inbox.review('actionable', [row.key]));
       case 'clear-action':
         _run(() => widget.inbox.review('clear-action', [row.key]));
-      case 'save-coupon':
-        _saveCoupon();
       case 'save-gift-card':
         _run(() => widget.inbox.saveValue(row.key, kind: 'gift-card'));
       case 'clear-saved-value':
@@ -523,10 +514,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     child: ListTile(leading: Icon(Icons.bookmark_remove_outlined), title: Text('Remove saved item')),
                   )
                 else ...[
-                  const PopupMenuItem(
-                    value: 'save-coupon',
-                    child: ListTile(leading: Icon(Icons.local_offer_outlined), title: Text('Save as coupon')),
-                  ),
                   const PopupMenuItem(
                     value: 'save-gift-card',
                     child: ListTile(leading: Icon(Icons.card_giftcard_outlined), title: Text('Save as gift card')),

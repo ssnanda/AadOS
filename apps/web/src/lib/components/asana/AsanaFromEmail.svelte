@@ -2,7 +2,8 @@
   // Email → Asana task. AI drafts title/due/project/notes from the email (editable); checked attachments are
   // uploaded to the task; the email is then marked read, so the follow-up lives in Asana, not the inbox.
   import { asanaApi } from '$lib/asana-client';
-  let { emailKey, subject, oncreated, onclose }: { emailKey: string; subject: string; oncreated: (note: string, markedRead: boolean) => void; onclose: () => void } = $props();
+  // title/due: optional pre-fill (e.g. the AI card's suggested follow-up) that wins over the drafted values.
+  let { emailKey, subject, title = '', due = '', oncreated, onclose }: { emailKey: string; subject: string; title?: string; due?: string; oncreated: (note: string, markedRead: boolean) => void; onclose: () => void } = $props();
   type Att = { id: string; name: string; size: number; mime: string };
   let loading = $state(true), busy = $state(false), error = $state(''), notConnected = $state(false), aiNote = $state('');
   let name = $state(''), notes = $state(''), day = $state(''), time = $state(''), project = $state(''), markRead = $state(true);
@@ -12,7 +13,7 @@
     name = subject; loading = true; error = ''; notConnected = false;
     asanaApi('emailDraft', { key }).then((d) => {
       if (key !== emailKey) return;
-      name = d.name; notes = d.notes; day = d.due; time = d.time || ''; project = d.project || ''; projects = d.projects; attachments = d.attachments; skip = [];
+      name = title || d.name; notes = d.notes; day = (/^\d{4}-\d{2}-\d{2}$/.test(due) ? due : '') || d.due; time = d.time || ''; project = d.project || ''; projects = d.projects; attachments = d.attachments; skip = [];
       aiNote = d.aiUsed ? '✦ Drafted by AI — check it before creating.' : d.aiError ? `AI draft unavailable (${d.aiError}); filled from the email.` : 'Filled from the email (turn on AI in Settings → AI for a smarter draft).';
     }).catch((e) => { error = e.message; notConnected = /not connected|token/i.test(e.message); }).finally(() => (loading = false));
   });

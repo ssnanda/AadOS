@@ -126,9 +126,10 @@ export async function markEmails(user: SessionUser | null, rawKeys: string[], op
         else if (op === 'save-coupon') {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T12:00:00Z`))) throw new Error('Choose a valid coupon expiry date.');
           item.savedValue = { kind: 'coupon', expiresOn: value, savedAt: new Date().toISOString() };
+          delete item.savedValueDismissed;
         }
-        else if (op === 'save-gift-card') item.savedValue = { kind: 'gift-card', savedAt: new Date().toISOString() };
-        else if (op === 'clear-saved-value') delete item.savedValue;
+        else if (op === 'save-gift-card') { item.savedValue = { kind: 'gift-card', savedAt: new Date().toISOString() }; delete item.savedValueDismissed; }
+        else if (op === 'clear-saved-value') { delete item.savedValue; item.savedValueDismissed = true; }
         else if (op === 'categories') { const list = value.split(',').filter((c) => (CATEGORIES as readonly string[]).includes(c)); if (list.length) item.categories = list; else delete item.categories; }
         else throw new Error('Unknown action.');
       }

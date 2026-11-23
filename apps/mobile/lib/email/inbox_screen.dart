@@ -221,7 +221,8 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Widget _savedTiles() {
     final d = c.data;
-    if (d == null || c.query.account.isNotEmpty || c.query.folder.isNotEmpty || (d.savedCoupons.isEmpty && d.savedGiftCards.isEmpty)) return const SizedBox.shrink();
+    final shopping = d?.views.where((v) => v.id == c.query.pipeline).firstOrNull?.parser == 'shop';
+    if (d == null || !shopping || (d.savedCoupons.isEmpty && d.savedGiftCards.isEmpty)) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       child: Row(children: [

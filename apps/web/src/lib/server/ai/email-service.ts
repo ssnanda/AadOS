@@ -88,7 +88,8 @@ export async function attachments(key: string) {
   });
   return list;
 }
-export async function saveAttachment(key: string, attachmentId: string, filename: string) {
+/** One attachment's raw bytes (read-only provider call). Used by Save to Documents and the viewer's preview/download. */
+export async function attachmentBytes(key: string, attachmentId: string): Promise<Uint8Array> {
   const state = await readState();
   const r = findRow(state, key);
   if (!r) throw new Error('Email not found.');
@@ -99,6 +100,13 @@ export async function saveAttachment(key: string, attachmentId: string, filename
     if (!account || !item) throw new Error('Account not connected.');
     bytes = account.provider === 'gmail' ? await fetchGmailAttachment(s, account, item.messageId, attachmentId) : await fetchZohoAttachment(s, account, item.folderId || '', item.messageId, attachmentId);
   });
+  return bytes;
+}
+export async function saveAttachment(key: string, attachmentId: string, filename: string) {
+  const state = await readState();
+  const r = findRow(state, key);
+  if (!r) throw new Error('Email not found.');
+  const bytes = await attachmentBytes(key, attachmentId);
   // Same attachment twice -> same source ref -> the existing document is returned (no duplicate import).
   return saveDocument(bytes, filename, { sourceType: 'email', sourceRef: `${r.key}#${attachmentId}`.slice(0, 250), category: 'Email attachment' });
 }

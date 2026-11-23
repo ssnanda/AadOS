@@ -1,7 +1,7 @@
 // Unified inbox: one row per source message across every connected account and view.
 // Pure module (type-only imports) so it can be tested with `node --test`.
 import type { MailAccount, Pipeline, PipelineItem } from './aados-store';
-import { classify, detectAction, importance, type ActionKind } from './categories.ts';
+import { classify, couponExpiry, detectAction, importance, type ActionKind } from './categories.ts';
 
 export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply' | 'recent' | 'read' | 'attention' | 'people' | 'bills' | 'bulk';
 export type InboxQuery = {
@@ -89,11 +89,13 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       importance: copies.find((c) => c.importance)?.importance,
       actionState: copies.find((c) => c.actionState)?.actionState,
       followUp: copies.find((c) => c.followUp)?.followUp,
-      savedValue: copies.find((c) => c.savedValue)?.savedValue
+      savedValue: copies.find((c) => c.savedValue)?.savedValue,
+      savedValueDismissed: copies.some((c) => c.savedValueDismissed)
     };
     const ctx = { accountEmail: account?.email, familyNames: input.familyNames, now: input.now };
     const categories = classify(merged, ctx);
     const suggestion = detectAction(merged, ctx);
+    const automaticCouponExpiry = couponExpiry(merged, ctx);
     const threadId = copies.find((c) => c.threadId)?.threadId || '';
     if (threadId) threads.set(`${accountId}:${threadId}`, (threads.get(`${accountId}:${threadId}`) || 0) + 1);
     rows.push({
@@ -104,7 +106,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       accountId, accountEmail: account?.email || '', provider: account?.provider || '', categories,
       importance: importance(merged, categories, ctx), action: suggestion?.kind || null, actionReason: suggestion?.reason || '', due: suggestion?.due || '',
       reviewed: merged.actionState === 'reviewed', followUp: merged.followUp || '',
-      savedKind: merged.savedValue?.kind || '', savedExpiry: merged.savedValue?.expiresOn || '',
+      savedKind: merged.savedValue?.kind || (automaticCouponExpiry ? 'coupon' : ''), savedExpiry: merged.savedValue?.expiresOn || automaticCouponExpiry,
       inInbox: copies.some((c) => byPipeline.get(c.pipelineId)?.system), threadId, threadCount: 1,
       pipelines: [...new Set(copies.map((c) => byPipeline.get(c.pipelineId)).filter((p): p is Pipeline => Boolean(p && !p.system)).map((p) => p.name))],
       copyIds: copies.map((c) => c.id),

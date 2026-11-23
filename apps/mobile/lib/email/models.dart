@@ -126,9 +126,10 @@ class SavedView {
   SavedView.fromJson(Map<String, dynamic> j)
       : id = _str(j['id']),
         name = _str(j['name']),
+        parser = _str(j['parser']),
         unread = _int(j['unread']),
         total = _int(j['total']);
-  final String id, name;
+  final String id, name, parser;
   final int unread, total;
 }
 

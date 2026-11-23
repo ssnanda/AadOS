@@ -167,5 +167,5 @@ Keep scope small: deliver useful inbox access before extending to household task
 96. [x] Mobile Mail: remove the top smart-view chips until replacement navigation is specified — awaiting owner verification
 97. [x] Mobile Mail: detect event-like email details and add an editable event to Apple Calendar through EventKit — awaiting owner verification
 98. [x] Mobile Mail: mark one or many messages as Pending action, show the persistent label, and clear it from the reader — awaiting owner verification
-99. [x] Saved email value: durable Coupon (required expiry) and Gift Card (no expiry) states tied to source mail — awaiting owner verification
-100. [x] Conditional Coupon/Gift Card tiles on web Dashboard, web Emails All Inboxes, and Flutter Mail — hidden independently when empty; awaiting owner verification
+99. [x] Saved email value: automatic Coupon detection requires expiry language + a concrete parsed date; Gift Card is manual with no expiry — awaiting owner verification
+100. [x] Conditional Coupon/Gift Card tiles appear only in the Shopping view on web and Flutter; each hides independently when empty — awaiting owner verification

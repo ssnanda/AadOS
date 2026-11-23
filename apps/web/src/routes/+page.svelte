@@ -114,13 +114,6 @@
     </div>
   </section>
 
-  {#if data.saved.coupons.length || data.saved.giftCards.length}
-    <section class="value-tiles" aria-label="Saved email value">
-      {#if data.saved.coupons.length}<a href="/emails?view=all"><span>Coupon</span><b>{data.saved.coupons.length}</b><small>Next expires {data.saved.coupons[0].expiresOn}</small></a>{/if}
-      {#if data.saved.giftCards.length}<a href="/emails?view=all"><span>Gift Card</span><b>{data.saved.giftCards.length}</b><small>No expiry</small></a>{/if}
-    </section>
-  {/if}
-
   <div class="grid">
     <!-- Ranked attention list -->
     <section class="card attn">
@@ -196,7 +189,6 @@
   .money svg{position:absolute;right:10px;bottom:8px;width:120px;height:30px;opacity:.6}.money polyline{fill:none;stroke:#fff;stroke-width:1.6;vector-effect:non-scaling-stroke}
 
   .grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:14px;align-items:start}
-  .value-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:0 0 14px}.value-tiles a{display:grid;grid-template-columns:1fr auto;gap:3px 12px;padding:13px 16px;border:1px solid #e4d6a5;border-radius:12px;background:#fffaf0;color:#55451e;text-decoration:none}.value-tiles span{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}.value-tiles b{grid-column:2;grid-row:1/3;font-size:27px}.value-tiles small{color:#806d3d}
 
   /* Attention */
   .filters{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}.filters button{border-radius:999px;padding:3px 10px;font-size:11px;color:#53607a}.filters button.on{background:var(--c,#29344c);border-color:var(--c,#29344c);color:#fff}

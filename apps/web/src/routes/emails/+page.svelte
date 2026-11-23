@@ -83,10 +83,6 @@
     if (deleting) void invalidateAll(); else await invalidateAll();
     return true;
   }
-  async function saveCoupon(key: string) {
-    const expiry = prompt('Coupon expiry date (YYYY-MM-DD)');
-    if (expiry) await act('save-coupon', [key], expiry.trim());
-  }
   function move(offset: number) { const row = rows[viewingIndex + offset]; if (row) openViewing(row); }
   async function deleteViewing() {
     if (!viewing) return;
@@ -130,10 +126,10 @@
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if notice}<div class="alert">{notice}{#if /read-only access/.test(notice)} <a href="/settings/emails">Open Settings</a>{/if} <button class="link" onclick={() => notice = ''}>Dismiss</button></div>{/if}
 
-  {#if !data.query.account && !data.query.folder && (data.saved.coupons.length || data.saved.giftCards.length)}
+  {#if data.views.find((v) => v.id === data.query.pipeline)?.parser === 'shop' && (data.saved.coupons.length || data.saved.giftCards.length)}
     <section class="saved-tiles" aria-label="Saved email value">
-      {#if data.saved.coupons.length}<a href="?view=all"><span>Coupon</span><b>{data.saved.coupons.length}</b><small>Next expires {data.saved.coupons[0].expiresOn}</small></a>{/if}
-      {#if data.saved.giftCards.length}<a href="?view=all"><span>Gift Card</span><b>{data.saved.giftCards.length}</b><small>No expiry</small></a>{/if}
+      {#if data.saved.coupons.length}<a href={href({ view: 'all' })}><span>Coupon</span><b>{data.saved.coupons.length}</b><small>Next expires {data.saved.coupons[0].expiresOn}</small></a>{/if}
+      {#if data.saved.giftCards.length}<a href={href({ view: 'all' })}><span>Gift Card</span><b>{data.saved.giftCards.length}</b><small>No expiry</small></a>{/if}
     </section>
   {/if}
 
@@ -182,7 +178,7 @@
           {#if r.action === 'reply' && !r.reviewed}<button name="op" value="reviewed" title="Mark reviewed">✓ Reviewed</button><button name="op" value="dismissed" title="Not actionable">✕ Not needed</button>{:else if !r.action}<button name="op" value="actionable" title="Mark as needing action">⚑ Needs action</button>{:else}<button name="op" value="clear-action">↺ Reset</button>{/if}
           {#if r.followUp}<button name="op" value="clear-follow-up">Remove follow-up</button>{:else}<button name="op" value="follow-up">＋ Follow-up</button>{/if}
           <button name="op" value={r.importance === 'high' ? 'importance-normal' : 'importance-high'}>{r.importance === 'high' ? '☆ Not important' : '★ Important'}</button>
-          {#if r.savedKind}<button name="op" value="clear-saved-value">Remove saved item</button>{:else}<button type="button" onclick={() => saveCoupon(r.key)}>Coupon</button><button name="op" value="save-gift-card">Gift card</button>{/if}
+          {#if r.savedKind}<button name="op" value="clear-saved-value">Remove saved item</button>{:else}<button name="op" value="save-gift-card">Gift card</button>{/if}
         </form>
       </div>
     </li>{/each}</ul></section>

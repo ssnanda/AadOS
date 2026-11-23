@@ -73,6 +73,15 @@ export function importance(item: ClassifiableItem, categories: string[], ctx: Cl
 export type ActionKind = 'reply' | 'task' | 'financial' | 'appointment' | 'info';
 export type ActionSuggestion = { kind: ActionKind; reason: string; due?: string };
 
+/** A coupon is automatic only when both its purpose and a concrete expiry are explicit. */
+export function couponExpiry(item: ClassifiableItem, ctx: ClassifyContext = {}): string {
+  if ((item as ClassifiableItem & { savedValueDismissed?: boolean }).savedValueDismissed) return '';
+  const text = `${item.subject || ''} ${item.summary || ''}`;
+  const coupon = item.kind === 'coupon' || /\b(coupon|promo(?:tional)? code|discount|\d+\s?% off|save \$?\d+|special offer)\b/i.test(text);
+  const expires = /\b(expir(?:e|es|ed|ation)|valid (?:through|until)|use by|redeem by|offer ends)\b/i.test(text);
+  return coupon && expires ? extractDue(text, ctx.now) : '';
+}
+
 const DATE = /\b((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,?\s+20\d{2})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?|20\d{2}-\d{2}-\d{2}|today|tomorrow|tonight|this (?:week|friday|monday|weekend))\b/i;
 
 /**
