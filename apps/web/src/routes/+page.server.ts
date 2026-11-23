@@ -2,9 +2,8 @@ import type { PageServerLoad } from './$types';
 import { pipelineFolders, readState, visiblePipelines } from '$lib/server/aados-store';
 import { isUnread } from '$lib/server/search';
 import { buildRows, queryInbox } from '$lib/server/inbox';
-import { overview } from '$lib/server/tasks';
+import { overview } from '$lib/server/overview';
 import { dailyCalendar } from '$lib/server/daily';
-import { effectiveAt, reminderLists } from '$lib/server/reminders';
 import { validZone } from '$lib/calendar/model';
 import { todayIn } from '$lib/calendar/view';
 import { cachedBriefing } from '$lib/server/ai/briefing-service';
@@ -14,7 +13,7 @@ import { calendarAccounts as visibleCalendarAccounts, scopeState } from '$lib/se
 import { hasDatabase } from '$lib/server/aados-store';
 import * as bb from '$lib/server/bluebubbles';
 import { addressKey, categorize, isUnread as isUnreadChat, preview, SPAM_REPORT_NUMBER } from '$lib/messages-model';
-import { db as financeDb, loadAll, portfolioSeries } from '$lib/server/finance/db';
+import { db as financeDb, loadAll, portfolioSeries, recentAlerts } from '$lib/server/finance/db';
 import { currentSignals } from '$lib/server/finance/refresh';
 import { billScore, type Attention } from '$lib/attention';
 import { digestAttention } from '$lib/server/ai/weekly-digest-service';
@@ -28,7 +27,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Family members see only their mailboxes and the sections they were given.
   const user = locals.user;
   const full = scopeState(await readState(), user);
-  const state = { ...full, events: can(user, 'calendar') ? full.events : [], tasks: can(user, 'tasks') ? full.tasks : [], reminders: can(user, 'reminders') ? full.reminders : [], accounts: full.accounts.map((a) => (!a.calendarOff && (a.ownerId || can(user, 'calendar')) ? a : { ...a, calendar: false })) };
+  const state = { ...full, events: can(user, 'calendar') ? full.events : [], accounts: full.accounts.map((a) => (!a.calendarOff && (a.ownerId || can(user, 'calendar')) ? a : { ...a, calendar: false })) };
   const visibleCal = visibleCalendarAccounts(full, user);
   const calOff = new Set(full.accounts.filter((a) => a.calendarOff || !visibleCal.has(a.id)).map((a) => a.id));
   // Only calendars this user may see: their own linked accounts, plus the owner's with the Calendar permission.
@@ -46,12 +45,11 @@ export const load: PageServerLoad = async ({ locals }) => {
   // Deduplicated across accounts and views; the page size of 1 keeps this cheap (only counts are used).
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
   const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 });
-  const brief = overview({ rows, tasks: state.tasks, accounts: state.accounts, today: todayIn(state.prefs.timeZone) }, 8);
+  const brief = overview({ rows, accounts: state.accounts, today: todayIn(state.prefs.timeZone) }, 8);
   const tz = validZone(state.prefs.timeZone) ? state.prefs.timeZone : 'UTC';
   const cal = dailyCalendar(state.events, tz, Date.now(), state.calendarDisabled);
   const names = new Map(state.calendars.map((c) => [c.id, c.name]));
   const occ = (o: (typeof cal.todayEvents)[number]) => ({ key: `${o.id}|${o.occurrenceStart}`, title: o.title, start: o.start, end: o.end, allDay: o.allDay, location: o.location, calendar: names.get(o.calendarId) || '' });
-  const rem = reminderLists(state.reminders);
   const calendarAccounts = state.accounts.filter((a) => a.calendar);
   const slim = (list: typeof rows) => list.map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, due: r.due, account: r.accountEmail }));
   const inbox = { unread: counts.unread, needsReply: counts.needsReply, important: counts.important, bills: counts.categories['Bills'] || 0, renewals: counts.categories['Renewals'] || 0, receipts: counts.categories['Receipts'] || 0 };
@@ -71,9 +69,6 @@ export const load: PageServerLoad = async ({ locals }) => {
   const today = cal.today;
   const emailHref = (r: { subject: string }) => `/emails?view=all&q=${encodeURIComponent(r.subject || '')}`;
   const attention: Attention[] = [
-    ...rem.active.filter((r) => r.status === 'fired').map((r) => ({ id: `rem:${r.id}`, source: 'reminder' as const, title: r.title, why: 'Reminder went off', href: '/reminders', score: 88, at: effectiveAt(r) })),
-    ...brief.tasksOverdue.map((t) => ({ id: `task:${t.id}`, source: 'task' as const, title: t.title, why: `Overdue · due ${t.due}`, href: '/tasks?f=overdue', score: 80 })),
-    ...brief.tasksToday.map((t) => ({ id: `task:${t.id}`, source: 'task' as const, title: t.title, why: 'Due today', href: '/tasks?f=today', score: 62 })),
     ...brief.billsRenewals.map((r) => ({ id: `email:${r.key}`, source: 'bill' as const, title: r.subject || '(no subject)', why: `${r.due ? `Due ${r.due}` : 'Bill / renewal'} · ${r.sender}`, href: emailHref(r), score: billScore(r.due, today), at: r.receivedAt })),
     ...brief.needsReply.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Waiting on your reply · ${r.sender}`, href: emailHref(r), score: 66, at: r.receivedAt })),
     ...brief.important.map((r) => ({ id: `email:${r.key}`, source: 'email' as const, title: r.subject || '(no subject)', why: `Important · ${r.sender}`, href: emailHref(r), score: 56, at: r.receivedAt })),
@@ -103,13 +98,15 @@ export const load: PageServerLoad = async ({ locals }) => {
   const finance = can(user, 'finance') && hasDatabase() ? withTimeout((async () => {
     const q = await financeDb(), data = await loadAll(q);
     if (!data.holdings.length && !data.properties.length) return null;
-    const [{ signals, summary }, series] = await Promise.all([currentSignals(q, data), portfolioSeries(q)]);
+    const [{ signals, summary }, series, alerts] = await Promise.all([currentSignals(q, data), portfolioSeries(q), recentAlerts(q, 24)]);
     const prev = summary.netWorth - summary.dayChange;
     return {
       netWorth: summary.netWorth, dayChange: summary.dayChange, dayPct: prev > 0 ? (summary.dayChange / prev) * 100 : 0,
       spark: series.slice(-30).map((p) => p.total),
       attention: signals.filter((x) => x.score >= 40).sort((a, b) => b.score - a.score).slice(0, 4)
         .map((x) => ({ id: `fin:${x.id}`, source: 'finance' as const, title: x.title, why: x.next || x.why, href: '/finance', score: Math.round(30 + x.score * 0.4) }))
+        // Alerts raised in the last 24h (price moves, connection failures, due decisions) — what the bell used to show.
+        .concat(alerts.map((a) => ({ id: `finalert:${a.key}`, source: 'finance' as const, title: a.title, why: a.kind === 'connection' ? 'Connection needs attention · Finance → Settings' : `Finance alert · ${new Date(a.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', timeZone: tz })}`, href: '/finance', score: a.kind === 'connection' ? 74 : 68, at: a.at })))
     };
   })(), 9000) : null;
   return {
@@ -121,7 +118,6 @@ export const load: PageServerLoad = async ({ locals }) => {
     briefing: { cached: can(user, 'assistant') ? await cachedBriefing() : null, aiEnabled: state.ai.enabled, configured: aiConfigured(state) },
     calendar: { enabled: calendarAccounts.length, today: cal.today, todayEvents: cal.todayEvents.map(occ), next: cal.next ? occ(cal.next) : null, week: cal.week, weekTotal: cal.weekTotal,
       errors: calendarAccounts.filter((a) => a.calendarError).map((a) => ({ id: a.id, label: `${a.provider === 'gmail' ? 'Google' : 'Zoho'} Calendar · ${a.email}`, message: a.calendarError! })) },
-    reminders: { waiting: rem.active.length, unread: rem.unread, items: [...rem.active, ...rem.upcoming].slice(0, 5).map((r) => ({ id: r.id, title: r.title, at: effectiveAt(r), fired: r.status === 'fired' })) },
-    brief: { counts: brief.counts, important: slim(brief.important), needsReply: slim(brief.needsReply), billsRenewals: slim(brief.billsRenewals), upcoming: slim(brief.upcoming), tasksToday: brief.tasksToday.map((t) => ({ id: t.id, title: t.title })), tasksOverdue: brief.tasksOverdue.map((t) => ({ id: t.id, title: t.title, due: t.due })), errors: brief.errors }
+    brief: { counts: brief.counts, important: slim(brief.important), needsReply: slim(brief.needsReply), billsRenewals: slim(brief.billsRenewals), upcoming: slim(brief.upcoming), errors: brief.errors }
   };
 };

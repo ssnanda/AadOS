@@ -2,7 +2,7 @@
   import { enhance } from '$app/forms';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
-  const LABELS: Record<string, string> = { emails: 'Emails', messages: 'Messages', contacts: 'Contacts', finance: 'Finance', calendar: 'Calendar', tasks: 'Tasks', reminders: 'Reminders', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
+  const LABELS: Record<string, string> = { emails: 'Emails', messages: 'Messages', contacts: 'Contacts', finance: 'Finance', calendar: 'Calendar', asana: 'Asana', documents: 'Documents', assistant: 'Assistant' };
   let adding = $state(false), editing = $state(''), resetting = $state('');
   let newAll = $state(false);
 </script>
@@ -27,7 +27,7 @@
     <form class="card" method="POST" action="?/create" use:enhance={() => async ({ update, result }) => { await update(); if (result.type === 'success') adding = false; }}>
       <div class="grid"><label>Name<input name="name" required maxlength="60"></label><label>Username<input name="username" required autocomplete="off" pattern="[A-Za-z0-9._\-]{'{'}3,32{'}'}"></label>
         <label>Password<input name="password" type="password" autocomplete="new-password" placeholder="Leave empty to generate"></label></div>
-      {@render access(['calendar', 'tasks', 'reminders'], newAll ? 'all' : [])}
+      {@render access(['calendar'], newAll ? 'all' : [])}
       <div class="row"><button class="primary">Create login</button></div>
     </form>
   {/if}

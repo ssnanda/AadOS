@@ -12,13 +12,11 @@ test('conflicts: overlapping timed events only; back-to-back and all-day are not
 });
 
 test('briefing data is grounded in real records with stable source IDs; empty when nothing exists', () => {
-  const empty = briefingData({ rows: [], events: [], disabledCalendars: [], tasks: [], reminders: [], tz: NY, now: NOW });
+  const empty = briefingData({ rows: [], events: [], disabledCalendars: [], tz: NY, now: NOW });
   assert.equal(empty.sources.length, 0); assert.ok(briefingPrompt(empty, NY).includes('(nothing scheduled or pending)'));
-  const d = briefingData({ rows: [], events: [ev('Dentist', '2026-11-18T20:00:00Z'), ev('Overlap', '2026-11-18T20:30:00Z'), ev('Tomorrow thing', '2026-11-19T15:00:00Z'), ev('Hidden', '2026-11-18T18:00:00Z', 60, { calendarId: 'off' })], disabledCalendars: ['off'],
-    tasks: [{ id: 't1', title: 'Late task', due: '2026-11-10', done: false, createdAt: '' }, { id: 't2', title: 'Today task', due: '2026-11-18', done: false, createdAt: '' }] as any, reminders: [], tz: NY, now: NOW });
+  const d = briefingData({ rows: [], events: [ev('Dentist', '2026-11-18T20:00:00Z'), ev('Overlap', '2026-11-18T20:30:00Z'), ev('Tomorrow thing', '2026-11-19T15:00:00Z'), ev('Hidden', '2026-11-18T18:00:00Z', 60, { calendarId: 'off' })], disabledCalendars: ['off'], tz: NY, now: NOW });
   assert.deepEqual(d.sections['Today'].map((id) => d.sources.find((s) => s.id === id)!.title), ['Dentist', 'Overlap']);
   assert.equal(d.conflicts, 1); assert.ok(d.sections['Conflicts']); assert.ok(d.sections['Tomorrow']); assert.ok(!JSON.stringify(d).includes('Hidden'));
-  assert.deepEqual([d.sections['Overdue tasks'].length, d.sections['Due today'].length], [1, 1]);
   const p = briefingPrompt(d, NY);
   assert.ok(p.includes('[S1]') && p.includes('untrusted') && p.length < 6000);
 });

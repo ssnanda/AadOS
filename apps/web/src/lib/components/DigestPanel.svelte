@@ -45,7 +45,7 @@
           <small>{#each i.sources as src, n}{n ? ' · ' : ''}<a href={src.href}>{src.subject}</a> ({src.receivedAt.slice(5, 10)}){/each}</small></div>
         <div class="ops">
           {#if i.mark}<form method="POST" action="?/reviewMark" use:enhance><input type="hidden" name="item" value={i.id}><button name="op" value="clear">Undo</button></form>
-          {:else}<form method="POST" action="?/reviewMark" use:enhance><input type="hidden" name="item" value={i.id}>{#if i.kind === 'action' || i.kind === 'date'}<button name="op" value="done" title="Done">✓</button>{/if}{#if !i.taskId && i.kind === 'action'}<button name="op" value="task" title="Add to Tasks">+ Task</button>{:else if i.taskId}<a class="task" href="/tasks">Task</a>{/if}<button name="op" value="dismissed" title="Not needed">✕</button></form>{/if}
+          {:else}<form method="POST" action="?/reviewMark" use:enhance><input type="hidden" name="item" value={i.id}>{#if i.kind === 'action' || i.kind === 'date'}<button name="op" value="done" title="Done">✓</button>{/if}{#if /^https?:/.test(i.taskId)}<a class="task" href={i.taskId} target="_blank" rel="noopener">◉ In Asana</a>{:else if i.kind === 'action'}<button name="op" value="task" title="Create an Asana task from this item">→ Asana</button>{/if}<button name="op" value="dismissed" title="Not needed">✕</button></form>{/if}
         </div>
       </li>
     {/snippet}
@@ -108,7 +108,7 @@
   .main p{margin:3px 0;color:#53607a;font-size:12px}.main small,.plain small{color:#8a95a8;font-size:11px}.main a,.plain a{color:#3157de;text-decoration:none}
   .due{margin-left:7px;font-size:11px;font-weight:700;color:#c27a12}.late .due{color:#a5414d}.aud{margin-left:6px;font-size:10px;background:#f0f2f7;border-radius:99px;padding:1px 7px;color:#6f7c94}
   .priority,.owner{margin-left:6px;font-size:9px;font-weight:800;text-transform:uppercase;border-radius:99px;padding:2px 7px}.priority{background:#eef1ff;color:#3157de}.priority.urgent{background:#fde8eb;color:#a5414d}.priority.soon{background:#fff4df;color:#9b6a18}.owner{background:#e3f6f3;color:#0f7f74}.go{display:inline-block;margin:1px 0 3px;font-size:11px;font-weight:700;color:#3157de!important}
-  .ops form{display:flex;gap:4px;margin:0}.ops button{padding:3px 7px}.task{font-size:11px;color:#7c4dde;align-self:center}
+  .ops form{display:flex;gap:4px;margin:0}.ops button{padding:3px 7px}.task{font-size:11px;color:#d2474c;align-self:center;text-decoration:none}
   .plain li{border:0;padding:2px 0;display:block;font-size:13px}
   details{margin-top:10px;font-size:13px}summary{cursor:pointer;color:#43516c;font-weight:700;font-size:12px}
   .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}.stats div{border:1px solid #edf0f5;border-radius:9px;padding:8px}.stats b{display:block;font-size:18px}.stats small{color:#8a95a8;font-size:11px}

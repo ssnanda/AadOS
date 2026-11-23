@@ -14,7 +14,7 @@ const rows = buildRows({ pipelines: [pipe('a', 'g1'), pipe('b', 'g2')], accounts
   item('b', '9', 'Streaming subscription renews soon', { sender: 'Stream <no-reply@stream.test>' })
 ] });
 const ev = (id: string, start: string, title: string, over: Record<string, unknown> = {}) => ({ id, accountId: 'g1', calendarId: 'c', provider: 'google', providerEventId: id, title, description: 'SECRET DESCRIPTION', location: '', start, end: new Date(Date.parse(start) + 3600_000).toISOString(), allDay: false, timeZone: NY, status: 'confirmed', ...over }) as any;
-const base = { tz: NY, now: NOW, share: { email: true, calendar: true, tasks: true, documents: true }, rows, tasks: [{ id: 't1', title: 'Pay water bill', due: '2026-11-10', done: false, createdAt: '' }, { id: 't2', title: 'Renew passport', due: '2026-12-20', done: false, createdAt: '' }, { id: 't3', title: 'Done thing', due: '2026-11-01', done: true, createdAt: '' }] as any, reminders: [] as any,
+const base = { tz: NY, now: NOW, share: { email: true, calendar: true, documents: true }, rows,
   events: [ev('e1', '2026-11-19T14:00:00Z', 'Dentist'), ev('e2', '2026-11-21T15:00:00Z', 'Soccer'), ev('e3', '2026-11-18T20:00:00Z', 'Dinner'), ev('hid', '2026-11-19T16:00:00Z', 'Hidden', { calendarId: 'off' })], disabledCalendars: ['off'] };
 
 test('intents and search terms', () => {
@@ -35,13 +35,10 @@ test('calendar windows in the owner zone', () => {
 test('retrieval returns real records only, with stable IDs and links', () => {
   const bills = retrieve({ ...base, question: 'What bills are due soon?' });
   assert.ok(bills.sources.some((s) => s.kind === 'email' && s.title.includes('electric bill')));
-  assert.ok(bills.sources.some((s) => s.kind === 'task' && s.title === 'Pay water bill'));
   assert.deepEqual(bills.sources.map((s) => s.id), bills.sources.map((_, i) => `S${i + 1}`));
   const tomorrow = retrieve({ ...base, question: 'What are my appointments tomorrow?' });
   assert.deepEqual(tomorrow.sources.filter((s) => s.kind === 'event').map((s) => s.title), ['Dentist']); // hidden calendar excluded
   assert.ok(tomorrow.sources[0].href.startsWith('/calendar?view=day&date=2026-11-19'));
-  const overdue = retrieve({ ...base, question: 'What tasks are overdue?' });
-  assert.deepEqual(overdue.sources.map((s) => s.title), ['Pay water bill']);
   const find = retrieve({ ...base, question: 'Find the email about my insurance' });
   assert.equal(find.sources[0].title, 'Car insurance policy renewal');
   const reply = retrieve({ ...base, question: 'What do I need to reply to?' });
@@ -49,7 +46,7 @@ test('retrieval returns real records only, with stable IDs and links', () => {
 });
 
 test('privacy: sharing toggles are honoured; no credentials or event descriptions leak', () => {
-  const none = retrieve({ ...base, share: { email: false, calendar: false, tasks: false, documents: false }, question: 'Summarize my week.' });
+  const none = retrieve({ ...base, share: { email: false, calendar: false, documents: false }, question: 'Summarize my week.' });
   assert.equal(none.sources.length, 0);
   const noMail = retrieve({ ...base, share: { ...base.share, email: false }, question: 'Summarize my week.' });
   assert.ok(noMail.sources.every((s) => s.kind !== 'email'));

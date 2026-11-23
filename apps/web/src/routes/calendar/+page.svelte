@@ -4,11 +4,20 @@
   import { startAutoSync } from '$lib/sync';
   import EventForm from '$lib/components/EventForm.svelte';
   import AppShell from '$lib/components/AppShell.svelte';
+  import { asanaApi } from '$lib/asana-client';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
   // Calendars sync automatically (on open, every 2 minutes while visible), like email.
   onMount(() => { if (!data.enabled) return; const auto = startAutoSync(() => ({}), () => invalidateAll(), '/calendar/live'); void auto.run(); return () => auto.stop(); });
   let openRef = $state('');
+  // Follow-ups go to Asana (there is no local task list): the event title, due on the event's day.
+  let asanaNote = $state('');
+  $effect(() => { void openRef; asanaNote = ''; });
+  async function toAsana(e: { title: string; allDay: boolean; start: string }) {
+    asanaNote = 'Creating…';
+    try { await asanaApi('create', { name: e.title.slice(0, 200), day: e.allDay ? e.start : new Date(e.start).toLocaleDateString('en-CA', { timeZone: data.tz }) }); asanaNote = 'Asana task created.'; }
+    catch (err) { asanaNote = err instanceof Error ? err.message : 'Could not create the task.'; }
+  }
   // Event form: null = closed; `existing` = editing that event.
   let eventForm = $state<{ date: string; existing?: NonNullable<typeof detail> } | null>(null);
   const detail = $derived(openRef ? data.details[openRef] : null);
@@ -99,8 +108,7 @@
       <dt>Calendar</dt><dd>{detail.calendar} · {detail.provider === 'google' ? 'Google' : 'Zoho'}{detail.tentative ? ' · tentative' : ''}</dd>
       {#if detail.description}<dt>Description</dt><dd class="desc">{detail.description}</dd>{/if}
       <dt>Actions</dt><dd class="acts">
-        <form method="POST" action="/tasks?/add"><input type="hidden" name="title" value={detail.title.slice(0, 200)}><input type="hidden" name="due" value={detail.allDay ? detail.start : new Date(detail.start).toLocaleDateString('en-CA', { timeZone: data.tz })}><input type="hidden" name="eventKey" value={openRef}><button class="btn">☑ Add task</button></form>
-        {#if !detail.allDay && new Date(detail.start).getTime() > Date.now()}<form method="POST" action="/reminders?/create"><input type="hidden" name="title" value={detail.title.slice(0, 200)}><input type="hidden" name="date" value={new Date(new Date(detail.start).getTime() - 3600_000).toLocaleDateString('en-CA', { timeZone: data.tz })}><input type="hidden" name="time" value={new Date(new Date(detail.start).getTime() - 3600_000).toLocaleTimeString('en-GB', { timeZone: data.tz, hour: '2-digit', minute: '2-digit' })}><button class="btn">◔ Remind me 1 hour before</button></form>{/if}</dd>
+        <button class="btn" onclick={() => toAsana(detail!)} disabled={asanaNote === 'Creating…'}>◉ → Asana task</button>{#if asanaNote}<small class="anote">{asanaNote}</small>{/if}</dd>
       {#if detail.htmlLink}<dt></dt><dd><a href={detail.htmlLink} target="_blank" rel="noreferrer noopener">Open in Google Calendar ↗</a></dd>{/if}
     </dl>
   </aside>
@@ -135,7 +143,7 @@
   .backdrop{position:fixed;inset:0;background:#151c2d55;z-index:40}.panel{position:fixed;top:0;right:0;bottom:0;width:min(460px,96vw);background:#fff;z-index:41;display:flex;flex-direction:column;box-shadow:-10px 0 30px #151c2d30;overflow:auto}
   .panel header{padding:16px 18px;border-bottom:1px solid #e4e9f2;margin:0}.panel h3{margin:0;font-size:17px;display:flex;gap:9px;align-items:center}.panel h3 i{width:11px;height:11px;border-radius:50%;flex:none}.panel header p{margin:5px 0 0;font-size:12px;color:#53607a}
   dl{margin:0;padding:14px 18px;display:grid;grid-template-columns:110px 1fr;gap:9px 12px;font-size:13px}dt{color:#8a95a8;font-size:11px;font-weight:700;padding-top:2px}dd{margin:0;min-width:0;word-break:break-word}dd a{color:#3157de;font-weight:700;text-decoration:none}
-  .acts{display:flex;gap:6px;flex-wrap:wrap}.acts form{margin:0}.acts .btn{font-size:12px;padding:5px 10px}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.anote{font-size:11px;color:#53607a}.acts .btn{font-size:12px;padding:5px 10px}
   .desc{white-space:pre-wrap;color:#43516c;font-size:12px}.att{display:grid;gap:3px}.att em{font-style:normal;color:#8a95a8;font-size:11px}
   @media(max-width:760px){.views{margin-left:0;width:100%}.views a{flex:1;text-align:center}.cell{min-height:58px;padding:3px}.cell .ev,.cell .more{display:none}.dots{display:flex}.week{grid-template-columns:1fr}.col{min-height:0}.row{grid-template-columns:1fr auto}.row time{grid-column:1/-1}dl{grid-template-columns:1fr}dt{padding-top:6px}}
 </style>

@@ -1,17 +1,13 @@
 <script lang="ts">
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
-  const LEADS = [['off', 'Off'], ['0', 'At start'], ['5', '5 min'], ['10', '10 min'], ['15', '15 min'], ['30', '30 min'], ['60', '1 hour'], ['1440', '1 day']];
-  const lead = $derived(data.prefs.eventLeadMinutes === null ? 'off' : String(data.prefs.eventLeadMinutes));
 </script>
 <svelte:head><title>General · Settings · AadOS</title></svelte:head>
 <main><header><div><h1>General</h1></div></header>
 {#if form && 'error' in form && form.error}<p class="bad">{form.error}</p>{/if}
-<section><h2>Calendar &amp; reminders</h2><form method="POST" action="?/prefs" class="grid">
+<section><h2>Calendar</h2><form method="POST" action="?/prefs" class="grid">
   <label>Time zone<input name="timeZone" value={data.prefs.timeZone || 'UTC'} required list="zones"></label>
   <label>Week starts<select name="weekStart" value={String(data.prefs.weekStart)}><option value="0">Sunday</option><option value="1">Monday</option></select></label>
-  <label>Event reminder<select name="eventLead" value={lead}>{#each LEADS as [v, l] (v)}<option value={v}>{l}</option>{/each}{#if !LEADS.some(([v]) => v === lead)}<option value={lead}>{lead} min</option>{/if}</select></label>
-  <label title="For tasks with a date but no time; leave empty for none">Task reminder time<input type="time" name="taskReminderTime" value={data.prefs.taskReminderTime}></label>
   <button class="save">Save</button></form>
   <datalist id="zones">{#each Intl.supportedValuesOf('timeZone') as z (z)}<option value={z}></option>{/each}</datalist></section>
 <section><h2>Password</h2>

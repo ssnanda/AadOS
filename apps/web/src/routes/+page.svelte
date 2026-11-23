@@ -96,10 +96,8 @@
         {#if data.inbox.unread}<a href="/emails">✉ <b>{data.inbox.unread}</b> unread</a>{/if}
         {#if data.inbox.needsReply}<a href="/emails?view=needs-reply">↩ <b>{data.inbox.needsReply}</b> to reply</a>{/if}
         {#if msgItems?.length}<a href="/messages">💬 <b>{msgItems.length}</b> texts</a>{/if}
-        {#if data.brief.tasksOverdue.length + data.brief.tasksToday.length}<a href="/tasks?f=today">☑ <b>{data.brief.tasksOverdue.length + data.brief.tasksToday.length}</b> tasks</a>{/if}
-        {#if data.reminders.waiting}<a href="/reminders">◔ <b>{data.reminders.waiting}</b> reminders</a>{/if}
       </div>
-      <div class="quick"><a href="/calendar">＋ Event</a><a href="/tasks">＋ Task</a><a href="/reminders">＋ Reminder</a><a href="/messages">＋ Text</a></div>
+      <div class="quick"><a href="/calendar">＋ Event</a><a href="/messages">＋ Text</a></div>
     </div>
     <div class="side">
       <div class="next" class:live={Boolean(current)}>
@@ -130,7 +128,7 @@
         {/each}
       </ul>
       {#if shown.length > 9}<button class="more" onclick={() => (showAll = !showAll)}>{showAll ? 'Show less' : `Show ${shown.length - 9} more`}</button>{/if}
-      {:else if !pending.length}<div class="zero"><span>✨</span><b>Inbox zero, life edition.</b><small>No replies, bills, tasks or texts waiting.</small></div>
+      {:else if !pending.length}<div class="zero"><span>✨</span><b>Inbox zero, life edition.</b><small>No replies, bills, Asana tasks or texts waiting.</small></div>
       {:else}<p class="muted">Loading…</p>{/if}
     </section>
 
@@ -148,7 +146,6 @@
       {#if data.calendar.week.length}<a class="week" href="/calendar?view=week" title="Next 7 days">
         {#each data.calendar.week as d (d.date)}<span class:td={d.date === data.calendar.today}><i style="height:{4 + (d.count / weekMax) * 26}px" class:none={!d.count}></i><small>{dayName(d.date)}</small><em>{d.count || ''}</em></span>{/each}
       </a>{/if}
-      {#if data.reminders.items.length}<div class="rems"><h3><a href="/reminders">Reminders</a></h3>{#each data.reminders.items as r (r.id)}<div class:late={r.fired}><span>{r.title}</span><time>{new Date(r.at).toLocaleString([], { timeZone: data.tz, weekday: 'short', hour: 'numeric', minute: '2-digit' })}</time></div>{/each}</div>{/if}
     </section>
   </div>
 
@@ -213,8 +210,6 @@
   .week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px;text-decoration:none;align-items:end;padding-top:8px;border-top:1px solid #eef1f6}
   .week span{display:grid;justify-items:center;gap:2px;align-self:end}.week i{width:16px;border-radius:5px 5px 2px 2px;background:#b8c6f6}.week i.none{background:#eef1f6}.week .td i{background:#3157de}
   .week small{color:#8a95a8;font-size:10px;font-weight:700}.week .td small{color:#3157de}.week em{font-style:normal;font-size:10px;color:#53607a;font-weight:800;min-height:12px}
-  .rems{margin-top:12px;padding-top:8px;border-top:1px solid #eef1f6;display:grid;gap:3px}.rems h3{margin:0 0 2px;font-size:12px}.rems h3 a{color:#53607a;text-decoration:none}
-  .rems div{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#53607a}.rems span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rems time{font-size:10px;font-weight:700;color:#8a95a8;flex:none}.rems .late time,.rems .late{color:#a5414d}
 
   /* AI briefing */
   .ai{border-left:3px solid #7c4dde}.ai header{margin-bottom:4px;align-items:center}.ai .link b{color:#7c4dde}.ai header a{font-weight:700;font-size:12px}

@@ -2,23 +2,20 @@
 // only small, bounded excerpts with stable source IDs are sent to AJMCP. Pure (type-only imports); unit-tested.
 import type { InboxRow } from '../inbox.ts';
 import { queryInbox } from '../inbox.ts';
-import type { Task } from '../aados-store';
-import type { Reminder } from '../reminders.ts';
 import { agenda, type CalEvent } from '../../calendar/model.ts';
 import { addDays, rangeUtc, todayIn } from '../../calendar/view.ts';
 
-export type SourceKind = 'email' | 'event' | 'task' | 'reminder' | 'document' | 'finance';
+export type SourceKind = 'email' | 'event' | 'document' | 'finance';
 export type Source = { id: string; kind: SourceKind; ref: string; title: string; date: string; href: string; excerpt: string; meta: string };
 export type DocumentHit = { id: string; filename: string; date: string; excerpt: string; category: string };
-export type Share = { email: boolean; calendar: boolean; tasks: boolean; documents: boolean; finance?: boolean };
+export type Share = { email: boolean; calendar: boolean; documents: boolean; finance?: boolean };
 export type ContextInput = {
   question: string; tz: string; now?: number; share: Share;
   rows: InboxRow[]; events: CalEvent[]; disabledCalendars?: string[]; calendarNames?: Record<string, string>;
-  tasks: Task[]; reminders: Reminder[];
   /** Full-text document search, done by the caller (database). Only called when documents are shared. */
   documents?: (terms: string[]) => DocumentHit[];
 };
-export type Intents = { attention: boolean; reply: boolean; bills: boolean; renewals: boolean; calendar: boolean; tasks: boolean; overdue: boolean; reminders: boolean; summary: boolean; documents: boolean; search: boolean };
+export type Intents = { attention: boolean; reply: boolean; bills: boolean; renewals: boolean; calendar: boolean; summary: boolean; documents: boolean; search: boolean };
 
 const STOP = new Set('a an the of to in on at for from by with about and or is are was were be my me i you your it its this that these those what which who whom when where why how do does did can could should would will shall any some all there their them they our we us please find search look show tell give list get open email emails mail mails message messages document documents doc docs file files uploaded upload need needs needed have has had am pm up down out into over under than then so if not no yes ok just also more most much many few one two'.split(' '));
 export const MAX_SOURCES = 12, MAX_EXCERPT = 260, SOURCE_BUDGET = 3600;
@@ -31,7 +28,7 @@ export function detectIntents(question: string): Intents {
     attention: t(/\b(attention|important|urgent|priority|priorities)\b/), reply: t(/\b(repl(y|ies)|respond|answer|get back)\b/),
     bills: t(/\b(bills?|payments?|pay|invoices?|due|owe|statement)\b/), renewals: t(/\b(subscriptions?|renew(al|als|ing|s)?|expir)/),
     calendar: t(/\b(appointments?|meetings?|events?|calendar|schedule|tomorrow|today|tonight|weekend|this week|next week|busy|free)\b/),
-    tasks: t(/\b(tasks?|to-?dos?|overdue|chores?)\b/), overdue: t(/\boverdue\b/), reminders: t(/\breminders?\b/), summary,
+    summary,
     documents: t(/\b(documents?|files?|pdfs?|contracts?|lease|policy|uploaded|scan(ned)?)\b/), search: t(/\b(find|search|look for|where is|about|regarding|related to)\b/)
   };
 }
@@ -88,18 +85,6 @@ export function retrieve(input: ContextInput): { sources: Source[]; intents: Int
       push({ kind: 'event', ref: `${o.id}|${o.occurrenceStart}`, title: o.title, date: o.allDay ? o.start : new Date(o.start).toLocaleDateString('en-CA', { timeZone: input.tz }), href: `/calendar?view=day&date=${o.allDay ? o.start : new Date(o.start).toLocaleDateString('en-CA', { timeZone: input.tz })}`,
         excerpt: clip(`${when}${o.location ? ` at ${o.location}` : ''}${o.status === 'tentative' ? ' (tentative)' : ''}`), meta: clip(`Calendar: ${input.calendarNames?.[o.calendarId] || o.provider}${o.recurrence?.length ? ' · recurring' : ''}`, 120) });
     }
-  }
-  if (input.share.tasks && (intents.tasks || intents.summary || intents.bills || (!anyIntent && terms.length))) {
-    const today = todayIn(input.tz, now);
-    let open = input.tasks.filter((t) => !t.done);
-    if (intents.overdue) open = open.filter((t) => t.due && t.due < today);
-    else if (!intents.tasks && !intents.summary) open = open.filter((t) => terms.some((w) => `${t.title} ${t.notes || ''}`.toLowerCase().includes(w)) || (intents.bills && /bill|pay/i.test(t.title)));
-    for (const t of open.sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999')).slice(0, 8))
-      push({ kind: 'task', ref: t.id, title: t.title, date: t.due, href: '/tasks', excerpt: clip(`${t.due ? `due ${t.due}${t.dueTime ? ` ${t.dueTime}` : ''}${t.due < today ? ' (OVERDUE)' : ''}` : 'no due date'}${t.priority === 'high' ? ' · high priority' : ''}${t.notes ? ` · ${t.notes}` : ''}`), meta: (t.tags || []).join(', ') });
-  }
-  if (input.share.tasks && (intents.reminders || intents.summary)) {
-    for (const r of input.reminders.filter((r) => r.status === 'scheduled' || r.status === 'fired').sort((a, b) => (a.snoozedUntil || a.at).localeCompare(b.snoozedUntil || b.at)).slice(0, 5))
-      push({ kind: 'reminder', ref: r.id, title: r.title, date: (r.snoozedUntil || r.at).slice(0, 10), href: '/reminders', excerpt: clip(`${r.status === 'fired' ? 'waiting now' : 'scheduled'} for ${new Date(r.snoozedUntil || r.at).toLocaleString('en-US', { timeZone: input.tz })}`), meta: r.source.type });
   }
   if (input.share.documents && input.documents && (intents.documents || (terms.length && (intents.search || !anyIntent)))) {
     for (const d of input.documents(terms).slice(0, 5)) push({ kind: 'document', ref: d.id, title: d.filename, date: d.date.slice(0, 10), href: `/documents/${d.id}`, excerpt: clip(d.excerpt, 400), meta: d.category });

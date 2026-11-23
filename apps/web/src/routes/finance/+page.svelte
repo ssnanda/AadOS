@@ -98,6 +98,7 @@
   {#if D.summary.missingPrices.length || D.summary.stalePrices.length}<div class="warn">⚠ {D.summary.missingPrices.length ? `${D.summary.missingPrices.length} holding(s) have no price (excluded from totals): ${D.summary.missingPrices.slice(0, 6).map((h) => h.ticker).join(', ')}. ` : ''}{D.summary.stalePrices.length ? `${D.summary.stalePrices.length} price(s) are older than a day.` : ''}</div>{/if}
 
   {#if tab === 'overview'}
+    {#if D.recentAlerts.length}<section class="card alerts"><h2>Alerts <small class="muted">last 7 days</small></h2><ul>{#each D.recentAlerts.slice(0, 8) as a (a.key)}<li class:conn={a.kind === 'connection'}><span>{a.title}</span><time class="muted small">{new Date(a.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time></li>{/each}</ul></section>{/if}
     <div class="tiles">
       <div class="tile big"><small>Net worth</small><b>{usd(D.summary.netWorth)}</b><em class="muted">investments + cash + real-estate equity</em></div>
       <div class="tile"><small>Investments</small><b>{usd(D.summary.investments)}</b><em class={tone(D.summary.dayChange)}>{usd(D.summary.dayChange)} today</em></div>
@@ -180,7 +181,7 @@
         <td class={tone(m.cashFlow)}>{usd(m.cashFlow)}</td><td class={tone(m.gain)}>{usd(m.gain)}</td><td><button class="ic" onclick={() => (editing = { kind: 'property', ...p })}>✎</button><button class="ic danger" onclick={() => confirm(`Delete ${p.location}?`) && act('property.delete', { id: p.id })}>🗑</button></td></tr>{:else}<tr><td colspan="11" class="muted">No properties.</td></tr>{/each}</tbody></table></section>
 
   {:else if tab === 'settings'}
-    <section class="card"><h2>Alerts</h2><p class="muted small">Delivered through AadOS notifications (the bell). Each alert fires once per day; mute single insights on the Insights tab.</p>
+    <section class="card"><h2>Alerts</h2><p class="muted small">Shown on the Overview tab and the Dashboard. Each alert fires once per day; mute single insights on the Insights tab.</p>
       <form class="grid3" onsubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act('alerts.save', { enabled: f.has('enabled'), movementThresholdPercent: f.get('mv'), costBasisDiscountPercent: f.get('cb'), allocationAlerts: f.has('alloc'), earningsAlerts: f.has('earn'), reviewAlerts: f.has('rev'), staleDataAlerts: f.has('stale'), connectionAlerts: f.has('conn') }, 'Alert settings saved.'); }}>
         <label class="chk"><input type="checkbox" name="enabled" checked={D.alerts.enabled}> Finance alerts on</label><label>Price move ≥ <input name="mv" type="number" step="0.1" value={D.alerts.movementThresholdPercent}> %</label><label>Below cost basis ≥ <input name="cb" type="number" step="1" value={D.alerts.costBasisDiscountPercent}> %</label>
         <label class="chk"><input type="checkbox" name="alloc" checked={D.alerts.allocationAlerts}> Allocation limits</label><label class="chk"><input type="checkbox" name="earn" checked={D.alerts.earningsAlerts}> Upcoming earnings</label><label class="chk"><input type="checkbox" name="rev" checked={D.alerts.reviewAlerts}> Plan reviews</label>
@@ -241,6 +242,7 @@
   .filebtn input{display:none}.ic{border:0;background:none;padding:2px 4px;font-size:14px}.small{padding:3px 8px;font-size:11px}.chip{padding:3px 9px;border-radius:999px}.chip.on{background:#2f7cf6;border-color:#2f7cf6;color:#fff}
   select,input,textarea{border:1px solid #d9dfeb;border-radius:7px;padding:6px 8px;font:inherit;min-width:0}textarea{resize:vertical}
   .notice{background:#eef3ff;border:1px solid #cfdcff;color:#2f4fa8;border-radius:9px;padding:8px 12px;margin-bottom:8px}.warn{background:#fff8e6;border:1px solid #f3dfa8;color:#8a6a1c;border-radius:9px;padding:8px 12px;margin-bottom:8px}
+  .alerts ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}.alerts li{display:flex;gap:10px;justify-content:space-between;font-size:13px}.alerts li.conn span{color:#a5414d;font-weight:600}
   .card{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:12px 14px;margin-bottom:10px;overflow-x:auto}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:10px}.tile{background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:12px;display:grid;gap:3px}.tile small{color:#8a95a8;font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.5px}.tile b{font-size:19px}.tile.big b{font-size:26px;color:#1f2a44}.tile em{font-style:normal;font-size:12px}
   .periods{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}.up{color:#1e8a4c}.down{color:#c0392b}

@@ -56,7 +56,7 @@ export async function gather(state: AadOSState, question: string): Promise<Retur
   const docHits = db && state.ai.share.documents ? await searchDocumentPassages(db, tsTerms(question.split(/\s+/)).filter((t) => !/^(document|documents|file|files|find|uploaded|about|the|what|which|my)$/.test(t))).catch(() => []) : [];
   const base = retrieve({
     question, tz: tzOf(state), share: state.ai.share, rows, events: state.events, disabledCalendars: state.calendarDisabled,
-    calendarNames: Object.fromEntries(state.calendars.map((c) => [c.id, c.name])), tasks: state.tasks, reminders: state.reminders,
+    calendarNames: Object.fromEntries(state.calendars.map((c) => [c.id, c.name])),
     documents: () => docHits
   });
   // Finance facts only with explicit consent (Settings → AI → Finance).

@@ -2,7 +2,6 @@ import { error, json, redirect, type Handle } from '@sveltejs/kit';
 import { SESSION_COOKIE, allowedPath, bearerToken, sessionUser } from '$lib/server/auth';
 import { startPipelineScheduler } from '$lib/server/pipeline-scheduler';
 import { initStorage } from '$lib/server/aados-store';
-import { startReminderScheduler } from '$lib/server/reminder-scheduler';
 import { startTriageWorker } from '$lib/server/ai/email-service';
 import { startExtractionWorker } from '$lib/server/documents/service';
 
@@ -11,7 +10,6 @@ import { startExtractionWorker } from '$lib/server/documents/service';
 const PUBLIC_PATHS = new Set(['/health', '/login', '/oauth/zoho/callback', '/oauth/gmail/callback', '/messages/hook', '/api/mobile/login']);
 initStorage();
 startPipelineScheduler();
-startReminderScheduler();
 startTriageWorker(); // does nothing unless AI + background triage are enabled in Settings → AI
 startExtractionWorker();
 

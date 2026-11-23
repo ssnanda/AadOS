@@ -1,8 +1,6 @@
-// AI daily briefing: built ONLY from deterministic AadOS data (inbox, calendar, tasks, reminders). The model writes a
+// AI daily briefing: built ONLY from deterministic AadOS data (inbox, calendar). The model writes a
 // short summary and next actions citing those sources; the deterministic lists are always shown. Pure; unit-tested.
 import type { InboxRow } from '../inbox.ts';
-import type { Task } from '../aados-store';
-import type { Reminder } from '../reminders.ts';
 import { agenda, type CalEvent, type Occurrence } from '../../calendar/model.ts';
 import { addDays, rangeUtc, todayIn } from '../../calendar/view.ts';
 import { clip, type Source } from './context.ts';
@@ -17,7 +15,7 @@ export function findConflicts(occ: Occurrence[]): [Occurrence, Occurrence][] {
   return out;
 }
 
-export type BriefingInput = { rows: InboxRow[]; events: CalEvent[]; disabledCalendars: string[]; tasks: Task[]; reminders: Reminder[]; tz: string; now?: number };
+export type BriefingInput = { rows: InboxRow[]; events: CalEvent[]; disabledCalendars: string[]; tz: string; now?: number };
 export type BriefingData = { sources: Source[]; sections: Record<string, string[]>; conflicts: number; today: string };
 
 export function briefingData(input: BriefingInput): BriefingData {
@@ -41,11 +39,6 @@ export function briefingData(input: BriefingInput): BriefingData {
   for (const r of input.rows.filter((r) => r.action === 'reply' && !r.reviewed).slice(0, 4)) email('Needs reply', r);
   for (const r of input.rows.filter((r) => r.unread && r.categories.some((c) => c === 'Bills' || c === 'Payments')).slice(0, 3)) email('Bills', r);
   for (const r of input.rows.filter((r) => r.unread && r.categories.some((c) => c === 'Subscriptions' || c === 'Renewals')).slice(0, 3)) email('Renewals', r);
-  const task = (section: string, t: Task) => add(section, { kind: 'task', ref: t.id, title: t.title, date: t.due, href: '/tasks', excerpt: clip(`${t.due ? `due ${t.due}` : ''}${t.priority === 'high' ? ' · high priority' : ''}`), meta: '' });
-  for (const t of input.tasks.filter((t) => !t.done && t.due && t.due < today).slice(0, 4)) task('Overdue tasks', t);
-  for (const t of input.tasks.filter((t) => !t.done && t.due === today).slice(0, 4)) task('Due today', t);
-  for (const r of input.reminders.filter((r) => r.status === 'scheduled' || r.status === 'fired').sort((a, b) => (a.snoozedUntil || a.at).localeCompare(b.snoozedUntil || b.at)).slice(0, 3))
-    add('Reminders', { kind: 'reminder', ref: r.id, title: r.title, date: (r.snoozedUntil || r.at).slice(0, 10), href: '/reminders', excerpt: clip(new Date(r.snoozedUntil || r.at).toLocaleString('en-US', { timeZone: tz })), meta: '' });
   return { sources, sections, conflicts: conflicts.length, today };
 }
 

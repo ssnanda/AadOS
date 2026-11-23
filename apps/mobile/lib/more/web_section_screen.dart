@@ -4,7 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../core/session.dart';
 
-/// A section that is not native yet (Calendar, Tasks, Finance…) shown from the AadOS web app, signed in with
+/// A section that is not native yet (Calendar, Asana, Finance…) shown from the AadOS web app, signed in with
 /// the app's session token as the `aados_session` cookie. Links off the AadOS server open in the browser.
 class WebSectionScreen extends StatefulWidget {
   const WebSectionScreen({super.key, required this.session, required this.title, required this.path});

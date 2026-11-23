@@ -9,8 +9,6 @@ import 'web_section_screen.dart';
 const sections = [
   (Icons.dashboard_outlined, 'Dashboard', '/', ''),
   (Icons.event_outlined, 'Calendar', '/calendar', 'calendar'),
-  (Icons.check_circle_outline, 'Tasks', '/tasks', 'tasks'),
-  (Icons.notifications_none, 'Reminders', '/reminders', 'reminders'),
   (Icons.track_changes, 'Asana', '/asana', 'asana'),
   (Icons.sms_outlined, 'Messages', '/messages', 'messages'),
   (Icons.contacts_outlined, 'Contacts', '/contacts', 'contacts'),

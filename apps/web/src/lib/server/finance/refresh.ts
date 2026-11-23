@@ -1,9 +1,7 @@
 // Finance refresh cycle (AJAdvisor refreshCore.ts + snapshots.ts + marketAlerts.ts, reimplemented on AadOS):
 // quotes for holdings, watchlist and benchmarks → daily snapshots (holdings, accounts, portfolio incl. real-estate
-// equity) → alerts raised through AadOS's own notification center (reminders). Idempotent: snapshots upsert per
+// equity) → alerts logged in fin_alerts (shown on Finance → Overview and the Dashboard). Idempotent: snapshots upsert per
 // trading day and each alert is raised once per key.
-import { updateState } from '../aados-store';
-import { createReminder } from '../reminders';
 import { alertSettings, claimAlert, db, getSetting, loadAll, newId, setSetting, type FinanceData, type Q } from './db';
 import { fetchEarnings, fetchQuotes, type Quote } from './quotes';
 import { bucketOf, buildSignals, costBasisValue, isMuted, marketValue, positions, propertyMetrics, summarize, tradingDay, isMarketWeekday, marketOpen } from '$lib/finance/model';
@@ -106,9 +104,7 @@ export async function evaluateAlerts(q: Q, data?: FinanceData): Promise<number> 
   // Scheduled decisions that came due.
   for (const d of data.decisions) if (d.status === 'scheduled' && d.scheduledFor && Date.parse(d.scheduledFor) <= Date.now()) raise.push({ key: `decision-${d.id}`, kind: 'decision', ticker: d.ticker, title: `Scheduled decision due: ${d.type.toUpperCase()} ${d.ticker}`, note: d.notes || '' });
   let raised = 0;
-  const fresh: typeof raise = [];
-  for (const a of raise) if (await claimAlert(q, a.key, a.kind, a.title, a.ticker)) { fresh.push(a); raised++; }
-  if (fresh.length) await updateState((st) => { for (const a of fresh.slice(0, 15)) createReminder(st, { title: `💹 ${a.title}`.slice(0, 200), at: new Date().toISOString(), note: `${a.note}\n/finance`.slice(0, 1000) }); });
+  for (const a of raise) if (await claimAlert(q, a.key, a.kind, a.title, a.ticker)) raised++;
   return raised;
 }
 
@@ -116,8 +112,8 @@ export async function evaluateAlerts(q: Q, data?: FinanceData): Promise<number> 
 export async function connectionAlert(q: Q, provider: string, message: string) {
   const settings = await alertSettings(q);
   if (!settings.enabled || !settings.connectionAlerts) return;
-  if (await claimAlert(q, `conn-${provider}-${tradingDay()}`, 'connection', `${provider} connection failed`))
-    await updateState((st) => { createReminder(st, { title: `💹 ${provider} connection needs attention`, at: new Date().toISOString(), note: `${message}\nFinance → Settings` }); });
+  // Logged in fin_alerts; the Finance Overview tab and the Dashboard show it (message kept short in the title).
+  await claimAlert(q, `conn-${provider}-${tradingDay()}`, 'connection', `${provider} connection failed: ${message}`.slice(0, 300));
 }
 
 /** Scheduler hook: refresh during market hours (every call) and once a day otherwise. */

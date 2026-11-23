@@ -156,6 +156,11 @@ export async function holdingSeries(q: Q, ticker: string) {
   return (await q.query('SELECT date, SUM(market_value) mv, SUM(cost_basis) cb, AVG(price) price FROM fin_holding_snapshots WHERE ticker = $1 GROUP BY date ORDER BY date', [ticker])).rows.map((r) => ({ date: day(r.date)!, value: Number(r.mv || 0), cost: Number(r.cb || 0), price: n(r.price) }));
 }
 
+/** Alerts raised in the last `hours` (newest first) — shown on the Finance page and the Dashboard. */
+export async function recentAlerts(q: Q, hours = 24 * 7, limit = 30): Promise<{ key: string; kind: string; ticker: string; title: string; at: string }[]> {
+  const r = await q.query("SELECT key, kind, ticker, title, inserted_at FROM fin_alerts WHERE inserted_at > now() - ($1::int * interval '1 hour') ORDER BY inserted_at DESC LIMIT $2", [hours, limit]);
+  return r.rows.map((x) => ({ key: String(x.key), kind: String(x.kind), ticker: String(x.ticker || ''), title: String(x.title), at: new Date(x.inserted_at).toISOString() }));
+}
 /** Record that an alert was raised; false if it was already raised (same key). */
 export async function claimAlert(q: Q, key: string, kind: string, title: string, ticker?: string): Promise<boolean> {
   const r = await q.query('INSERT INTO fin_alerts (key, kind, ticker, title, inserted_at) VALUES ($1,$2,$3,$4, now()) ON CONFLICT (key) DO NOTHING', [key, kind, ticker || null, title]);

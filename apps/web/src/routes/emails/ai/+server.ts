@@ -1,13 +1,11 @@
 import { keyAllowed } from '$lib/server/scope';
 import { json } from '@sveltejs/kit';
-import { database, readState, updateState } from '$lib/server/aados-store';
+import { database, readState } from '$lib/server/aados-store';
 import { AiError, describeError } from '$lib/server/ai/ajmcp';
 import { rateLimited } from '$lib/server/ai/service';
 import { applySuggestion, ask, attachments, classify, draft, findRow, saveAttachment } from '$lib/server/ai/email-service';
 import { deleteDraft, getInsights, listDrafts, markInsightReviewed, saveDraft } from '$lib/server/ai/db';
 import { AI_CATEGORIES, type Tone } from '$lib/server/ai/email-ai';
-import { findDuplicate } from '$lib/server/tasks';
-import { tick } from '$lib/server/reminders';
 
 const TONES: Tone[] = ['reply', 'shorten', 'formal', 'friendly', 'regenerate', 'polish'];
 
@@ -43,18 +41,6 @@ export const POST = async ({ request, locals }) => {
         await applySuggestion(key, 'category', category === 'Informational' ? 'Other' : category); return json({ ok: true });
       }
       case 'reviewed': await applySuggestion(key, 'reviewed'); await markInsightReviewed(db, key); return json({ ok: true });
-      case 'task': {
-        const title = String(b.title || '').trim().slice(0, 200), due = /^\d{4}-\d{2}-\d{2}$/.test(String(b.due || '')) ? String(b.due) : '';
-        if (!title) return json({ error: 'Enter a task.' }, { status: 400 });
-        let duplicate = '';
-        await updateState((s) => {
-          const existing = findDuplicate(s.tasks, { title, due, emailKey: key });
-          if (existing) { duplicate = existing.title; return; }
-          s.tasks.push({ id: crypto.randomUUID(), title, due, done: false, priority: 'normal', createdAt: new Date().toISOString(), emailKey: key });
-          tick(s);
-        });
-        return duplicate ? json({ error: `Already a task: “${duplicate}”.` }, { status: 409 }) : json({ ok: true });
-      }
       case 'attachments': return json({ attachments: await attachments(key) });
       case 'saveAttachment': {
         const r = await saveAttachment(key, String(b.attachmentId || ''), String(b.filename || 'attachment'));

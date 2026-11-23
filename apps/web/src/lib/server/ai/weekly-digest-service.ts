@@ -10,7 +10,8 @@ import { htmlToText } from './email-ai';
 import { AiError, describeError } from './ajmcp';
 import { aiConfigured, chat, tzOf } from './service';
 import { todayIn } from '../../calendar/view';
-import { findDuplicate } from '../tasks';
+import * as asana from '../asana';
+import { duePayload } from '../../asana-model';
 import type { Attention } from '../../attention';
 import {
   DEFAULT_FOCUS, DIGEST_DAYS, KEEP_DAYS, MAX_ATTEMPTS, buildDigest, chunkText, combineParts, digestScore, emptyDigest, needsReview, parseReview,
@@ -245,24 +246,29 @@ export function digestAttention(state: AadOSState): Attention[] {
 }
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
-/** Local only: mark an item done/dismissed (or clear), or turn it into an AadOS task. */
+/** Mark an item done/dismissed (or clear) locally, or turn it into an Asana task (its link is remembered). */
 export async function markDigestItem(pipelineId: string, itemId: string, op: 'done' | 'dismissed' | 'clear' | 'task') {
-  let created = '';
-  await updateState((s) => {
-    const p = s.pipelines.find((x) => x.id === pipelineId);
-    if (!p) throw new Error('View not found.');
-    const d = (s.digests ||= {})[pipelineId] ||= emptyDigest();
-    if (op === 'clear') { delete d.marks[itemId]; return; }
-    if (op !== 'task') { d.marks[itemId] = op; return; }
-    const v = digestView(s, p).digest;
-    const item = [...v.actions, ...v.dates, ...v.updates, ...v.fyi].find((i) => i.id === itemId);
-    if (!item) throw new Error('Item not found.');
-    const title = `${p.name}: ${item.title}`.slice(0, 200);
-    const dup = findDuplicate(s.tasks, { title, due: item.due || '' });
-    if (dup) { d.tasks[itemId] = dup.id; created = dup.id; return; }
-    const id = `digest-${pipelineId}-${itemId}`.slice(0, 80);
-    s.tasks.push({ id, title, due: item.due || '', done: false, createdAt: new Date().toISOString(), notes: [item.detail, ...item.sources.map((x) => `${x.subject} (${x.receivedAt.slice(0, 10)})`)].filter(Boolean).join('\n').slice(0, 2000), tags: ['school'] });
-    d.tasks[itemId] = id; created = id;
-  });
-  return created;
+  if (op !== 'task') {
+    await updateState((s) => {
+      if (!s.pipelines.some((x) => x.id === pipelineId)) throw new Error('View not found.');
+      const d = (s.digests ||= {})[pipelineId] ||= emptyDigest();
+      if (op === 'clear') delete d.marks[itemId]; else d.marks[itemId] = op;
+    });
+    return '';
+  }
+  const s = await readState();
+  const p = s.pipelines.find((x) => x.id === pipelineId);
+  if (!p) throw new Error('View not found.');
+  const prior = s.digests?.[pipelineId]?.tasks[itemId] || '';
+  if (/^https?:/.test(prior)) return prior; // already sent to Asana
+  if (!asana.connectedState(s)) throw new Error('Connect Asana first (Settings → Asana connection).');
+  const v = digestView(s, p).digest;
+  const item = [...v.actions, ...v.dates, ...v.updates, ...v.fyi].find((i) => i.id === itemId);
+  if (!item) throw new Error('Item not found.');
+  const c = await asana.connection();
+  const notes = [item.detail, ...item.sources.map((x) => `${x.subject} (${x.receivedAt.slice(0, 10)})`)].filter(Boolean).join('\n').slice(0, 2000);
+  const task = await asana.createTask(c, { name: `${p.name}: ${item.title}`.slice(0, 200), notes, due: item.due && /^\d{4}-\d{2}-\d{2}$/.test(item.due) ? duePayload(item.due, '', c.timeZone) : undefined });
+  const link = task.permalink || 'https://app.asana.com/';
+  await updateState((st) => { ((st.digests ||= {})[pipelineId] ||= emptyDigest()).tasks[itemId] = link; });
+  return link;
 }

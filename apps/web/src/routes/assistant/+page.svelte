@@ -12,7 +12,7 @@
   let renaming = $state(false);
   let copied = $state(0);
   const messages = $derived([...((data.current?.messages ?? []) as Msg[]), ...pending]);
-  const EXAMPLES = ['Which emails need my attention?', 'What do I need to reply to?', 'What bills are due soon?', 'What are my appointments tomorrow?', 'What tasks are overdue?', "What's happening this weekend?", 'Which subscriptions are renewing?', 'Summarize my week.'];
+  const EXAMPLES = ['Which emails need my attention?', 'What do I need to reply to?', 'What bills are due soon?', 'What are my appointments tomorrow?', "What's happening this weekend?", 'Which subscriptions are renewing?', 'Summarize my week.'];
 
   async function call(payload: Record<string, unknown>) {
     controller = new AbortController();
@@ -52,7 +52,7 @@
   // Plain text with [S1] citations turned into links to the original records. Everything else is escaped.
   const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
   const render = (m: Msg) => esc(m.content).replace(/\[(S\d+)\]/g, (all, id) => { const s = m.sources.find((x) => x.id === id); return s ? `<a class="cite" href="${esc(s.href)}" title="${esc(s.title)}">${id}</a>` : ''; }).replace(/\n/g, '<br>');
-  const icon = (k: string) => ({ email: '✉', event: '▣', task: '☑', reminder: '◔', document: '▤' }[k] || '•');
+  const icon = (k: string) => ({ email: '✉', event: '▣', document: '▤' }[k] || '•');
 </script>
 <svelte:head><title>AI Assistant · AadOS</title></svelte:head>
 <AppShell title="AI Assistant">
@@ -75,7 +75,7 @@
     {#if !data.aiEnabled || !data.aiConfigured}<div class="note">{!data.aiConfigured ? 'AJMCP is not configured yet' : 'AI is turned off'} — answers list the matching AadOS records without AI. <a href="/settings/ai">Settings → AI</a></div>{/if}
     <section class="chat" aria-live="polite">
       {#if messages.length === 0}
-        <div class="intro"><p>Ask about your email, calendar, tasks, reminders and documents. Answers use only your AadOS data and link to the sources.</p>
+        <div class="intro"><p>Ask about your email, calendar and documents. Answers use only your AadOS data and link to the sources.</p>
           <div class="ex">{#each EXAMPLES as e (e)}<button type="button" onclick={() => send(e)}>{e}</button>{/each}</div></div>
       {/if}
       {#each messages as m (m.id)}
@@ -92,7 +92,7 @@
     </section>
     {#if failure}<div class="alert">{failure}{#if data.current}<button class="btn sm" onclick={() => send('', 'retry')}>Retry</button>{/if}</div>{/if}
     <form class="ask" onsubmit={(e) => { e.preventDefault(); send(); }}>
-      <textarea bind:value={question} rows="2" maxlength="2000" placeholder="Ask about your email, calendar, tasks or documents…" aria-label="Question" onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>
+      <textarea bind:value={question} rows="2" maxlength="2000" placeholder="Ask about your email, calendar or documents…" aria-label="Question" onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>
       {#if busy}<button type="button" class="btn" onclick={cancel}>Cancel</button>{:else}<button class="btn primary" disabled={!question.trim()}>Ask</button>{/if}
     </form>
     <p class="privacy">Only the matching records (short excerpts) are sent to your AJMCP gateway, which may use an external AI provider. Instructions inside emails or documents are ignored.</p>

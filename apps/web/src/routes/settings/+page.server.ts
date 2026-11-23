@@ -2,8 +2,6 @@ import { fail, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { updateState } from '$lib/server/aados-store';
 import { validZone } from '$lib/calendar/model';
-import { isTime } from '$lib/server/tasks';
-import { tick } from '$lib/server/reminders';
 import { createSession, ownerPasswordHash, SESSION_COOKIE, sessionCookieOptions, setOwnerPasswordHash } from '$lib/server/auth';
 import { hashPassword, verifyPassword } from '$lib/server/password.js';
 import { rateLimited } from '$lib/server/ai/service';
@@ -49,13 +47,8 @@ export const actions: Actions = {
   prefs: async ({ request }) => {
     const f = await request.formData();
     const timeZone = String(f.get('timeZone') || '').trim();
-    const lead = String(f.get('eventLead') || '');
-    const taskTime = String(f.get('taskReminderTime') || '');
     if (!validZone(timeZone)) return fail(400, { error: 'Unknown time zone (use an IANA name such as America/New_York).' });
-    if (taskTime && !isTime(taskTime)) return fail(400, { error: 'Invalid task reminder time.' });
-    const minutes = lead === 'off' ? null : Number(lead);
-    if (minutes !== null && !(Number.isInteger(minutes) && minutes >= 0 && minutes <= 7 * 24 * 60)) return fail(400, { error: 'Invalid event lead time.' });
-    await updateState((s) => { s.prefs = { ...s.prefs, timeZone, eventLeadMinutes: minutes, taskReminderTime: taskTime, weekStart: f.get('weekStart') === '1' ? 1 : 0 }; tick(s); });
+    await updateState((s) => { s.prefs = { ...s.prefs, timeZone, weekStart: f.get('weekStart') === '1' ? 1 : 0 }; });
     return { saved: true };
   }
 };

@@ -70,7 +70,7 @@ export const canSeeAccount = (user: SessionUser | null | undefined, accountId: s
 export const can = (user: SessionUser | null | undefined, p: Permission) => Boolean(user && (user.owner || user.permissions.includes(p)));
 
 // Section of the app each path belongs to. Paths not listed are owner-only (Settings, OAuth, …).
-const SECTIONS: [string, Permission][] = [['/api/mobile/emails', 'emails'], ['/emails', 'emails'], ['/search', 'emails'], ['/pipelines', 'emails'], ['/sync', 'emails'], ['/messages', 'messages'], ['/contacts', 'contacts'], ['/calendar', 'calendar'], ['/room', 'calendar'], ['/tasks', 'tasks'], ['/reminders', 'reminders'], ['/asana', 'asana'], ['/finance', 'finance'], ['/documents', 'documents'], ['/assistant', 'assistant'], ['/briefing', 'assistant']];
+const SECTIONS: [string, Permission][] = [['/api/mobile/emails', 'emails'], ['/emails', 'emails'], ['/search', 'emails'], ['/pipelines', 'emails'], ['/sync', 'emails'], ['/messages', 'messages'], ['/contacts', 'contacts'], ['/calendar', 'calendar'], ['/room', 'calendar'], ['/asana', 'asana'], ['/finance', 'finance'], ['/documents', 'documents'], ['/assistant', 'assistant'], ['/briefing', 'assistant']];
 const OPEN = new Set(['/', '/logout', '/health', '/login', '/settings/timezone', '/api/mobile/me']);
 export function allowedPath(user: SessionUser, pathname: string): boolean {
   if (user.owner || OPEN.has(pathname) || pathname.startsWith('/_app/')) return true;

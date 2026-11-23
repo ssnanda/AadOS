@@ -74,7 +74,7 @@ export type PipelineItem = {
 // Shared OAuth app credentials per provider; one OAuth client serves many accounts.
 type ZohoState = { clientId: string; clientSecret: string; dataCenter: string; oauthState: string; oauthStateExpiresAt: number; pending?: PendingFlows };
 type GmailState = { clientId: string; clientSecret: string; oauthState: string; oauthStateExpiresAt: number; pkceVerifier?: string; pending?: PendingFlows };
-/** Local to-do / reminder. `emailKey` links it to a source message (accountId:messageId). */
+/** Retired local to-do (tasks now live in Asana). Type kept so stored records round-trip untouched. */
 export type Task = {
   id: string; title: string; due: string; done: boolean; createdAt: string; emailKey?: string; priority?: 'high' | 'normal' | 'low'; completedAt?: string;
   notes?: string; /** HH:MM, local to prefs.timeZone */ dueTime?: string; tags?: string[]; /** Linked calendar occurrence: `${eventId}|${occurrenceStart}` */ eventKey?: string;
@@ -157,9 +157,10 @@ export { validOAuthState } from './oauth-state.ts';
 import { mergeSync } from './sync-merge.ts';
 import type { PendingFlows } from './oauth-state.ts';
 import type { CalEvent, CalendarInfo } from '../calendar/model.ts';
-import type { Reminder } from './reminders.ts';
+/** Retired feature (local reminders): records are kept as stored so existing state round-trips untouched. */
+type Reminder = Record<string, unknown>;
 /** AI is OFF until the owner enables it; nothing is sent to AJMCP before that. */
-export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; tasks: boolean; documents: boolean; /** Finance facts — off until explicitly enabled */ finance: boolean }; emailBodies: boolean };
+export type AiPrefs = { enabled: boolean; background: boolean; share: { email: boolean; calendar: boolean; documents: boolean; /** Finance facts — off until explicitly enabled */ finance: boolean }; emailBodies: boolean };
 export type AiStatus = { lastOk: string; lastError: string; lastErrorAt: string; provider: string; model: string; gatewayVersion: string; checkedAt: string };
 /** Integration settings edited in Settings. Stored with the other secrets (encrypted credential vault in PostgreSQL). */
 export type Integrations = { ajmcp: { url: string; token: string }; asana: { token: string; workspaceGid: string; workspaceName: string; userName: string }; bluebubbles: { url: string; password: string; hookSecret: string }; etrade: EtradeConfig; plaid: PlaidConfig; s3: { endpoint: string; bucket: string; region: string; accessKey: string; secretKey: string; forcePathStyle: boolean; prefix: string } };
@@ -171,7 +172,7 @@ export type PlaidItem = { id: string; itemId: string; accessToken: string; insti
 export type PlaidConfig = { env: 'sandbox' | 'production'; clientId: string; secret: string; redirectUri: string; items: PlaidItem[] };
 export const defaultPlaid = (): PlaidConfig => ({ env: 'sandbox', clientId: '', secret: '', redirectUri: '', items: [] });
 export const defaultIntegrations = (): Integrations => ({ ajmcp: { url: '', token: '' }, asana: { token: '', workspaceGid: '', workspaceName: '', userName: '' }, bluebubbles: { url: '', password: '', hookSecret: '' }, etrade: defaultEtrade(), plaid: defaultPlaid(), s3: { endpoint: '', bucket: '', region: '', accessKey: '', secretKey: '', forcePathStyle: true, prefix: '' } });
-export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, tasks: true, documents: true, finance: false }, emailBodies: false });
+export const defaultAiPrefs = (): AiPrefs => ({ enabled: false, background: false, share: { email: true, calendar: true, documents: true, finance: false }, emailBodies: false });
 export const defaultAiStatus = (): AiStatus => ({ lastOk: '', lastError: '', lastErrorAt: '', provider: '', model: '', gatewayVersion: '', checkedAt: '' });
 export const defaultPrefs = (): Prefs => ({ timeZone: '', eventLeadMinutes: 15, taskReminderTime: '09:00', weekStart: 0 });
 
