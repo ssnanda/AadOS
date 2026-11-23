@@ -163,3 +163,6 @@ Keep scope small: deliver useful inbox access before extending to household task
 92. [ ] Owner: build + run the Flutter app on iPhone and Android; report issues
 93. [x] `bin/build-ipa.sh` builds the Flutter iOS app and packages its unsigned Runner.app for AltStore — awaiting owner verification
 94. [ ] Native next: shared mailboxes, Email → Asana, attachments, then Calendar/Tasks
+95. [x] Mobile Mail: hide accounts and folders with zero unread messages — awaiting owner verification
+96. [x] Mobile Mail: remove the top smart-view chips until replacement navigation is specified — awaiting owner verification
+97. [x] Mobile Mail: detect event-like email details and add an editable event to Apple Calendar through EventKit — awaiting owner verification

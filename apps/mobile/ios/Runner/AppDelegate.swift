@@ -1,3 +1,4 @@
+import EventKit
 import Flutter
 import UIKit
 
@@ -12,5 +13,58 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSAppleCalendar")
+    let channel = FlutterMethodChannel(name: "com.aadnanda.aados/apple_calendar", binaryMessenger: registrar.messenger())
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "createEvent", let values = call.arguments as? [String: Any] else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.createCalendarEvent(values, result: result)
+    }
+  }
+
+  private func createCalendarEvent(_ values: [String: Any], result: @escaping FlutterResult) {
+    let store = EKEventStore()
+    let save: () -> Void = {
+      guard let calendar = store.defaultCalendarForNewEvents else {
+        result(FlutterError(code: "no_calendar", message: "Apple Calendar has no writable default calendar.", details: nil))
+        return
+      }
+      guard
+        let title = values["title"] as? String,
+        let startMs = values["start"] as? NSNumber,
+        let endMs = values["end"] as? NSNumber
+      else {
+        result(FlutterError(code: "invalid_event", message: "The event title or dates are missing.", details: nil))
+        return
+      }
+      let event = EKEvent(eventStore: store)
+      event.calendar = calendar
+      event.title = title
+      event.startDate = Date(timeIntervalSince1970: startMs.doubleValue / 1000)
+      event.endDate = Date(timeIntervalSince1970: endMs.doubleValue / 1000)
+      event.isAllDay = values["allDay"] as? Bool ?? false
+      event.location = values["location"] as? String
+      event.notes = values["notes"] as? String
+      do {
+        try store.save(event, span: .thisEvent, commit: true)
+        result(true)
+      } catch {
+        result(FlutterError(code: "save_failed", message: error.localizedDescription, details: nil))
+      }
+    }
+
+    let denied: (Bool, Error?) -> Void = { granted, error in
+      DispatchQueue.main.async {
+        if granted { save() }
+        else { result(FlutterError(code: "calendar_denied", message: error?.localizedDescription ?? "Apple Calendar access was not granted.", details: nil)) }
+      }
+    }
+    if #available(iOS 17.0, *) {
+      store.requestFullAccessToEvents(completion: denied)
+    } else {
+      store.requestAccess(to: .event, completion: denied)
+    }
   }
 }

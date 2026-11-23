@@ -36,8 +36,8 @@ The list and mark logic moved from `routes/emails/+page.server.ts` into `lib/ser
 
 | Web | App |
 | --- | --- |
-| Unread / Recent / Needs attention / People / Bills / Bulk / All tabs with counts | Chips under the title (empty smart views hidden) |
-| Account pills, unread folders, saved views, categories | Drawer: All inboxes, each account + folders with unread, Views, Categories |
+| Unread / Recent / Needs attention / People / Bills / Bulk / All tabs with counts | The temporary top view chips are removed; Mail opens directly to unread messages |
+| Account pills, unread folders, saved views, categories | Drawer: All inboxes, only accounts and folders with unread mail, Views, Categories |
 | Search all accounts | Search in the app bar |
 | Auto sync on open, folder change, every 2 min while visible | Same; also on return to the app; pull to refresh = forced check |
 | Pager | Infinite scroll |
@@ -52,6 +52,7 @@ The list and mark logic moved from `routes/emails/+page.server.ts` into `lib/ser
 | Details, unsubscribe | ⋯ → Details & unsubscribe |
 | ★ Important, Follow-up, Needs action / Reviewed | Star in the app bar; ⋯ menu |
 | AI insight tag, Summarize, Follow-up suggestion | Insight card in the reader; ⋯ → Summarize / Suggest follow-up |
+| Event details in an email | Detect event-like mail, review/edit the details, and add it to Apple Calendar |
 
 Email HTML renders with JavaScript off and a CSP that only allows inline styles, `data:` fonts and https/`data:` images; links open in the browser.
 

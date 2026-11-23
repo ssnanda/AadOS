@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,6 +8,7 @@ import '../core/api.dart';
 import '../core/format.dart';
 import '../core/scope.dart';
 import '../core/theme.dart';
+import 'apple_calendar.dart';
 import 'body_view.dart';
 import 'compose_screen.dart';
 import 'inbox_controller.dart';
@@ -18,7 +20,12 @@ import 'widgets.dart';
 /// Full-screen reader. Swipe left/right between emails of the list it was opened from (the web's ↑/↓).
 /// Delete and "Keep unread" move on to the next email, like the web preview; their "& close" variants are in ⋯.
 class ReaderScreen extends StatefulWidget {
-  const ReaderScreen({super.key, required this.inbox, required this.rows, required this.initialIndex});
+  const ReaderScreen({
+    super.key,
+    required this.inbox,
+    required this.rows,
+    required this.initialIndex,
+  });
   final InboxController inbox;
   final List<EmailRow> rows;
   final int initialIndex;
@@ -69,13 +76,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (i + 1 < _rows.length) _peek(_rows[i + 1]);
   }
 
-  Future<MessageBody> _peek(EmailRow r) => _bodies[r.key] ??= _mail.body(r, prefetch: true);
+  Future<MessageBody> _peek(EmailRow r) =>
+      _bodies[r.key] ??= _mail.body(r, prefetch: true);
 
   Future<MessageDetails> _detailsOf(EmailRow r) {
     final f = _details[r.key] ??= _mail.details(r.key);
-    f.then((_) {}, onError: (Object _) {
-      _details.remove(r.key); // retry next time after a failure
-    });
+    f.then(
+      (_) {},
+      onError: (Object _) {
+        _details.remove(r.key); // retry next time after a failure
+      },
+    );
     return f;
   }
 
@@ -133,7 +144,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Future<T?> _busy<T>(Future<T> work) async {
-    showDialog<void>(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
     try {
       return await work;
     } on ApiException catch (e) {
@@ -144,14 +159,31 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  Future<void> _compose(String mode, {bool ai = false, bool residential = false}) async {
+  Future<void> _compose(
+    String mode, {
+    bool ai = false,
+    bool residential = false,
+  }) async {
     final row = _row;
-    final draft = await _busy(residential ? _mail.prepareResidential(row.key) : _mail.prepare(row.key, mode));
+    final draft = await _busy(
+      residential
+          ? _mail.prepareResidential(row.key)
+          : _mail.prepare(row.key, mode),
+    );
     if (draft == null || !mounted) return;
-    final sent = await Navigator.of(context).push<String>(MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => ComposeScreen(mail: _mail, emailKey: row.key, draft: draft, aiReady: _data?.aiReady ?? false, aiBlocked: _data?.aiBlocked ?? '', startWithAi: ai),
-    ));
+    final sent = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ComposeScreen(
+          mail: _mail,
+          emailKey: row.key,
+          draft: draft,
+          aiReady: _data?.aiReady ?? false,
+          aiBlocked: _data?.aiBlocked ?? '',
+          startWithAi: ai,
+        ),
+      ),
+    );
     if (sent != null && mounted) toast(context, sent);
   }
 
@@ -163,30 +195,57 @@ class _ReaderScreenState extends State<ReaderScreen> {
       context: context,
       showDragHandle: true,
       builder: (c) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(leading: const Icon(Icons.reply), title: const Text('Reply'), onTap: () => Navigator.pop(c, 'reply')),
-          ListTile(leading: const Icon(Icons.reply_all), title: const Text('Reply all'), onTap: () => Navigator.pop(c, 'replyAll')),
-          ListTile(leading: const Icon(Icons.forward), title: const Text('Forward'), onTap: () => Navigator.pop(c, 'forward')),
-          ListTile(
-            leading: Icon(Icons.auto_awesome, color: aiReady ? AppColors.ai : null),
-            title: const Text('Reply using AI'),
-            subtitle: aiReady ? null : Text(aiBlocked.isEmpty ? 'AI is not available' : aiBlocked),
-            enabled: aiReady,
-            onTap: () => Navigator.pop(c, 'ai'),
-          ),
-          ListTile(
-            leading: Icon(Icons.auto_awesome_outlined, color: aiReady ? AppColors.ai : null),
-            title: const Text('Reply all using AI'),
-            enabled: aiReady,
-            onTap: () => Navigator.pop(c, 'aiAll'),
-          ),
-          FutureBuilder<MessageDetails>(
-            future: details,
-            builder: (_, s) => s.data?.residential == true
-                ? ListTile(leading: const Icon(Icons.home_work_outlined), title: const Text('Reply with Residential Template'), onTap: () => Navigator.pop(c, 'residential'))
-                : const SizedBox.shrink(),
-          ),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('Reply'),
+              onTap: () => Navigator.pop(c, 'reply'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.reply_all),
+              title: const Text('Reply all'),
+              onTap: () => Navigator.pop(c, 'replyAll'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.forward),
+              title: const Text('Forward'),
+              onTap: () => Navigator.pop(c, 'forward'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.auto_awesome,
+                color: aiReady ? AppColors.ai : null,
+              ),
+              title: const Text('Reply using AI'),
+              subtitle: aiReady
+                  ? null
+                  : Text(aiBlocked.isEmpty ? 'AI is not available' : aiBlocked),
+              enabled: aiReady,
+              onTap: () => Navigator.pop(c, 'ai'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.auto_awesome_outlined,
+                color: aiReady ? AppColors.ai : null,
+              ),
+              title: const Text('Reply all using AI'),
+              enabled: aiReady,
+              onTap: () => Navigator.pop(c, 'aiAll'),
+            ),
+            FutureBuilder<MessageDetails>(
+              future: details,
+              builder: (_, s) => s.data?.residential == true
+                  ? ListTile(
+                      leading: const Icon(Icons.home_work_outlined),
+                      title: const Text('Reply with Residential Template'),
+                      onTap: () => Navigator.pop(c, 'residential'),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
       ),
     );
     switch (choice) {
@@ -211,25 +270,54 @@ class _ReaderScreenState extends State<ReaderScreen> {
       builder: (c) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            for (final (k, v) in [('From', d.from), ('To', d.to), ('Cc', d.cc), ('Account', d.account), ('Date', longTime(row.receivedAt))])
-              if (v.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    SizedBox(width: 70, child: Text(k, style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant))),
-                    Expanded(child: SelectableText(v)),
-                  ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final (k, v) in [
+                ('From', d.from),
+                ('To', d.to),
+                ('Cc', d.cc),
+                ('Account', d.account),
+                ('Date', longTime(row.receivedAt)),
+              ])
+                if (v.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 70,
+                          child: Text(
+                            k,
+                            style: TextStyle(
+                              color: Theme.of(c).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        Expanded(child: SelectableText(v)),
+                      ],
+                    ),
+                  ),
+              if (d.unsubscribeUrl.isNotEmpty ||
+                  d.unsubscribeMailto.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.unsubscribe_outlined),
+                  label: const Text('Unsubscribe'),
+                  onPressed: () => launchUrl(
+                    Uri.parse(
+                      d.unsubscribeUrl.isNotEmpty
+                          ? d.unsubscribeUrl
+                          : d.unsubscribeMailto,
+                    ),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
-            if (d.unsubscribeUrl.isNotEmpty || d.unsubscribeMailto.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.unsubscribe_outlined),
-                label: const Text('Unsubscribe'),
-                onPressed: () => launchUrl(Uri.parse(d.unsubscribeUrl.isNotEmpty ? d.unsubscribeUrl : d.unsubscribeMailto), mode: LaunchMode.externalApplication),
-              ),
+              ],
             ],
-          ]),
+          ),
         ),
       ),
     );
@@ -242,16 +330,35 @@ class _ReaderScreenState extends State<ReaderScreen> {
       context: context,
       builder: (c) => AlertDialog(
         title: Text(title),
-        content: SingleChildScrollView(child: SelectableText(text.isEmpty ? 'No answer.' : text)),
-        actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close'))],
+        content: SingleChildScrollView(
+          child: SelectableText(text.isEmpty ? 'No answer.' : text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _related() async {
-    final opened = await showRelatedSheet(context, inbox: widget.inbox, row: _row);
+    final opened = await showRelatedSheet(
+      context,
+      inbox: widget.inbox,
+      row: _row,
+    );
     if (opened == null || !mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ReaderScreen(inbox: widget.inbox, rows: opened.$1, initialIndex: opened.$2)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          inbox: widget.inbox,
+          rows: opened.$1,
+          initialIndex: opened.$2,
+        ),
+      ),
+    );
   }
 
   void _menu(String v) {
@@ -264,7 +371,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
       case 'follow':
         _run(() => widget.inbox.setFollowUp([row.key], !row.followUp));
       case 'reviewed':
-        _run(() => widget.inbox.review(row.needsAction ? 'reviewed' : 'clear-action', [row.key]));
+        _run(
+          () => widget.inbox.review(
+            row.needsAction ? 'reviewed' : 'clear-action',
+            [row.key],
+          ),
+        );
       case 'actionable':
         _run(() => widget.inbox.review('actionable', [row.key]));
       case 'find':
@@ -289,41 +401,128 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 controller: _find,
                 autofocus: true,
                 textInputAction: TextInputAction.search,
-                decoration: const InputDecoration(hintText: 'Find in email', border: InputBorder.none),
+                decoration: const InputDecoration(
+                  hintText: 'Find in email',
+                  border: InputBorder.none,
+                ),
                 onSubmitted: (v) => setState(() => _term = v),
                 onChanged: (v) {
-                  if (v.trim().length >= 2 || v.isEmpty) setState(() => _term = v);
+                  if (v.trim().length >= 2 || v.isEmpty)
+                    setState(() => _term = v);
                 },
               )
-            : Text('${_index + 1} of ${_rows.length}', style: const TextStyle(fontSize: 15)),
+            : Text(
+                '${_index + 1} of ${_rows.length}',
+                style: const TextStyle(fontSize: 15),
+              ),
         actions: [
           if (_finding)
-            IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() { _finding = false; _term = ''; _find.clear(); }))
-          else ...[
-            IconButton(icon: const Icon(Icons.keyboard_arrow_up), tooltip: 'Previous', onPressed: _index > 0 ? () => _goTo(_index - 1) : null),
-            IconButton(icon: const Icon(Icons.keyboard_arrow_down), tooltip: 'Next', onPressed: _index + 1 < _rows.length ? () => _goTo(_index + 1) : null),
             IconButton(
-              icon: Icon(row.important ? Icons.star_rounded : Icons.star_outline_rounded, color: row.important ? AppColors.star : null),
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() {
+                _finding = false;
+                _term = '';
+                _find.clear();
+              }),
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.keyboard_arrow_up),
+              tooltip: 'Previous',
+              onPressed: _index > 0 ? () => _goTo(_index - 1) : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.keyboard_arrow_down),
+              tooltip: 'Next',
+              onPressed: _index + 1 < _rows.length
+                  ? () => _goTo(_index + 1)
+                  : null,
+            ),
+            IconButton(
+              icon: Icon(
+                row.important ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: row.important ? AppColors.star : null,
+              ),
               tooltip: row.important ? 'Not important' : 'Important',
-              onPressed: () => _run(() => widget.inbox.setImportant([row.key], !row.important)),
+              onPressed: () => _run(
+                () => widget.inbox.setImportant([row.key], !row.important),
+              ),
             ),
             PopupMenuButton<String>(
               onSelected: _menu,
               itemBuilder: (_) => [
-                const PopupMenuItem(value: 'delete-close', child: ListTile(leading: Icon(Icons.delete_outline), title: Text('Delete & close'))),
-                const PopupMenuItem(value: 'unread-close', child: ListTile(leading: Icon(Icons.mark_email_unread_outlined), title: Text('Unread & close'))),
+                const PopupMenuItem(
+                  value: 'delete-close',
+                  child: ListTile(
+                    leading: Icon(Icons.delete_outline),
+                    title: Text('Delete & close'),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'unread-close',
+                  child: ListTile(
+                    leading: Icon(Icons.mark_email_unread_outlined),
+                    title: Text('Unread & close'),
+                  ),
+                ),
                 const PopupMenuDivider(),
-                PopupMenuItem(value: 'follow', child: ListTile(leading: const Icon(Icons.flag_outlined), title: Text(row.followUp ? 'Remove follow-up' : 'Follow-up'))),
+                PopupMenuItem(
+                  value: 'follow',
+                  child: ListTile(
+                    leading: const Icon(Icons.flag_outlined),
+                    title: Text(
+                      row.followUp ? 'Remove follow-up' : 'Follow-up',
+                    ),
+                  ),
+                ),
                 if (row.action != null)
-                  PopupMenuItem(value: 'reviewed', child: ListTile(leading: const Icon(Icons.check_circle_outline), title: Text(row.needsAction ? 'Mark reviewed' : 'Reset action')))
+                  PopupMenuItem(
+                    value: 'reviewed',
+                    child: ListTile(
+                      leading: const Icon(Icons.check_circle_outline),
+                      title: Text(
+                        row.needsAction ? 'Mark reviewed' : 'Reset action',
+                      ),
+                    ),
+                  )
                 else
-                  const PopupMenuItem(value: 'actionable', child: ListTile(leading: Icon(Icons.outlined_flag), title: Text('Needs action'))),
-                const PopupMenuItem(value: 'find', child: ListTile(leading: Icon(Icons.search), title: Text('Find in email'))),
-                const PopupMenuItem(value: 'details', child: ListTile(leading: Icon(Icons.info_outline), title: Text('Details & unsubscribe'))),
+                  const PopupMenuItem(
+                    value: 'actionable',
+                    child: ListTile(
+                      leading: Icon(Icons.outlined_flag),
+                      title: Text('Needs action'),
+                    ),
+                  ),
+                const PopupMenuItem(
+                  value: 'find',
+                  child: ListTile(
+                    leading: Icon(Icons.search),
+                    title: Text('Find in email'),
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'details',
+                  child: ListTile(
+                    leading: Icon(Icons.info_outline),
+                    title: Text('Details & unsubscribe'),
+                  ),
+                ),
                 if (aiReady) ...[
                   const PopupMenuDivider(),
-                  const PopupMenuItem(value: 'summarize', child: ListTile(leading: Icon(Icons.auto_awesome, color: AppColors.ai), title: Text('Summarize'))),
-                  const PopupMenuItem(value: 'followup-ai', child: ListTile(leading: Icon(Icons.auto_awesome, color: AppColors.ai), title: Text('Suggest follow-up'))),
+                  const PopupMenuItem(
+                    value: 'summarize',
+                    child: ListTile(
+                      leading: Icon(Icons.auto_awesome, color: AppColors.ai),
+                      title: Text('Summarize'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'followup-ai',
+                    child: ListTile(
+                      leading: Icon(Icons.auto_awesome, color: AppColors.ai),
+                      title: Text('Suggest follow-up'),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -342,6 +541,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             body: _peek(r),
             insight: _data?.insights[r.key],
             find: i == _index ? _term : '',
+            onCreateEvent: (draft) => AppleCalendar.create(context, draft),
           );
         },
       ),
@@ -349,12 +549,28 @@ class _ReaderScreenState extends State<ReaderScreen> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _BarButton(icon: Icons.delete_outline, label: 'Delete', color: AppColors.danger, onTap: _delete),
-            _BarButton(icon: Icons.mark_email_unread_outlined, label: 'Unread', onTap: _keepUnread),
-            _BarButton(icon: Icons.reply, label: 'Reply', onTap: _replySheet),
-            _BarButton(icon: Icons.person_search_outlined, label: 'Sender', onTap: _related),
-          ]),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _BarButton(
+                icon: Icons.delete_outline,
+                label: 'Delete',
+                color: AppColors.danger,
+                onTap: _delete,
+              ),
+              _BarButton(
+                icon: Icons.mark_email_unread_outlined,
+                label: 'Unread',
+                onTap: _keepUnread,
+              ),
+              _BarButton(icon: Icons.reply, label: 'Reply', onTap: _replySheet),
+              _BarButton(
+                icon: Icons.person_search_outlined,
+                label: 'Sender',
+                onTap: _related,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -362,7 +578,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
 }
 
 class _BarButton extends StatelessWidget {
-  const _BarButton({required this.icon, required this.label, required this.onTap, this.color});
+  const _BarButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color,
+  });
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -377,7 +598,21 @@ class _BarButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, color: c), const SizedBox(height: 2), Text(label, style: TextStyle(fontSize: 11, color: c, fontWeight: FontWeight.w600))]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: c),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: c,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -385,74 +620,177 @@ class _BarButton extends StatelessWidget {
 }
 
 class _EmailPage extends StatelessWidget {
-  const _EmailPage({super.key, required this.row, required this.body, this.insight, this.find = ''});
+  const _EmailPage({
+    super.key,
+    required this.row,
+    required this.body,
+    required this.onCreateEvent,
+    this.insight,
+    this.find = '',
+  });
   final EmailRow row;
   final Future<MessageBody> body;
   final Insight? insight;
   final String find;
+  final ValueChanged<CalendarEventDraft> onCreateEvent;
 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context), cs = t.colorScheme;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(row.subject.isEmpty ? '(no subject)' : row.subject, maxLines: 3, overflow: TextOverflow.ellipsis, style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700, height: 1.2)),
-          const SizedBox(height: 10),
-          Row(children: [
-            SenderAvatar(sender: row.sender, provider: row.provider, size: 36),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(displayName(row.sender), maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-                Text([emailAddress(row.sender) ?? '', shortTime(row.receivedAt)].where((s) => s.isNotEmpty).join(' · '),
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-              ]),
-            ),
-            Tag(row.accountEmail.split('@').first, color: AppColors.provider(row.provider)),
-          ]),
-          if (insight != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: AppColors.ai.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-              child: Text('✦ ${insight!.category}${insight!.paymentDue != null ? ' · due ${insight!.paymentDue}' : ''}\n${insight!.summary}',
-                  style: t.textTheme.bodySmall?.copyWith(color: cs.onSurface, height: 1.35)),
-            ),
-          ],
-          if (row.needsAction || row.followUp) ...[
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, children: [
-              if (row.needsAction) Tag(row.due.isNotEmpty ? '${row.actionLabel} · ${row.due}' : row.actionLabel, color: AppColors.action),
-              if (row.followUp) const Tag('Follow-up', color: AppColors.follow),
-            ]),
-          ],
-        ]),
-      ),
-      const Divider(height: 1),
-      Expanded(
-        child: FutureBuilder<MessageBody>(
-          future: body,
-          builder: (context, s) {
-            if (s.hasError) {
-              return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(s.error.toString(), textAlign: TextAlign.center)));
-            }
-            if (!s.hasData) return const Center(child: CircularProgressIndicator());
-            return Column(children: [
-              if (find.trim().length >= 2)
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                row.subject.isEmpty ? '(no subject)' : row.subject,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: t.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  SenderAvatar(
+                    sender: row.sender,
+                    provider: row.provider,
+                    size: 36,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName(row.sender),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          [
+                            emailAddress(row.sender) ?? '',
+                            shortTime(row.receivedAt),
+                          ].where((s) => s.isNotEmpty).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Tag(
+                    row.accountEmail.split('@').first,
+                    color: AppColors.provider(row.provider),
+                  ),
+                ],
+              ),
+              if (insight != null) ...[
+                const SizedBox(height: 10),
                 Container(
                   width: double.infinity,
-                  color: const Color(0xFFFFF4C2),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Text('${EmailBodyView.matches(s.data!, find)} match(es) highlighted', style: const TextStyle(color: Colors.black87, fontSize: 12)),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.ai.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '✦ ${insight!.category}${insight!.paymentDue != null ? ' · due ${insight!.paymentDue}' : ''}\n${insight!.summary}',
+                    style: t.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurface,
+                      height: 1.35,
+                    ),
+                  ),
                 ),
-              Expanded(child: EmailBodyView(body: s.data!, find: find)),
-            ]);
-          },
+              ],
+              if (row.needsAction || row.followUp) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    if (row.needsAction)
+                      Tag(
+                        row.due.isNotEmpty
+                            ? '${row.actionLabel} · ${row.due}'
+                            : row.actionLabel,
+                        color: AppColors.action,
+                      ),
+                    if (row.followUp)
+                      const Tag('Follow-up', color: AppColors.follow),
+                  ],
+                ),
+              ],
+            ],
+          ),
         ),
-      ),
-    ]);
+        const Divider(height: 1),
+        Expanded(
+          child: FutureBuilder<MessageBody>(
+            future: body,
+            builder: (context, s) {
+              if (s.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      s.error.toString(),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }
+              if (!s.hasData)
+                return const Center(child: CircularProgressIndicator());
+            final event = Platform.isIOS ? CalendarEventDraft.fromEmail(row, s.data!) : null;
+              return Column(
+                children: [
+                  if (event != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.event_available_outlined),
+                          label: const Text('Add event to Apple Calendar'),
+                          onPressed: () => onCreateEvent(event),
+                        ),
+                      ),
+                    ),
+                  if (find.trim().length >= 2)
+                    Container(
+                      width: double.infinity,
+                      color: const Color(0xFFFFF4C2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        '${EmailBodyView.matches(s.data!, find)} match(es) highlighted',
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: EmailBodyView(body: s.data!, find: find),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }
