@@ -1,35 +1,38 @@
 # AadOS iOS
 
-The native project is `ios/AadOS.xcodeproj`. The first release is a SwiftUI shell around the authenticated AadOS web workspace, so provider credentials and the internal API service token remain server-side.
+The released iOS app is the Flutter project in `apps/mobile`. It provides native authentication and email workflows and uses bundle identifier `com.aadnanda.aados`, replacing the retired SwiftUI web-shell install.
 
-## First Xcode setup
+## Owner verification
 
-1. Open `ios/AadOS.xcodeproj` in Xcode.
-2. Select the AadOS target, then **Signing & Capabilities**.
-3. Select the owner's Apple Developer team.
-4. Confirm or replace the bundle identifier `com.aadnanda.aados` if it is unavailable.
-5. Choose an iPhone simulator or connected iPhone and run the app.
-6. Sign in to AadOS. The default server is `https://os.aadnanda.com`; change it from the app's gear button if needed.
+Prepare dependencies and verify the app before publishing:
 
-The web session is stored in WebKit's persistent website data store. The app permits plain HTTP only for `localhost`/`127.0.0.1` development; normal servers must use HTTPS.
+```sh
+cd /Users/sandip/Projects/aados/apps/mobile
+flutter pub get
+flutter analyze
+flutter test
+flutter run
+```
+
+The first Flutter run generates `ios/Flutter/ephemeral`, including `FlutterGeneratedPluginSwiftPackage`. These files are build inputs and remain gitignored.
 
 ## IPA
 
-After the project runs successfully:
+After the Flutter app runs successfully on the simulator or a connected iPhone:
 
 ```sh
 cd /Users/sandip/Projects/aados
-./bin/build-ipa.sh
-```
-
-The shared `AadOS` scheme and project are auto-detected. Matching the established `ajopsios` workflow, the default command runs `bin/bump.sh --if-dirty` first, builds the unsigned release iPhoneOS `.app`, packages `Payload/AadOS.app` as `build/ios/ipa/aados.ipa`, updates and pushes the root `altstore.json`, and uploads only `aados.ipa` to the rolling GitHub release `ios-latest`. The Git commit count supplies an increasing iOS build number; set `IOS_BUILD_NUMBER` to override it.
-
-For a local-only build:
-
-```sh
 ./bin/build-ipa.sh --local
 ```
 
-The default GitHub repository is `ssnanda/AadOS`; override it with `--repo OWNER/REPO`. GitHub publishing requires an authenticated `gh` CLI session.
+The script builds `apps/mobile` with `flutter build ios --release --no-codesign`, using the root `VERSION` and Git commit count. It validates the generated bundle and executable, then packages `Runner.app` as `Payload/AadOS.app` in `build/ios/ipa/aados.ipa`.
 
-Install the unsigned IPA through AltStore or another signer. App Store/TestFlight delivery remains a separate future workflow and will require Apple Distribution signing; the export-option plists are retained for that purpose.
+Only after the local build and installed app are verified, publish with:
+
+```sh
+./bin/build-ipa.sh
+```
+
+The publishing path updates and pushes `altstore.json`, moves the `ios-latest` tag, and replaces the rolling GitHub release. Set `IOS_BUILD_NUMBER` to override the Git-derived build number. The default repository is `ssnanda/AadOS`; override it with `--repo OWNER/REPO`.
+
+Install the unsigned IPA through AltStore or another signer. App Store or TestFlight delivery requires a separate signed archive workflow.

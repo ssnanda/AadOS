@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unsigned native iOS IPA for AltStore-style installation, matching ajopsios.
+# Unsigned Flutter iOS IPA for AltStore-style installation, matching ajopsios.
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 github_repo="${AADOS_GITHUB_REPO:-ssnanda/AadOS}"
@@ -10,8 +10,8 @@ usage() {
   cat <<'USAGE'
 Usage: ./bin/build-ipa.sh [--local] [--repo OWNER/REPO]
 
-Builds an unsigned AadOS IPA, commits/pushes the root altstore.json source, and
-uploads only the IPA to the rolling GitHub release ios-latest.
+Builds the native Flutter AadOS app as an unsigned IPA, commits/pushes the root
+altstore.json source, and uploads only the IPA to the rolling GitHub release.
 
   --local             Build and update altstore.json without touching GitHub
   --repo OWNER/REPO   Override the GitHub repository
@@ -55,91 +55,18 @@ if [[ "$(uname -s)" != Darwin ]]; then
   echo 'ERROR: iOS IPA creation requires macOS/Xcode. Configure AADOS_IOS_WORKFLOW and gh on this host, or run on a macOS runner.' >&2
   exit 1
 fi
-command -v xcodebuild >/dev/null || { echo 'ERROR: Xcode is not installed/configured.' >&2; exit 1; }
-xcodebuild -version
-if [[ -n "${IOS_WORKSPACE:-}" && -d "$IOS_WORKSPACE" ]]; then
-  target=(-workspace "$IOS_WORKSPACE")
-elif [[ -n "${IOS_PROJECT:-}" && -d "$IOS_PROJECT" ]]; then
-  target=(-project "$IOS_PROJECT")
-elif [[ -d ./ios/AadOS.xcodeproj ]]; then
-  IOS_PROJECT=./ios/AadOS.xcodeproj
-  target=(-project "$IOS_PROJECT")
-  echo "Using native AadOS project: $IOS_PROJECT"
-else
-  workspaces=()
-  while IFS= read -r path; do workspaces+=("$path"); done < <(find . -type d -name '*.xcworkspace' ! -path '*/.build/*' ! -path '*/build/*' ! -path '*/Pods/*' ! -path '*.xcodeproj/project.xcworkspace' -print)
-  projects=()
-  while IFS= read -r path; do projects+=("$path"); done < <(find . -type d -name '*.xcodeproj' ! -path '*/.build/*' ! -path '*/build/*' ! -path '*/Pods/*' -print)
-  if [[ ${#workspaces[@]} -eq 1 ]]; then
-    IOS_WORKSPACE="${workspaces[0]}"
-    target=(-workspace "$IOS_WORKSPACE")
-    echo "Auto-detected workspace: $IOS_WORKSPACE"
-  elif [[ ${#workspaces[@]} -eq 0 && ${#projects[@]} -eq 1 ]]; then
-    IOS_PROJECT="${projects[0]}"
-    target=(-project "$IOS_PROJECT")
-    echo "Auto-detected project: $IOS_PROJECT"
-  else
-    echo 'ERROR: no unique native Xcode project was found.' >&2
-    echo 'Add an .xcworkspace/.xcodeproj, or set IOS_WORKSPACE or IOS_PROJECT to its path.' >&2
-    exit 1
-  fi
-fi
-if [[ -z "${IOS_SCHEME:-}" ]]; then
-  schemes=()
-  if [[ -n "${IOS_PROJECT:-}" ]]; then
-    scheme_root="$IOS_PROJECT"
-  else
-    scheme_root="$(dirname "$IOS_WORKSPACE")"
-  fi
-  while IFS= read -r scheme_file; do
-    schemes+=("$(basename "$scheme_file" .xcscheme)")
-  done < <(find "$scheme_root" -path '*/xcshareddata/xcschemes/*.xcscheme' ! -path '*/Pods/*' -print | sort -u)
-
-  list_error=''
-  if [[ ${#schemes[@]} -eq 0 ]]; then
-    list_output_file="$(mktemp "${TMPDIR:-/tmp}/aados-xcode-list.XXXXXX")"
-    if xcodebuild "${target[@]}" -list >"$list_output_file" 2>&1; then
-      while IFS= read -r scheme; do schemes+=("$scheme"); done < <(awk '/^[[:space:]]*Schemes:/{found=1;next} found && /^[[:space:]]*$/{exit} found{sub(/^[[:space:]]+/, ""); if(length) print}' "$list_output_file")
-    else
-      list_error="$(tail -n 12 "$list_output_file")"
-    fi
-    osascript -e "tell application \"Finder\" to delete POSIX file \"$list_output_file\"" >/dev/null
-  fi
-  if [[ ${#schemes[@]} -eq 1 ]]; then
-    IOS_SCHEME="${schemes[0]}"
-    echo "Auto-detected scheme: $IOS_SCHEME"
-  else
-    echo 'ERROR: IOS_SCHEME not configured and a single shared scheme could not be detected.' >&2
-    if [[ -n "$list_error" ]]; then
-      echo 'xcodebuild -list failed:' >&2
-      printf '%s\n' "$list_error" >&2
-    elif [[ ${#schemes[@]} -gt 1 ]]; then
-      printf 'Detected shared schemes: %s\n' "${schemes[*]}" >&2
-    fi
-    echo "Run xcodebuild ${target[*]} -list, then export IOS_SCHEME='YourScheme'." >&2
-    exit 1
-  fi
-fi
+command -v flutter >/dev/null || { echo 'ERROR: Flutter is required to build the native mobile app.' >&2; exit 1; }
 command -v ditto >/dev/null || { echo 'ERROR: macOS ditto is required.' >&2; exit 1; }
 command -v zip >/dev/null || { echo 'ERROR: zip is required.' >&2; exit 1; }
 output="${IOS_OUTPUT_DIR:-$PWD/build/ios/ipa}"
-derived="${IOS_DERIVED_DATA_DIR:-$PWD/build/ios/derived-data}"
-mkdir -p "$output" "$derived"
-settings_log="$output/xcodebuild-settings.log"
-if ! xcodebuild "${target[@]}" -scheme "$IOS_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$derived" MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" CODE_SIGNING_ALLOWED=NO -showBuildSettings >"$settings_log" 2>&1; then
-  echo "ERROR: cannot inspect Xcode settings. See $settings_log" >&2
-  tail -n 40 "$settings_log" >&2 || true
-  exit 1
-fi
-settings="$(<"$settings_log")"
-bundle="$(printf '%s\n' "$settings" | sed -n 's/^ *PRODUCT_BUNDLE_IDENTIFIER = //p' | head -n 1)"
-[[ -n "$bundle" ]] || { echo 'ERROR: missing iOS bundle identifier.' >&2; exit 1; }
-log="$output/xcodebuild.log"
+mkdir -p "$output"
+log="$output/flutter-build.log"
 trap 'echo "Build/package failed; see $log" >&2; tail -n 40 "$log" >&2 || true' ERR
-echo 'Building unsigned iPhoneOS app for AltStore-style installation...'
-xcodebuild "${target[@]}" -scheme "$IOS_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$derived" MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > "$log" 2>&1
-app="$(find "$derived/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)"
-[[ -n "$app" ]] || { echo "ERROR: build produced no .app. Logs: $log" >&2; exit 1; }
+echo 'Building native Flutter iPhoneOS app without code signing...'
+(cd apps/mobile && flutter build ios --release --no-codesign --build-name "$version" --build-number "$build") >"$log" 2>&1
+app="$PWD/apps/mobile/build/ios/iphoneos/Runner.app"
+bundle="${IOS_BUNDLE_IDENTIFIER:-com.aadnanda.aados}"
+[[ -d "$app" ]] || { echo "ERROR: Flutter build produced no Runner.app. Logs: $log" >&2; exit 1; }
 package="$(mktemp -d "${TMPDIR:-/tmp}/aados-ipa.XXXXXX")"
 mkdir -p "$package/Payload"
 ditto "$app" "$package/Payload/AadOS.app"
@@ -174,7 +101,7 @@ cat > altstore.json <<JSON
       "developerName": "AadNanda",
       "subtitle": "Your personal operating system",
       "localizedDescription": "AadOS provides secure access to your personal email, calendar, tasks, reminders, documents, and AI workspace.",
-      "iconURL": "https://raw.githubusercontent.com/$github_repo/main/ios/AadOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "iconURL": "https://raw.githubusercontent.com/$github_repo/main/apps/mobile/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
       "tintColor": "6C4CF1",
       "category": "utilities",
       "screenshotURLs": [],
@@ -186,7 +113,7 @@ cat > altstore.json <<JSON
           "localizedDescription": "AadOS $version build $build",
           "downloadURL": "$download_url",
           "size": $size,
-          "minOSVersion": "17.0"
+          "minOSVersion": "15.0"
         }
       ]
     }

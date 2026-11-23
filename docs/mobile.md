@@ -1,13 +1,13 @@
 # AadOS mobile app (iOS + Android)
 
-Flutter app in `apps/mobile`. **Email is native**; every other section opens the signed-in web page from the More tab until it gets its own native screen. It replaces the SwiftUI web shell in `ios/` over time; both can be installed side by side for now (different bundle ids).
+Flutter app in `apps/mobile`. **Email is native**; every other section opens the signed-in web page from the More tab until it gets its own native screen. This is the app packaged by `bin/build-ipa.sh`; the SwiftUI web shell in `ios/` is legacy source.
 
 | | |
 | --- | --- |
-| Bundle id / applicationId | `com.aadnanda.aadosapp` (web shell stays `com.aadnanda.aados`) |
+| Bundle id / applicationId | `com.aadnanda.aados` (replaces the legacy web-shell install) |
 | Default server | `https://os.aadnanda.com` (changeable on the sign-in screen) |
 | Min OS | iOS 15, Android `flutter.minSdkVersion` |
-| Version | `apps/mobile/pubspec.yaml` `version:` (not yet tied to the root `VERSION`) |
+| Version | Root `VERSION` and Git commit count when built by `bin/build-ipa.sh` |
 
 ## How it talks to AadOS
 
@@ -73,14 +73,8 @@ flutter build apk --release      # Android
 
 Against the local Docker stack: on the sign-in screen tap **Server** and enter `http://localhost:3100` (iOS simulator) or `http://10.0.2.2:3100` (Android emulator) — the Docker web port (`AADOS_WEB_PORT`, default 3100). A physical phone cannot reach it (bound to 127.0.0.1).
 
-There is no `bin/` script for the mobile build yet; the `bin/*.sh` scripts are owner-maintained. A mobile IPA/APK script modelled on `ajopsios/bin/2a-ajopsios-ipa.sh` and `2e-ajopsios-apk.sh` is the suggested next step.
-
-### Effect on `bin/build-ipa.sh` (web shell IPA)
-
-`build-ipa.sh` auto-detects the Xcode project with `find . -name '*.xcworkspace'`, which now also finds `apps/mobile/ios/Runner.xcworkspace` and picks it. Until the script is changed, run it as:
+The release script runs Flutter's iOS release build, which generates the ephemeral Swift package and other Flutter build inputs before packaging `Runner.app` as an unsigned AltStore IPA:
 
 ```sh
-IOS_PROJECT=ios/AadOS.xcodeproj ./bin/build-ipa.sh
+./bin/build-ipa.sh --local
 ```
-
-Suggested owner edit (lines 66 and 68): add `! -path './apps/*'` to both `find` commands.

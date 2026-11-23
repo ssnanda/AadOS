@@ -160,6 +160,6 @@ Keep scope small: deliver useful inbox access before extending to household task
 89. [x] More from sender (sender/domain, per-row + bulk), details, unsubscribe, find (highlight)
 90. [x] AI insight card, Summarize, Suggest follow-up; Important / Follow-up / Needs action / Reviewed
 91. [x] More tab: other sections (Calendar, Tasks, Finance, …) in a signed-in web view; settings; sign out; version; dark mode
-92. [ ] Owner: build + run on iPhone and Android; report issues
-93. [ ] `bin/` script for mobile IPA/APK + AltStore (owner-maintained scripts; modelled on ajopsios 2a/2e)
+92. [ ] Owner: build + run the Flutter app on iPhone and Android; report issues
+93. [x] `bin/build-ipa.sh` builds the Flutter iOS app and packages its unsigned Runner.app for AltStore — awaiting owner verification
 94. [ ] Native next: shared mailboxes, Email → Asana, attachments, then Calendar/Tasks
