@@ -61,10 +61,13 @@ command -v zip >/dev/null || { echo 'ERROR: zip is required.' >&2; exit 1; }
 output="${IOS_OUTPUT_DIR:-$PWD/build/ios/ipa}"
 mkdir -p "$output"
 log="$output/flutter-build.log"
-trap 'echo "Build/package failed; see $log" >&2; tail -n 40 "$log" >&2 || true' ERR
 echo 'Building native Flutter iPhoneOS app without code signing...'
-(cd apps/mobile && flutter build ios --release --no-codesign --build-name "$version" --build-number "$build") >"$log" 2>&1
 app="$PWD/apps/mobile/build/ios/iphoneos/Runner.app"
+if ! (cd apps/mobile && flutter build ios --release --no-codesign --build-name "$version" --build-number "$build") >"$log" 2>&1; then
+  echo "ERROR: Flutter iOS build failed. See $log" >&2
+  tail -n 80 "$log" >&2 || true
+  exit 1
+fi
 bundle="${IOS_BUNDLE_IDENTIFIER:-com.aadnanda.aados}"
 [[ -d "$app" ]] || { echo "ERROR: Flutter build produced no Runner.app. Logs: $log" >&2; exit 1; }
 package="$(mktemp -d "${TMPDIR:-/tmp}/aados-ipa.XXXXXX")"
@@ -76,7 +79,11 @@ ipa="$output/aados.ipa"
 plist="$package/Payload/AadOS.app/Info.plist"
 app_bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null || true)"
 app_exec="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist" 2>/dev/null || true)"
+app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null || true)"
+app_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" 2>/dev/null || true)"
 [[ "$app_bundle" == "$bundle" ]] || { echo "ERROR: built Info.plist CFBundleIdentifier '$app_bundle' != '$bundle'." >&2; exit 1; }
+[[ "$app_version" == "$version" ]] || { echo "ERROR: built app version '$app_version' != requested '$version'; refusing to package a stale build." >&2; exit 1; }
+[[ "$app_build" == "$build" ]] || { echo "ERROR: built app build number '$app_build' != requested '$build'; refusing to package a stale build." >&2; exit 1; }
 [[ -n "$app_exec" && -s "$package/Payload/AadOS.app/$app_exec" ]] || { echo "ERROR: built .app has no executable ('$app_exec'); no sources were compiled. Logs: $log" >&2; exit 1; }
 if [[ -e "$ipa" ]]; then
   osascript -e "tell application \"Finder\" to delete POSIX file \"$ipa\"" >/dev/null
@@ -84,7 +91,6 @@ fi
 (cd "$package" && zip -qry "$ipa" Payload)
 [[ -s "$ipa" ]] || { echo "ERROR: packaging produced no IPA. Logs: $log" >&2; exit 1; }
 osascript -e "tell application \"Finder\" to delete POSIX file \"$package\"" >/dev/null
-trap - ERR
 
 size="$(stat -f%z "$ipa")"
 date="$(date +%Y-%m-%d)"
