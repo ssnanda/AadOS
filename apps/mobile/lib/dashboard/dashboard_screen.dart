@@ -4,6 +4,7 @@ import '../core/format.dart';
 import '../core/theme.dart';
 import '../email/mail_api.dart';
 import '../email/models.dart';
+import '../email/widgets.dart';
 
 /// Home: mail metrics, then Views, then Email (All inboxes and each account). Tapping anything opens it in Mail.
 /// Uses the inbox API with no account picked, so its counts cover every mailbox (the "recent" list keeps the call small).
@@ -81,6 +82,24 @@ class DashboardScreenState extends State<DashboardScreen> {
           padding: const EdgeInsets.only(bottom: 24),
           children: [
             if (_loading && d == null) const LinearProgressIndicator(minHeight: 2),
+            // Views are part of the Dashboard, at the top: one expandable list, no counts.
+            if ((d?.views ?? const []).isNotEmpty)
+              ExpansionTile(
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: const Text('Views', style: TextStyle(fontWeight: FontWeight.w700)),
+                initiallyExpanded: true,
+                shape: const Border(),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final v in d!.views)
+                        ActionChip(avatar: Icon(viewIcon(v.parser), size: 18), label: Text(v.name), onPressed: () => widget.onOpen(InboxQuery(view: 'all', pipeline: v.id))),
+                    ]),
+                  ),
+                ],
+              ),
             if (_error.isNotEmpty) _Notice(_error),
             for (final a in errors) _Notice('${a.email}: ${a.lastError}'),
             Padding(
@@ -95,17 +114,6 @@ class DashboardScreenState extends State<DashboardScreen> {
                 children: [for (final (icon, label, n, q, color) in metrics) _Metric(icon: icon, label: label, count: n, color: color, onTap: () => widget.onOpen(q))],
               ),
             ),
-            if ((d?.views ?? const []).isNotEmpty) ...[
-              header('VIEWS'),
-              for (final v in d!.views)
-                ListTile(
-                  leading: Icon(v.parser == 'shop' ? Icons.shopping_bag_outlined : v.parser == 'health' ? Icons.favorite_border : v.parser == 'digest' ? Icons.edit_note : Icons.filter_list),
-                  title: Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text('${v.total} emails${v.unread > 0 ? ' · ${v.unread} unread' : ''}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => widget.onOpen(InboxQuery(view: 'all', pipeline: v.id)),
-                ),
-            ],
             if (d != null) ...[
               header('EMAIL'),
               ListTile(

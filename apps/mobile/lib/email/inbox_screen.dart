@@ -529,30 +529,24 @@ class _FolderDrawer extends StatelessWidget {
                 ),
               ),
             ),
-            if ((d?.views ?? const []).isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                child: Text(
-                  'VIEWS',
-                  style: t.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+            // Views belong to Dashboard: one collapsible entry (open while a view is on screen), no counts.
+            if ((d?.views ?? const []).isNotEmpty)
+              ExpansionTile(
+                leading: const Icon(Icons.dashboard_outlined),
+                title: const Text('Dashboard'),
+                initiallyExpanded: q.pipeline.isNotEmpty,
+                shape: const Border(),
+                children: [
+                  for (final v in d!.views)
+                    ListTile(
+                      contentPadding: const EdgeInsets.only(left: 56, right: 16),
+                      leading: Icon(viewIcon(v.parser), size: 20),
+                      title: Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      selected: q.pipeline == v.id,
+                      onTap: () => onOpen(InboxQuery(view: 'all', pipeline: v.id)),
+                    ),
+                ],
               ),
-              for (final v in d!.views)
-                ListTile(
-                  leading: const Icon(Icons.filter_list),
-                  title: Text(
-                    v.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: count(v.unread),
-                  selected: q.pipeline == v.id,
-                  onTap: () => onOpen(InboxQuery(view: 'all', pipeline: v.id)),
-                ),
-            ],
             const Divider(),
             ListTile(
               leading: const Icon(Icons.all_inbox_outlined),

@@ -117,3 +117,11 @@ Widget swipeBackground(BuildContext context, {required bool delete, required boo
     ]),
   );
 }
+
+/// Icon for a saved view by its parser (Shopping, Health, Weekly review, custom).
+IconData viewIcon(String parser) => switch (parser) {
+      'shop' => Icons.shopping_bag_outlined,
+      'health' => Icons.favorite_border,
+      'digest' => Icons.edit_note,
+      _ => Icons.filter_list,
+    };

@@ -8,6 +8,8 @@
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
   let settingsOpen = $state(false);
+  // Dashboard's Views list pinned open (it also opens on hover and on a view page).
+  let dashOpen = $state(false);
   // Signed-in user (owner, or a family member limited to the sections the owner allowed).
   const me = $derived(page.data.shell?.user as { name: string; owner: boolean; permissions: string[]; ownAccounts?: boolean } | null | undefined);
   const may = (p: string) => !me || me.owner || me.permissions.includes(p) || (Boolean(me.ownAccounts) && (p === 'emails' || p === 'calendar'));
@@ -37,6 +39,7 @@
       if (tz) fetch('/settings/timezone', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tz }) }).then((r) => { if (r.ok) invalidateAll(); }).catch(() => undefined);
     }
   });
+  const onView = $derived(page.url.pathname.startsWith('/pipelines/'));
   const here = (path: string) => path === '/' ? page.url.pathname === '/' : page.url.pathname === path;
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
 </script>
@@ -45,8 +48,11 @@
   {#if open}<button class="nav-scrim" aria-label="Close navigation" onclick={() => open = false}></button>{/if}
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span class="mark">a</span><span>Aad<span class="os">OS</span><small>PERSONAL OS</small></span></a>
-    <a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>
-    {#if views.length}<div class="subviews" aria-label="Views"><small>Views</small>{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`} title={`${v.total} emails · ${v.count} unread`}><span>{icon(v.parser)}</span>{v.name}{#if v.total}<b>{v.total}</b>{/if}</a>{/each}</div>{/if}
+    <!-- Views live inside Dashboard: shown on hover, when the arrow pins them open, or while a view is open. -->
+    <div class="dash" class:open={dashOpen || onView}>
+      <div class="dashrow"><a class="nav violet" class:active={here('/')} href="/"><span>▦</span>Dashboard</a>{#if views.length}<button type="button" class="caret" aria-label={dashOpen ? 'Hide views' : 'Show views'} aria-expanded={dashOpen || onView} onclick={() => dashOpen = !dashOpen}>▾</button>{/if}</div>
+      {#if views.length}<div class="subviews" aria-label="Views">{#each views as v (v.id)}<a class="nav sub {tone(v.parser)}" class:active={page.url.pathname === `/pipelines/${v.id}`} href={`/pipelines/${v.id}`}><span>{icon(v.parser)}</span>{v.name}</a>{/each}</div>{/if}
+    </div>
     {#if may('asana')}<a class="nav pink" class:active={here('/asana')} href="/asana"><span>◉</span>Asana{#await page.data.navCounts then c}{#if c?.asana}<b title="Overdue or due today">{c.asana}</b>{/if}{/await}</a>{/if}
     {#if may('finance')}<a class="nav teal" class:active={page.url.pathname.startsWith('/finance')} href="/finance"><span>$</span>Finance{#await page.data.navCounts then c}{#if c?.finance}<b title="Alerts in the last 24 hours">{c.finance}</b>{/if}{/await}</a>{/if}{#if may('calendar')}<a class="nav pink" class:active={here('/calendar')} href="/calendar"><span>▣</span>Calendar{#if counts.calendar}<b title="Events left today">{counts.calendar}</b>{/if}</a>{/if}{#if may('calendar')}<a class="nav pink" class:active={page.url.pathname.startsWith('/room')} href="/room"><span>🏢</span>Conference Room{#if counts.room}<b title="Room bookings left today">{counts.room}</b>{/if}</a>{/if}
     {#if may('assistant')}<a class="nav blue" class:active={page.url.pathname.startsWith('/assistant')} href="/assistant"><span>✦</span>AI Assistant</a>{/if}
@@ -81,7 +87,8 @@
   .ibx b{margin-left:auto;font-size:10px;background:#e8f1ff;border-radius:6px;padding:2px 6px;color:#2f6fe4}
   .mode{display:flex;gap:2px;margin:0 0 3px;padding:2px;background:#f2f4f9;border-radius:8px}.mode a{flex:1;text-align:center;padding:4px 0;border-radius:6px;font-size:11px;font-weight:700;color:#6b778f;text-decoration:none}.mode a.on{background:#fff;color:#2f6fe4;box-shadow:0 1px 2px #0000001a}
   .ibx.fld{height:26px;padding-left:33px;font-weight:500;font-size:11.5px}.ibx.fld b{background:#f0f2f7;color:#5b6a86}
-  .subviews{display:grid;gap:1px;margin:0 0 6px 24px;padding-left:8px;border-left:1px solid #e9ecf4}.subviews small{padding:6px 8px 2px;color:#a3adbf;font-size:10px;font-weight:750;letter-spacing:1.2px;text-transform:uppercase}.subviews .nav.sub{height:32px;padding:0 8px}
+  .subviews{display:none;gap:1px;margin:0 0 6px 24px;padding-left:8px;border-left:1px solid #e9ecf4}.dash:hover .subviews,.dash:focus-within .subviews,.dash.open .subviews{display:grid}
+  .dashrow{position:relative}.caret{position:absolute;right:6px;top:7px;width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:#8a95a8;font-size:13px;cursor:pointer;transition:transform .15s}.caret:hover{background:#f1ebff;color:#7c4dde}.dash:not(.open) .caret{transform:rotate(-90deg)}.subviews .nav.sub{height:32px;padding:0 8px}
   .none{padding:4px 8px;color:#8a95a8;font-size:11px}
   .main{flex:1;min-width:0}
   .topbar{height:62px;background:#fff;border-bottom:1px solid #e9ecf4;display:flex;align-items:center;gap:12px;padding:0 32px}
