@@ -55,6 +55,7 @@ class _InboxScreenState extends State<InboxScreen> {
               '',
             )
           : 'Folder';
+    if (q.saved.isNotEmpty && q.pipeline.isEmpty) return q.saved == 'coupon' ? 'Coupons' : 'Gift Cards';
     if (q.pipeline.isNotEmpty) {
       final name = d?.views.where((v) => v.id == q.pipeline).firstOrNull?.name ?? 'View';
       final tile = _tiles.where((t) => t.key == q.tileKey).firstOrNull;
@@ -528,6 +529,31 @@ class _FolderDrawer extends StatelessWidget {
                 ),
               ),
             ),
+            if ((d?.views ?? const []).isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                child: Text(
+                  'VIEWS',
+                  style: t.textTheme.labelSmall?.copyWith(
+                    letterSpacing: 1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              for (final v in d!.views)
+                ListTile(
+                  leading: const Icon(Icons.filter_list),
+                  title: Text(
+                    v.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: count(v.unread),
+                  selected: q.pipeline == v.id,
+                  onTap: () => onOpen(InboxQuery(view: 'all', pipeline: v.id)),
+                ),
+            ],
+            const Divider(),
             ListTile(
               leading: const Icon(Icons.all_inbox_outlined),
               title: const Text('All inboxes'),
@@ -587,31 +613,6 @@ class _FolderDrawer extends StatelessWidget {
                   trailing: count(f.unread),
                   selected: q.account == a.id && q.folder == f.id,
                   onTap: () => onOpen(InboxQuery(account: a.id, folder: f.id)),
-                ),
-            ],
-            if ((d?.views ?? const []).isNotEmpty) ...[
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-                child: Text(
-                  'VIEWS',
-                  style: t.textTheme.labelSmall?.copyWith(
-                    letterSpacing: 1,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              for (final v in d!.views)
-                ListTile(
-                  leading: const Icon(Icons.filter_list),
-                  title: Text(
-                    v.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: count(v.unread),
-                  selected: q.pipeline == v.id,
-                  onTap: () => onOpen(InboxQuery(view: 'all', pipeline: v.id)),
                 ),
             ],
             if ((d?.categoryCounts ?? const {}).isNotEmpty) ...[

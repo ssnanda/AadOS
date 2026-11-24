@@ -4,9 +4,11 @@ import 'core/login_screen.dart';
 import 'core/scope.dart';
 import 'core/session.dart';
 import 'core/theme.dart';
+import 'dashboard/dashboard_screen.dart';
 import 'email/inbox_controller.dart';
 import 'email/inbox_screen.dart';
 import 'email/mail_api.dart';
+import 'email/models.dart';
 import 'more/more_screen.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -66,7 +68,7 @@ class _AadOSAppState extends State<AadOSApp> {
   }
 }
 
-/// Bottom navigation: Mail (native) and More (other sections, settings, sign out).
+/// Bottom navigation: Dashboard (metrics, views, inboxes), Mail (native) and More (other sections, settings, sign out).
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.session});
   final Session session;
@@ -76,8 +78,24 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
-  late final InboxController _inbox = InboxController(MailApi(widget.session.api));
-  int _tab = 0;
+  late final MailApi _mail = MailApi(widget.session.api);
+  late final InboxController _inbox = InboxController(_mail);
+  final _dashboard = GlobalKey<DashboardScreenState>();
+  static const _dashboardTab = 0, _mailTab = 1;
+  int _tab = _dashboardTab;
+
+  void _select(int i) {
+    setState(() => _tab = i);
+    // Mail keeps checking in the background while the Dashboard is open, so its counts stay current.
+    _inbox.setVisible(i != 2);
+    if (i == _dashboardTab) _dashboard.currentState?.reload();
+  }
+
+  /// A Dashboard metric, view or inbox: open it in Mail.
+  void _openInMail(InboxQuery q) {
+    _inbox.open(q);
+    _select(_mailTab);
+  }
 
   @override
   void initState() {
@@ -89,7 +107,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Live sync pauses in the background and runs again when the app comes back (like the web's visibility check).
-    _inbox.setVisible(state == AppLifecycleState.resumed && _tab == 0);
+    _inbox.setVisible(state == AppLifecycleState.resumed && _tab != 2);
   }
 
   @override
@@ -102,7 +120,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _tab, children: [InboxScreen(inbox: _inbox), const MoreScreen()]),
+      body: IndexedStack(index: _tab, children: [DashboardScreen(key: _dashboard, mail: _mail, onOpen: _openInMail), InboxScreen(inbox: _inbox), const MoreScreen()]),
       bottomNavigationBar: ListenableBuilder(
         listenable: _inbox,
         builder: (context, _) {
@@ -110,11 +128,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           return NavigationBar(
             height: 64,
             selectedIndex: _tab,
-            onDestinationSelected: (i) {
-              setState(() => _tab = i);
-              _inbox.setVisible(i == 0);
-            },
+            onDestinationSelected: _select,
             destinations: [
+              const NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
               NavigationDestination(
                 icon: Badge(isLabelVisible: unread > 0, label: Text(unread > 999 ? '999+' : '$unread'), child: const Icon(Icons.mail_outline)),
                 selectedIcon: Badge(isLabelVisible: unread > 0, label: Text(unread > 999 ? '999+' : '$unread'), child: const Icon(Icons.mail)),

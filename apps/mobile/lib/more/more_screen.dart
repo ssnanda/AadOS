@@ -7,7 +7,7 @@ import 'web_section_screen.dart';
 
 /// Sections that are not native yet open from the web app (signed in). Each needs the same permission as on the web.
 const sections = [
-  (Icons.dashboard_outlined, 'Dashboard', '/', ''),
+  (Icons.dashboard_outlined, 'Web dashboard', '/', ''),
   (Icons.event_outlined, 'Calendar', '/calendar', 'calendar'),
   (Icons.track_changes, 'Asana', '/asana', 'asana'),
   (Icons.sms_outlined, 'Messages', '/messages', 'messages'),
