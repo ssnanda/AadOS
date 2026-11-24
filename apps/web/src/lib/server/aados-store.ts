@@ -45,6 +45,8 @@ export type PipelineItem = {
   messageId: string;
   subject: string;
   sender: string;
+  /** The message's To line as the mailbox reports it (aliases show which address the mail was sent to). */
+  to?: string;
   receivedAt: string;
   summary: string;
   kind: string;

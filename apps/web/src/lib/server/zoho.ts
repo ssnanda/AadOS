@@ -133,6 +133,9 @@ const zohoSender = (row: Record<string, unknown>) => {
   return addr && !name.toLowerCase().includes(addr.toLowerCase()) ? (name ? `${name} <${addr}>` : addr) : name || addr;
 };
 
+/** Zoho's To line (HTML-escaped "&lt;a@b.com&gt;,…"). */
+const zohoTo = (row: Record<string, unknown>) => clean(row.toAddress);
+
 async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipeline, folderId: string, row: Record<string, unknown>): Promise<PipelineItem> {
   const messageId = String(row.messageId || '');
   const subject = clean(row.subject);
@@ -147,7 +150,7 @@ async function zohoItem(state: AadOSState, account: MailAccount, pipeline: Pipel
   const parsed = parseMessage(pipeline.parser, { subject, sender, summary, body });
   const rawReceived = Number(row.receivedTime || row.receivedDate || Date.now());
   const receivedAt = new Date(Number.isFinite(rawReceived) ? rawReceived : Date.now()).toISOString();
-  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: String(row.status) === '0', folderId, facts: parsed.facts };
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, to: zohoTo(row) || undefined, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: String(row.status) === '0', folderId, facts: parsed.facts };
 }
 
 /** Fetch one page of a folder (cursor = page number, newest first) and store unknown messages. */
@@ -166,6 +169,7 @@ export async function syncZohoPage(state: AadOSState, account: MailAccount, pipe
     item.unread = String(row.status) === '0';
     item.folderId ||= folderId;
     if (!item.sender.includes('@') && row.fromAddress) item.sender = zohoSender(row); // repair mail stored name-only
+    if (!item.to && row.toAddress) item.to = zohoTo(row); // fill in mail stored before the To line was kept
   }
   const fresh = unknownRows.slice(0, maxAdd);
   for (let i = 0; i < fresh.length; i += CONCURRENCY) {

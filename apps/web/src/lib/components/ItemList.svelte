@@ -4,7 +4,8 @@
   import { kindMeta } from '$lib/kinds';
   import EmailViewer from '$lib/components/EmailViewer.svelte';
   import { mailAction } from '$lib/mail-action';
-  type Item = { id: string; key: string; accountId: string; pipelineId: string; messageId: string; unread?: boolean; seen?: boolean; subject: string; sender: string; receivedAt: string; summary: string; kind: string; facts: Record<string, string | number | boolean> };
+  import { recipients, recipientLabel } from '$lib/recipients';
+  type Item = { id: string; key: string; accountId: string; pipelineId: string; messageId: string; unread?: boolean; seen?: boolean; subject: string; sender: string; receivedAt: string; summary: string; to?: string; kind: string; facts: Record<string, string | number | boolean> };
   // `filters` is what "select all matching" re-applies on the server; `names` labels the view in search results.
   let { items, matched, filters = {}, names, aiAvailable = false, aiBlocked = '' }: { items: Item[]; matched: number; filters?: { kind?: string; store?: string; q?: string; unread?: boolean; saved?: string }; names?: Record<string, string>; aiAvailable?: boolean; aiBlocked?: string } = $props();
   let selected = $state<string[]>([]);
@@ -46,7 +47,7 @@
     <article class:sel={allMatching || selected.includes(item.id)}>
       <input type="checkbox" name="ids" value={item.id} checked={allMatching || selected.includes(item.id)} onchange={(e) => toggle(item.id, e.currentTarget.checked)} aria-label="Select email">
       <div class="kind {m.tone}"><span>{m.icon}</span>{m.label}</div>
-      <div><h2 class:unread={item.unread !== false && !item.seen}>{item.subject || '(no subject)'}</h2><p>{#if names?.[item.pipelineId]}<a class="view" href={`/pipelines/${item.pipelineId}`}>{names[item.pipelineId]}</a> · {/if}{#if item.facts.store}<strong>{item.facts.store}</strong> · {/if}{item.sender} · {new Date(item.receivedAt).toLocaleString()}</p><div class="summary">{item.summary}</div>
+      <div><h2 class:unread={item.unread !== false && !item.seen}>{item.subject || '(no subject)'}</h2><p>{#if names?.[item.pipelineId]}<a class="view" href={`/pipelines/${item.pipelineId}`}>{names[item.pipelineId]}</a> · {/if}{#if item.facts.store}<strong>{item.facts.store}</strong> · {/if}{item.sender}{#if recipients(item.to).length}<span class="to" title={`Sent to ${recipients(item.to).join(', ')}`}> → {recipientLabel(recipients(item.to))}</span>{/if} · {new Date(item.receivedAt).toLocaleString()}</p><div class="summary">{item.summary}</div>
         <div class="facts">{#each SHOWN_FACTS as key}{#if item.facts[key]}<span class:code={key === 'code'}><em>{key}</em>{String(item.facts[key])}</span>{/if}{/each}<button type="button" class="open" onclick={() => view(item)}>👁 View email</button></div></div>
     </article>{/each}</div>
 </form>
@@ -67,4 +68,5 @@
   .facts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.facts span{font-size:11px;font-weight:700;background:#f4f6fa;border-radius:6px;padding:3px 8px;color:#43516c}.facts em{font-style:normal;color:#929caf;font-weight:600;margin-right:5px}
   .facts .code{background:#ffedf4;color:#c0356b;font-family:ui-monospace,monospace}
   @media(max-width:700px){article{grid-template-columns:22px 1fr}.kind{grid-column:2}article>div:last-child{grid-column:2}}
+  .to{color:#245c9e;font-weight:600}
 </style>

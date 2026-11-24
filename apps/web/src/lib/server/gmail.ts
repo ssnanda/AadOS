@@ -105,15 +105,16 @@ const MAX_PAGES = 200;
 const CONCURRENCY = 4;
 
 async function gmailItem(headers: Record<string, string>, pipeline: Pipeline, messageId: string): Promise<PipelineItem> {
-  const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`, { headers }));
+  const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`, { headers }));
   const messageHeaders = Array.isArray(message.payload?.headers) ? message.payload.headers : [];
   const header = (name: string) => String(messageHeaders.find((item: Record<string, unknown>) => String(item.name).toLowerCase() === name.toLowerCase())?.value || '');
   const subject = clean(header('Subject'));
   const sender = clean(header('From'));
+  const to = clean(header('To'));
   const summary = clean(message.snippet);
   const parsed = parseMessage(pipeline.parser, { subject, sender, summary });
   const receivedAt = new Date(Number(message.internalDate || Date.now())).toISOString();
-  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: Array.isArray(message.labelIds) && message.labelIds.includes('UNREAD'), threadId: message.threadId ? String(message.threadId) : undefined, facts: parsed.facts };
+  return { id: `${pipeline.id}:${messageId}`, pipelineId: pipeline.id, messageId, subject, sender, to: to || undefined, receivedAt, summary, kind: parsed.kind, stage: 'new', unread: Array.isArray(message.labelIds) && message.labelIds.includes('UNREAD'), threadId: message.threadId ? String(message.threadId) : undefined, facts: parsed.facts };
 }
 
 /** Fetch one page of a label (cursor '0' = first page, else Gmail's pageToken) and store unknown messages. */

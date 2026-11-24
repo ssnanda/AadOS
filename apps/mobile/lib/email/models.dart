@@ -12,6 +12,7 @@ class EmailRow {
         messageId = _str(j['messageId']),
         subject = _str(j['subject']),
         sender = _str(j['sender']),
+        to = _strings(j['to']),
         receivedAt = DateTime.tryParse(_str(j['receivedAt'])),
         summary = _str(j['summary']),
         unread = j['unread'] == true,
@@ -39,6 +40,7 @@ class EmailRow {
         messageId = _str(j['messageId']),
         subject = _str(j['subject']),
         sender = _str(j['sender']),
+        to = const [],
         receivedAt = DateTime.tryParse(_str(j['receivedAt'])),
         summary = _str(j['summary']),
         unread = j['unread'] == true,
@@ -61,6 +63,9 @@ class EmailRow {
   final String key, id, pipelineId, messageId, subject, sender, summary, accountId, accountEmail, provider, due, threadId;
   final DateTime? receivedAt;
   final List<String> categories, pipelines;
+
+  /// Addresses the email was sent to (aliases included), lower-case.
+  final List<String> to;
   String actionReason;
   String? action;
   String savedKind, savedExpiry;

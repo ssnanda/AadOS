@@ -2,6 +2,7 @@
 // Pure module (type-only imports) so it can be tested with `node --test`.
 import type { MailAccount, Pipeline, PipelineItem } from './aados-store';
 import { classify, couponExpiry, detectAction, importance, type ActionKind } from './categories.ts';
+import { recipients } from '../recipients.ts';
 
 export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply' | 'recent' | 'read' | 'attention' | 'people' | 'bills' | 'bulk';
 export type InboxQuery = {
@@ -15,6 +16,8 @@ export type InboxQuery = {
 };
 export type InboxRow = {
   key: string; id: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; summary: string;
+  /** Addresses the message was sent to (lower-case; aliases included). */
+  to: string[];
   unread: boolean; accountId: string; accountEmail: string; provider: 'zoho' | 'gmail' | ''; categories: string[];
   importance: 'high' | 'normal'; action: ActionKind | null; actionReason: string; due: string; reviewed: boolean; followUp: string;
   savedKind: 'coupon' | 'gift-card' | ''; savedExpiry: string;
@@ -106,6 +109,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
     if (threadId) threads.set(`${accountId}:${threadId}`, (threads.get(`${accountId}:${threadId}`) || 0) + 1);
     rows.push({
       key, id: first.id, pipelineId: first.pipelineId, messageId: first.messageId, subject: first.subject, sender: first.sender,
+      to: recipients(copies.find((c) => c.to)?.to),
       receivedAt: first.receivedAt, summary: first.summary,
       // Opened in AadOS on any copy counts as read; otherwise unread only if every synced copy says unread.
       unread: copies.every((c) => c.unread !== false),
@@ -140,7 +144,7 @@ const isBills = (r: InboxRow, now: number) => r.categories.some((c) => c === 'Bi
 /** Every search word must appear in subject, sender, preview, account, provider, categories or view names. */
 function matchesText(row: InboxRow, terms: string[]) {
   if (!terms.length) return true;
-  const hay = `${row.subject} ${row.sender} ${row.summary} ${row.accountEmail} ${row.provider} ${row.categories.join(' ')} ${row.pipelines.join(' ')}`.toLowerCase().replace(/['’`]/g, '');
+  const hay = `${row.subject} ${row.sender} ${row.to.join(' ')} ${row.summary} ${row.accountEmail} ${row.provider} ${row.categories.join(' ')} ${row.pipelines.join(' ')}`.toLowerCase().replace(/['’`]/g, '');
   // Older Zoho mail was stored with the sender's name only; a pasted "Name <address>" still finds it by the name.
   const noAddress = !row.sender.includes('@');
   return terms.every((term) => hay.includes(term) || (noAddress && term.includes('@')));

@@ -4,7 +4,7 @@ import type { AadOSState } from './aados-store';
 
 const ACCOUNT_FIELDS = ['accessToken', 'refreshToken', 'expiresAt', 'folders', 'lastSync', 'lastError', 'email', 'remoteId', 'historyIds', 'canModify', 'canSend', 'canFilter', 'calendar', 'calendarWrite', 'contacts', 'calendarLastSync', 'calendarError'] as const;
 const PIPELINE_FIELDS = ['cursor', 'lastSync', 'lastError'] as const;
-const ITEM_FIELDS = ['unread', 'folderId', 'accountId', 'threadId'] as const;
+const ITEM_FIELDS = ['unread', 'folderId', 'accountId', 'threadId', 'to'] as const;
 
 /**
  * Apply only what the sync changed (`before` -> `after`) onto `latest`, so edits made meanwhile

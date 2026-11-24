@@ -6,6 +6,7 @@
   import EmailViewer from '$lib/components/EmailViewer.svelte';
   import { startAutoSync } from '$lib/sync';
   import { mailAction } from '$lib/mail-action';
+  import { recipientLabel } from '$lib/recipients';
   import type { ActionData, PageData } from './$types';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   let viewing = $state<PageData['rows'][number] | null>(null);
@@ -160,7 +161,7 @@
         <time>{ago(r.receivedAt)}</time>
       </button></div>
       <div class="meta">
-        {#if data.insights[r.key]}{@const ai = data.insights[r.key]}<span class="aitag" title={`AI suggestion (${ai.confidence >= 0.8 ? 'high' : ai.confidence >= 0.5 ? 'medium' : 'low'} confidence): ${ai.summary}`}>✦ {ai.category}{ai.paymentDue ? ` · due ${ai.paymentDue}` : ''}</span>{/if}<span class="acct {r.provider}" title={r.accountEmail}>{r.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {r.accountEmail}</span>
+        {#if data.insights[r.key]}{@const ai = data.insights[r.key]}<span class="aitag" title={`AI suggestion (${ai.confidence >= 0.8 ? 'high' : ai.confidence >= 0.5 ? 'medium' : 'low'} confidence): ${ai.summary}`}>✦ {ai.category}{ai.paymentDue ? ` · due ${ai.paymentDue}` : ''}</span>{/if}<span class="acct {r.provider}" title={r.accountEmail}>{r.provider === 'gmail' ? 'Gmail' : 'Zoho'} · {r.accountEmail}</span>{#if r.to.length}<a class="tag to" href={href({ view: 'all', q: r.to[0] })} title={`Sent to ${r.to.join(', ')}`}>To {recipientLabel(r.to)}</a>{/if}
         {#each r.categories.filter((c) => c !== 'Other' || r.categories.length === 1) as c (c)}<a class="tag" href={href({ view: 'all', category: c })}>{c}</a>{/each}
         {#if r.threadCount > 1}<a class="tag thread" href={href({ thread: r.threadId, view: 'all' })} title="Show conversation">💬 {r.threadCount}</a>{/if}
         {#each r.pipelines as p (p)}<span class="tag view">{p}</span>{/each}
@@ -218,7 +219,7 @@
   .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 0 89px}
   .tag,.acct{font-size:11px;font-weight:800;border-radius:6px;padding:3px 8px;background:#f0f2f7;color:#5b6a86;text-decoration:none}.acct{background:#eef1ff;color:#3157de;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.acct.gmail{background:#fff0ee;color:#d94d43}
   .aitag{font-size:11px;font-weight:800;border-radius:6px;padding:3px 8px;background:#f1ebff;color:#7c4dde;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tag.act{background:#fff4df;color:#a1752a}.tag.follow{background:#e3f6f3;color:#0f7f74}.tag.view{background:#f1ebff;color:#7c4dde}
+  .tag.act{background:#fff4df;color:#a1752a}.tag.follow{background:#e3f6f3;color:#0f7f74}.tag.to{background:#eef6ff;color:#245c9e;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:none}.tag.view{background:#f1ebff;color:#7c4dde}
   .ops{display:flex;gap:4px;margin:0 0 0 auto}.ops button{border:1px solid #e4e9f2;background:#fff;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;color:#53607a;cursor:pointer}.ops button:hover{border-color:#8da2f0;color:#3157de}
   .pager{display:flex;gap:16px;align-items:center;justify-content:center;margin:16px 0;font-size:12px;color:#8a95a8}.pager a{color:#3157de;font-weight:700;text-decoration:none}
   .empty{background:#fff;border:1px solid #e4e9f2;border-radius:14px;padding:35px;text-align:center;color:#8c96a8}.empty a{color:#3157de}

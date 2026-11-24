@@ -63,6 +63,7 @@ class EmailTile extends StatelessWidget {
       if (row.savedKind == 'gift-card') const Tag('Gift Card · no expiry', color: AppColors.star),
       if (row.threadCount > 1) Tag('${row.threadCount}', icon: Icons.forum_outlined),
       if (showAccount) Tag(row.accountEmail.split('@').first, color: AppColors.provider(row.provider)),
+      if (row.to.isNotEmpty) Tag('To ${row.to.first}${row.to.length > 1 ? ' +${row.to.length - 1}' : ''}', icon: Icons.alternate_email),
     ];
     return Material(
       color: selected ? cs.primaryContainer.withValues(alpha: 0.55) : (row.unread ? cs.surface : Colors.transparent),
