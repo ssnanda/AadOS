@@ -392,11 +392,20 @@ const inboxFolder = (account: MailAccount) => account.provider === 'gmail'
   ? { id: 'INBOX', name: 'Inbox' }
   : account.folders.find((folder) => /^inbox$/i.test(folder.type) || /^\/?inbox$/i.test(folder.path || folder.name));
 
-export const missingInboxPipelines = (state: AadOSState) => state.accounts.some((account) => inboxFolder(account) && !state.pipelines.some((item) => item.id === `inbox-${account.id}`));
+/** Marked on views and inbox feeds when their account is disconnected (Settings → Emails). */
+export const ACCOUNT_DISCONNECTED = 'Account disconnected';
+/**
+ * A feed switched off by a disconnect whose account is connected again. Reconnecting keeps the account id (it comes from the
+ * address), so without this the hidden inbox feed stayed off and live sync skipped the account with no error.
+ */
+const needsRevive = (state: AadOSState, pipeline: Pipeline) => hasAccount(state, pipeline) && ((pipeline.system && !pipeline.enabled) || pipeline.lastError === ACCOUNT_DISCONNECTED);
+
+export const missingInboxPipelines = (state: AadOSState) => state.accounts.some((account) => inboxFolder(account) && !state.pipelines.some((item) => item.id === `inbox-${account.id}`))
+  || state.pipelines.some((pipeline) => needsRevive(state, pipeline));
 
 /**
- * Give every account a hidden "Inbox" feed so the unified inbox works without creating views.
- * Idempotent; returns true when something was added.
+ * Give every account a hidden "Inbox" feed so the unified inbox works without creating views, and switch feeds of
+ * reconnected accounts back on. Idempotent; returns true when something changed.
  */
 export function ensureInboxPipelines(state: AadOSState): boolean {
   let changed = false;
@@ -405,6 +414,13 @@ export function ensureInboxPipelines(state: AadOSState): boolean {
     const folder = inboxFolder(account);
     if (!folder || state.pipelines.some((item) => item.id === id)) continue;
     state.pipelines.push({ id, name: 'Inbox', source: account.provider, accountId: account.id, folderId: folder.id, folderName: 'Inbox', folders: [{ id: folder.id, name: 'Inbox', accountId: account.id, source: account.provider }], system: true, parser: 'generic', enabled: true, cursor: 0, lastSync: '', lastError: '' });
+    changed = true;
+  }
+  // Reconnected accounts: switch their feeds back on (hidden inbox feeds always; views that the disconnect switched off).
+  for (const pipeline of state.pipelines) {
+    if (!needsRevive(state, pipeline)) continue;
+    pipeline.enabled = true;
+    if (pipeline.lastError === ACCOUNT_DISCONNECTED) pipeline.lastError = '';
     changed = true;
   }
   return changed;

@@ -2,7 +2,7 @@ import { resetContactCache } from '$lib/server/contacts';
 import { security } from '$lib/server/auth';
 import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
+import { ACCOUNT_DISCONNECTED, hasAccount, pipelineFolders, publicState, readState, updateState, type PipelineParser } from '$lib/server/aados-store';
 import { beginOAuth as beginZoho, discoverAccountAndFolders } from '$lib/server/zoho';
 import { beginGmailOAuth, discoverGmailFolders } from '$lib/server/gmail';
 import { clearCalendarData } from '$lib/server/calendar-sync';
@@ -184,7 +184,7 @@ export const actions: Actions = {
   // Views on the account stay (paused, error shown) so synced items are never lost.
   disconnectAccount: async ({ request }) => {
     const id = String((await request.formData()).get('id') || '');
-    await updateState((s)=>{ s.accounts=s.accounts.filter((item)=>item.id!==id); for(const p of s.pipelines.filter((item)=>pipelineFolders(item).some((f)=>f.accountId===id))){p.lastError='Account disconnected';if(!hasAccount(s,p))p.enabled=false;} });
+    await updateState((s)=>{ s.accounts=s.accounts.filter((item)=>item.id!==id); for(const p of s.pipelines.filter((item)=>pipelineFolders(item).some((f)=>f.accountId===id))){p.lastError=ACCOUNT_DISCONNECTED;if(!hasAccount(s,p))p.enabled=false;} });
     return {disconnected:id};
   }
 };
