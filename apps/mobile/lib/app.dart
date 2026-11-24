@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'asana/asana_api.dart';
+import 'asana/asana_screen.dart';
+import 'calendar/calendar_api.dart';
+import 'calendar/calendar_screen.dart';
+import 'core/app_badge.dart';
 import 'core/login_screen.dart';
 import 'core/scope.dart';
 import 'core/session.dart';
@@ -68,7 +73,8 @@ class _AadOSAppState extends State<AadOSApp> {
   }
 }
 
-/// Bottom navigation: Dashboard (metrics, views, inboxes), Mail (native) and More (other sections, settings, sign out).
+/// Bottom navigation: Dashboard, Mail, Calendar (with Conference Room), Asana and More (Messages, Finance,
+/// Shared mailboxes, other sections, settings, sign out). Calendar and Asana show only with their permission.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.session});
   final Session session;
@@ -80,63 +86,92 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late final MailApi _mail = MailApi(widget.session.api);
   late final InboxController _inbox = InboxController(_mail);
+  late final CalendarApi _calendar = CalendarApi(widget.session.api);
+  late final AsanaApi _asana = AsanaApi(widget.session.api);
   final _dashboard = GlobalKey<DashboardScreenState>();
-  static const _dashboardTab = 0, _mailTab = 1;
-  int _tab = _dashboardTab;
+  final _asanaDue = ValueNotifier<int>(0);
+  String _tab = 'dashboard';
+  final Set<String> _opened = {'dashboard', 'mail', 'asana'}; // Asana loads at start for its due badge; Calendar when opened
 
-  void _select(int i) {
-    setState(() => _tab = i);
-    // Mail keeps checking in the background while the Dashboard is open, so its counts stay current.
-    _inbox.setVisible(i != 2);
-    if (i == _dashboardTab) _dashboard.currentState?.reload();
+  bool get _canCalendar => widget.session.user?.can('calendar') ?? true;
+  bool get _canAsana => widget.session.user?.can('asana') ?? true;
+  List<String> get _tabs => ['dashboard', 'mail', if (_canCalendar) 'calendar', if (_canAsana) 'asana', 'more'];
+
+  void _select(String t) {
+    setState(() {
+      _tab = t;
+      _opened.add(t);
+    });
+    if (t == 'dashboard') _dashboard.currentState?.reload();
   }
 
   /// A Dashboard metric, view or inbox: open it in Mail.
   void _openInMail(InboxQuery q) {
     _inbox.open(q);
-    _select(_mailTab);
+    _select('mail');
   }
+
+  // Unread mail on the home-screen icon, kept in step with the Mail tab badge.
+  void _badge() => AppBadge.set(_inbox.count('unread'));
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _inbox.addListener(_badge);
     _inbox.start();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Live sync pauses in the background and runs again when the app comes back (like the web's visibility check).
-    _inbox.setVisible(state == AppLifecycleState.resumed && _tab != 2);
+    // It keeps running on every tab so the icon and Mail badges stay current.
+    _inbox.setVisible(state == AppLifecycleState.resumed);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _inbox.removeListener(_badge);
     _inbox.dispose();
+    _asanaDue.dispose();
+    AppBadge.clear(); // signed out (or token replaced): no stale count on the icon
     super.dispose();
   }
 
+  Widget _screen(String t) => switch (t) {
+        'mail' => InboxScreen(inbox: _inbox),
+        'calendar' => CalendarTab(api: _calendar),
+        'asana' => AsanaScreen(api: _asana, onCount: (n) => _asanaDue.value = n),
+        'more' => const MoreScreen(),
+        _ => DashboardScreen(key: _dashboard, mail: _mail, onOpen: _openInMail),
+      };
+
   @override
   Widget build(BuildContext context) {
+    final tabs = _tabs;
+    final index = tabs.indexOf(_tab).clamp(0, tabs.length - 1);
+    Widget count(int n, Widget icon) => Badge(isLabelVisible: n > 0, label: Text(n > 999 ? '999+' : '$n'), child: icon);
     return Scaffold(
-      body: IndexedStack(index: _tab, children: [DashboardScreen(key: _dashboard, mail: _mail, onOpen: _openInMail), InboxScreen(inbox: _inbox), const MoreScreen()]),
+      body: IndexedStack(index: index, children: [for (final t in tabs) KeyedSubtree(key: ValueKey(t), child: _opened.contains(t) ? _screen(t) : const SizedBox())]),
       bottomNavigationBar: ListenableBuilder(
-        listenable: _inbox,
+        listenable: Listenable.merge([_inbox, _asanaDue]),
         builder: (context, _) {
           final unread = _inbox.count('unread');
           return NavigationBar(
             height: 64,
-            selectedIndex: _tab,
-            onDestinationSelected: _select,
+            selectedIndex: index,
+            onDestinationSelected: (i) => _select(tabs[i]),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             destinations: [
-              const NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
-              NavigationDestination(
-                icon: Badge(isLabelVisible: unread > 0, label: Text(unread > 999 ? '999+' : '$unread'), child: const Icon(Icons.mail_outline)),
-                selectedIcon: Badge(isLabelVisible: unread > 0, label: Text(unread > 999 ? '999+' : '$unread'), child: const Icon(Icons.mail)),
-                label: 'Mail',
-              ),
-              const NavigationDestination(icon: Icon(Icons.apps_outlined), selectedIcon: Icon(Icons.apps), label: 'More'),
+              for (final t in tabs)
+                switch (t) {
+                  'mail' => NavigationDestination(icon: count(unread, const Icon(Icons.mail_outline)), selectedIcon: count(unread, const Icon(Icons.mail)), label: 'Mail'),
+                  'calendar' => const NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Calendar'),
+                  'asana' => NavigationDestination(icon: count(_asanaDue.value, const Icon(Icons.task_alt_outlined)), selectedIcon: count(_asanaDue.value, const Icon(Icons.task_alt)), label: 'Asana'),
+                  'more' => const NavigationDestination(icon: Icon(Icons.apps_outlined), selectedIcon: Icon(Icons.apps), label: 'More'),
+                  _ => const NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
+                },
             ],
           );
         },

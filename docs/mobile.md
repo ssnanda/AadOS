@@ -1,6 +1,6 @@
 # AadOS mobile app (iOS + Android)
 
-Flutter app in `apps/mobile`. **Email is native**; every other section opens the signed-in web page from the More tab until it gets its own native screen. This is the app packaged by `bin/build-ipa.sh`; the SwiftUI web shell in `ios/` is legacy source.
+Flutter app in `apps/mobile`. Bottom tabs: **Dashboard · Mail · Calendar (+ Conference Room) · Asana · More**. Native in More: **Messages, Finance, Shared mailboxes**. Contacts, Documents, Assistant, Briefing and Settings still open the signed-in web page. This is the app packaged by `bin/build-ipa.sh`; the SwiftUI web shell in `ios/` is legacy source.
 
 | | |
 | --- | --- |
@@ -27,6 +27,19 @@ New (`apps/web/src/routes/api/mobile/`):
 | `GET /api/mobile/me` | Who is signed in + server version. 401 = sign in again. |
 | `GET /api/mobile/emails?view&account&folder&q&category&sender&thread&pipeline&page&pageSize` | The `/emails` list as JSON + `folders` for the drawer. |
 | `POST /api/mobile/emails/mark` `{op, keys[]}` | Same ops as the `/emails?/mark` form action. |
+
+Section data (each `GET` returns the web page's own `load` as JSON, same permission checks):
+
+| Endpoint | Used by |
+| --- | --- |
+| `GET /calendar/data?view&date&off`, `POST /calendar/live`, `POST /calendar/events` | Calendar tab |
+| `GET /room/data`, `POST /room/data {id}` (pick room calendar) | Conference Room |
+| `GET /asana/data`, `POST /asana/api` | Asana tab |
+| `GET /finance/data`, `POST /finance/api` | Finance |
+| `GET /messages/data`, `POST /messages/api`, `GET /messages/attachment/{guid}` | Messages |
+| `POST /emails/shared/api` | Shared mailboxes |
+
+A 401 signs the app out only when it is AadOS's own session (`x-aados-signin: 1`); Asana and BlueBubbles answer 401 for their own tokens.
 
 Reused as-is with the bearer token: `POST /sync/live`, `GET /pipelines/{id}/message/{mid}` (`?prefetch=1`), `POST /emails/tools` (details, prepare, prepareResidential, send, related), `POST /emails/ai` (state, summarize, followup, draft).
 
@@ -60,7 +73,11 @@ Email HTML renders with JavaScript off and a CSP that only allows inline styles,
 
 ### Not in the app yet (web only)
 
-Shared mailboxes native screen (opens as a web section), Email → Asana, Gmail Rules, save attachment to Documents, Filters form (date range), AI triage bar. Push notifications are not possible without a paid Apple Developer account (same limit as ajopsios); the badge on the Mail tab shows unread while the app is open.
+Email → Asana, Gmail Rules, save attachment to Documents, Filters form (date range), AI triage bar. Push notifications are not possible without a paid Apple Developer account (same limit as ajopsios). The home-screen icon badge shows unread mail and is updated while the app is open or recently backgrounded (iOS asks once for badge permission; Android numeric badges depend on the launcher — Samsung/Xiaomi/Huawei yes, stock Pixel shows dots only for notifications).
+
+### Messages and iOS
+
+iOS does not let a third-party app read the Messages database or send iMessage/SMS without the user tapping Send in Apple's compose sheet, and there is no way to receive texts. So the app is a native client for the BlueBubbles server on the Mac, through AadOS — same as the web.
 
 ## Build and run (owner)
 

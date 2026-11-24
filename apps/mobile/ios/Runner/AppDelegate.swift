@@ -1,6 +1,7 @@
 import EventKit
 import Flutter
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -21,6 +22,28 @@ import UIKit
         return
       }
       self?.createCalendarEvent(values, result: result)
+    }
+
+    // Unread-mail count on the home-screen icon. iOS shows a badge only after the user allows badges (no alerts or
+    // sounds are requested; there are no push notifications).
+    guard let badgeRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSBadge") else { return }
+    let badge = FlutterMethodChannel(name: "com.aadnanda.aados/badge", binaryMessenger: badgeRegistrar.messenger())
+    badge.setMethodCallHandler { call, result in
+      guard call.method == "set", let count = (call.arguments as? NSNumber)?.intValue else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      UNUserNotificationCenter.current().requestAuthorization(options: [.badge]) { granted, _ in
+        DispatchQueue.main.async {
+          guard granted else { result(false); return }
+          if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(max(0, count)) { _ in result(true) }
+          } else {
+            UIApplication.shared.applicationIconBadgeNumber = max(0, count)
+            result(true)
+          }
+        }
+      }
     }
   }
 

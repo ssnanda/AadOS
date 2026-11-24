@@ -25,7 +25,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   if (!authenticated && !publicPath) {
     // The app needs a status it can act on (sign in again), not the HTML login page.
-    if (app) return json({ error: 'Sign in again.' }, { status: 401 });
+    // The header tells the app this 401 is AadOS's own session (Asana/BlueBubbles answer 401 for their own tokens).
+    if (app) return json({ error: 'Sign in again.' }, { status: 401, headers: { 'x-aados-signin': '1' } });
     throw redirect(303, '/login');
   }
   if (authenticated && event.url.pathname === '/login') {

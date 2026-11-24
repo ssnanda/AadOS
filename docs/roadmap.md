@@ -169,3 +169,15 @@ Keep scope small: deliver useful inbox access before extending to household task
 98. [x] Mobile Mail: mark one or many messages as Pending action, show the persistent label, and clear it from the reader — awaiting owner verification
 99. [x] Saved email value: automatic Coupon detection requires expiry language + a concrete parsed date; Gift Card is manual with no expiry — awaiting owner verification
 100. [x] Conditional Coupon/Gift Card tiles appear only in the Shopping view on web and Flutter; each hides independently when empty — awaiting owner verification
+
+### Native app tabs (2026-11-24) — see docs/mobile.md
+101. [x] App icon badge = unread mail (iOS native channel, badge-only permission; Android via app_badge_plus) — updates only while the app runs (no push). Awaiting owner verification
+102. [x] AadOS “a” app icon for iOS and Android (from the retired SwiftUI shell artwork) — awaiting owner verification
+103. [x] Native Calendar tab: Month / Week / Day / List, swipe between periods, event details, create/edit/delete on editable calendars, calendar filter — awaiting owner verification
+104. [x] Native Conference Room tab (inside Calendar): free/busy now, day timeline, 14-day list, pick room calendar, Book — awaiting owner verification
+105. [x] Native Asana tab: Due / Incoming / To do / Doing / Upcoming / No date / All, swipe complete / next stage, task detail (notes, due, subtasks, comments, timer), new task, AI plan/summary — awaiting owner verification
+106. [x] Messages: native client over BlueBubbles (iOS does not let third-party apps read or send iMessage/SMS); folders, unread, thread, photos, canned replies, AI suggest/summary, SMS threads — awaiting owner verification
+107. [x] Native Shared mailboxes: boxes with unread counts, Unread/All list, swipe read/trash, reader with Delete/Unread advance, reply from the box — awaiting owner verification
+108. [x] Native Finance: Overview (net worth, chart, allocation, alerts), Positions, Accounts, Watchlist, Real estate, Insights (mute); price refresh. Editing holdings/accounts/connections stays on the web — awaiting owner verification
+109. [x] Server: JSON `GET /calendar/data`, `/room/data` (+POST pick), `/asana/data`, `/finance/data`, `/messages/data` reuse each page's load; session 401s carry `x-aados-signin` so Asana/BlueBubbles 401s no longer sign the app out — `npm run check` not run by agent
+

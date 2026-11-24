@@ -68,9 +68,10 @@ class Api {
       body = null;
     }
     if (res.statusCode >= 200 && res.statusCode < 300) return body;
-    if (res.statusCode == 401) onUnauthorized?.call();
     // SvelteKit `error()` answers {message}; the JSON endpoints answer {error}.
     final msg = body is Map ? (body['error'] ?? body['message'] ?? '').toString() : '';
+    // Only AadOS's own session 401 signs out; Asana or BlueBubbles also answer 401 when *their* token is bad.
+    if (res.statusCode == 401 && (res.headers['x-aados-signin'] == '1' || msg == 'Sign in again.')) onUnauthorized?.call();
     throw ApiException(res.statusCode, msg.isNotEmpty ? msg : 'AadOS answered HTTP ${res.statusCode}.');
   }
 
