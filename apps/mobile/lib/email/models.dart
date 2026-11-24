@@ -135,10 +135,13 @@ class SavedView {
 
 /// What is on screen: the web's URL parameters for /emails.
 class InboxQuery {
-  const InboxQuery({this.view = 'unread', this.account = '', this.folder = '', this.q = '', this.category = '', this.sender = '', this.thread = '', this.pipeline = ''});
+  const InboxQuery({this.view = 'unread', this.account = '', this.folder = '', this.q = '', this.category = '', this.sender = '', this.thread = '', this.pipeline = '', this.kind = '', this.saved = ''});
   final String view, account, folder, q, category, sender, thread, pipeline;
 
-  InboxQuery copyWith({String? view, String? account, String? folder, String? q, String? category, String? sender, String? thread, String? pipeline}) => InboxQuery(
+  /// Shopping tile picked: a parsed kind of the view's copy (order, shipping…) or a saved value (coupon, gift-card).
+  final String kind, saved;
+
+  InboxQuery copyWith({String? view, String? account, String? folder, String? q, String? category, String? sender, String? thread, String? pipeline, String? kind, String? saved}) => InboxQuery(
         view: view ?? this.view,
         account: account ?? this.account,
         folder: folder ?? this.folder,
@@ -147,6 +150,17 @@ class InboxQuery {
         sender: sender ?? this.sender,
         thread: thread ?? this.thread,
         pipeline: pipeline ?? this.pipeline,
+        kind: kind ?? this.kind,
+        saved: saved ?? this.saved,
+      );
+
+  /// The Shopping tile this query lists (`saved:coupon`, `kind:order`), or '' when none is picked.
+  String get tileKey => saved.isNotEmpty ? 'saved:$saved' : kind.isNotEmpty ? 'kind:$kind' : '';
+
+  /// Opens a Shopping tile (its key from the server), or none with ''.
+  InboxQuery withTile(String key) => copyWith(
+        kind: key.startsWith('kind:') ? key.substring(5) : '',
+        saved: key.startsWith('saved:') ? key.substring(6) : '',
       );
 
   Map<String, String> params(int page) => {
@@ -158,6 +172,8 @@ class InboxQuery {
         'sender': sender,
         'thread': thread,
         'pipeline': pipeline,
+        if (kind.isNotEmpty) 'kind': kind,
+        if (saved.isNotEmpty) 'saved': saved,
         if (page > 1) 'page': '$page',
       };
 
@@ -182,7 +198,8 @@ class InboxPage {
         aiAvailable = j['aiAvailable'] == true,
         aiBlocked = _str(j['aiBlocked']),
         savedCoupons = [for (final x in (((j['saved'] as Map?)?['coupons'] as List?) ?? const [])) SavedEmailValue.fromJson(x as Map<String, dynamic>)],
-        savedGiftCards = [for (final x in (((j['saved'] as Map?)?['giftCards'] as List?) ?? const [])) SavedEmailValue.fromJson(x as Map<String, dynamic>)];
+        savedGiftCards = [for (final x in (((j['saved'] as Map?)?['giftCards'] as List?) ?? const [])) SavedEmailValue.fromJson(x as Map<String, dynamic>)],
+        shopTiles = j['shop'] is Map ? [for (final t in ((j['shop'] as Map)['tiles'] as List? ?? const [])) ShopTile.fromJson((t as Map).cast<String, dynamic>())] : null;
 
   /// Accounts joined with their folder drawer entries (`folders`, sent by /api/mobile/emails).
   static List<MailAccount> _accounts(Map<String, dynamic> j) {
@@ -206,7 +223,20 @@ class InboxPage {
   final String folderName, aiBlocked;
   final bool aiAvailable;
   final List<SavedEmailValue> savedCoupons, savedGiftCards;
+
+  /// Shopping view tiles (null for every other list): saved Coupons, Gift Cards, then each parsed kind.
+  final List<ShopTile>? shopTiles;
   bool get aiReady => aiAvailable && aiBlocked.isEmpty;
+}
+
+class ShopTile {
+  ShopTile.fromJson(Map<String, dynamic> j)
+      : key = _str(j['key']),
+        label = _str(j['label']),
+        detail = _str(j['detail']),
+        count = _int(j['count']);
+  final String key, label, detail;
+  final int count;
 }
 
 class SavedEmailValue {

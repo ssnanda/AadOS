@@ -5,10 +5,14 @@ import { applyToMailbox } from './mail-actions';
 import { keyAllowed, scopeState } from './scope';
 import { database, ensureInboxPipelines, hasDatabase, missingInboxPipelines, readState, updateState, visiblePipelines, type AadOSState } from './aados-store';
 import { getInsights } from './ai/db';
-import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxView } from './inbox';
+import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxRow, type InboxView } from './inbox';
 import { CATEGORIES } from './categories';
 import { isUnread } from './search';
 import { aiConfigured } from './ai/service';
+import { kindMeta } from '../kinds';
+
+/** One Shopping tile: `key` is `saved:<coupon|gift-card>` or `kind:<parsed kind>`; picking it lists those emails. */
+export type ShopTile = { key: string; label: string; icon: string; tone: string; count: number; detail: string };
 
 // Tabs: unread, recent, smart views, all. Older views (important, needs-reply, inbox, read) still work for existing links.
 const VIEWS: InboxView[] = ['unread', 'recent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
@@ -19,7 +23,8 @@ export function parseInboxQuery(p: URLSearchParams, pageSize = 50): InboxQuery {
   return {
     view, account: p.get('account') || '', provider: p.get('provider') || '', sender: p.get('sender') || '', from: p.get('from') || '', to: p.get('to') || '',
     read: p.get('read') === 'read' ? 'read' : p.get('read') === 'unread' ? 'unread' : '', category: (CATEGORIES as readonly string[]).includes(p.get('category') || '') ? p.get('category')! : '',
-    pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', folder: p.get('folder') || '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize
+    pipeline: p.get('pipeline') || '', thread: p.get('thread') || '', folder: p.get('folder') || '', kind: p.get('kind') || '',
+    saved: p.get('saved') === 'coupon' ? 'coupon' : p.get('saved') === 'gift-card' ? 'gift-card' : '', q: (p.get('q') || '').trim(), page: Number(p.get('page')) || 1, pageSize
   };
 }
 
@@ -48,7 +53,12 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
   state = scopeState(state, user);
   const query = parseInboxQuery(params, opts.pageSize ?? 50);
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
+  // Shopping views are tiles only (no unread/all switch): every email counts, and the list appears once a tile or a search is picked.
+  const shopView = state.pipelines.find((p) => p.id === query.pipeline && p.parser === 'shop');
+  if (shopView) query.view = 'all';
+  const shop = shopView ? { tiles: shopTiles(rows, shopView.id) } : null;
   const result = queryInbox(rows, query);
+  if (shopView && !query.kind && !query.saved && !query.q) Object.assign(result, { rows: [], total: 0, page: 1, pages: 1 });
   const saved = {
     coupons: rows.filter((r) => r.savedKind === 'coupon' && r.savedExpiry).sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, expiresOn: r.savedExpiry })),
     giftCards: rows.filter((r) => r.savedKind === 'gift-card').sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender }))
@@ -61,13 +71,27 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
     folderName, insights, aiAvailable: hasDatabase(),
     // Why AI replies are unavailable ('' = ready); the Reply menu shows this instead of hiding the options.
     aiBlocked: !aiConfigured(state) ? 'Connect the AJMCP gateway in Settings → AI' : !state.ai.enabled ? 'Turn on AI in Settings → AI' : !state.ai.share.email ? 'Allow Email in Settings → AI' : !hasDatabase() ? 'AI drafts need PostgreSQL storage' : '',
-    query, ...result, saved,
+    query, ...result, saved, shop,
     categories: CATEGORIES,
     accounts: state.accounts.map((a) => ({ id: a.id, provider: a.provider, email: a.email || a.id, lastSync: a.lastSync || '', lastError: a.lastError || '', unreadCheckedAt: a.unreadCheckedAt || '', paused: Boolean(a.paused), total: rows.filter((r) => r.accountId === a.id).length, unread: rows.filter((r) => r.accountId === a.id && r.unread).length })),
     views: visiblePipelines(state).map((v) => ({ id: v.id, name: v.name, parser: v.parser, total: state.items.filter((i) => i.pipelineId === v.id).length, unread: state.items.filter((i) => i.pipelineId === v.id && isUnread(i)).length })),
     // The web page gets these from the layout; the app asks for them here (one state read).
     folders: opts.folders ? accountFolders(state) : undefined
   };
+}
+
+/** Shopping tiles over one view's emails: saved Coupons and Gift Cards always, then each parsed kind present. */
+function shopTiles(rows: InboxRow[], pipelineId: string): ShopTile[] {
+  const inView = rows.filter((r) => r.copyIds.some((id) => id.startsWith(`${pipelineId}:`)));
+  const coupons = inView.filter((r) => r.savedKind === 'coupon').map((r) => r.savedExpiry).filter(Boolean).sort();
+  const gifts = inView.filter((r) => r.savedKind === 'gift-card').length;
+  const kinds = new Map<string, number>();
+  for (const r of inView) { const k = r.kinds.find((x) => x.startsWith(`${pipelineId}:`))?.slice(pipelineId.length + 1); if (k) kinds.set(k, (kinds.get(k) || 0) + 1); }
+  return [
+    { key: 'saved:coupon', label: 'Coupons', icon: '🎟', tone: 'amber', count: coupons.length, detail: coupons.length ? `Next expires ${coupons[0]}` : 'None saved' },
+    { key: 'saved:gift-card', label: 'Gift Cards', icon: '🎁', tone: 'amber', count: gifts, detail: gifts ? 'No expiry' : 'None saved' },
+    ...[...kinds].sort((a, b) => b[1] - a[1]).map(([k, n]) => { const m = kindMeta(k); return { key: `kind:${k}`, label: m.label, icon: m.icon, tone: m.tone, count: n, detail: '' }; })
+  ];
 }
 
 const account = (state: AadOSState, item: { pipelineId: string; accountId?: string }) => item.accountId || state.pipelines.find((p) => p.id === item.pipelineId)?.accountId || '';

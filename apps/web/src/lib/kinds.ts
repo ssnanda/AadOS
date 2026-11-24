@@ -1,5 +1,5 @@
 export const KINDS: Record<string, { label: string; icon: string; tone: string }> = {
-  coupon: { label: 'Coupons & deals', icon: '🏷', tone: 'pink' },
+  coupon: { label: 'Deals & promos', icon: '🏷', tone: 'pink' },
   order: { label: 'Orders', icon: '🧾', tone: 'blue' },
   shipping: { label: 'Shipping', icon: '📦', tone: 'amber' },
   return: { label: 'Returns', icon: '↩', tone: 'violet' },

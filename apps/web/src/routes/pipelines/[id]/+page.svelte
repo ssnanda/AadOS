@@ -6,15 +6,17 @@
   onMount(() => { const auto = startAutoSync(() => ({ pipeline: data.pipeline.id }), () => invalidateAll()); void auto.run(); return () => auto.stop(); });
 
   const meta = kindMeta;
-  const href = (kind: string, store: string, withQuery = true, all = false, pages = 1) => {
+  // Tiles are exclusive: a saved-value tile (Coupons, Gift Cards) clears the kind, and a kind clears it.
+  const href = (kind: string, store: string, withQuery = true, all = false, pages = 1, saved = '') => {
     const q = new URLSearchParams();
     if (all) q.set('show', 'all');
     if (pages > 1) q.set('pages', String(pages));
-    if (kind) q.set('kind', kind);
+    if (saved) q.set('saved', saved); else if (kind) q.set('kind', kind);
     if (store) q.set('store', store);
     if (withQuery && data.q) q.set('q', data.q);
     return `?${q}`;
   };
+  const shop = $derived(data.pipeline.parser === 'shop');
 </script>
 <svelte:head><title>{data.pipeline.name} · AadOS</title></svelte:head>
 <AppShell title={data.pipeline.name}>
@@ -29,19 +31,23 @@
   {#if data.review}<DigestPanel review={data.review} />{/if}
   {#if form && 'removed' in form}<div class="ok">Deleted {form.removed} emails from AadOS.</div>{/if}
   {#snippet sourceEmails()}
-  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.q}<a href={href(data.kind, data.store, false)}>Clear</a>{/if}</form>
+  <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.q} placeholder="Search this view…" aria-label="Search this view">{#if data.kind}<input type="hidden" name="kind" value={data.kind}>{/if}{#if data.saved}<input type="hidden" name="saved" value={data.saved}>{/if}{#if data.store}<input type="hidden" name="store" value={data.store}>{/if}{#if data.q}<a href={href(data.kind, data.store, false, false, 1, data.saved)}>Clear</a>{/if}</form>
   <div class="tiles">
-    <a class="tile all" class:on={data.showAll && !data.kind && !data.store} href={href('', '', true, true)} title="List every email in this view (50 at a time)"><span class="ico">▦</span><b>{data.searched}</b><small>Show all</small></a>
-    {#each data.kinds as [kind, n] (kind)}{@const m = meta(kind)}<a class="tile {m.tone}" class:on={data.kind === kind} href={href(kind, data.store)}><span class="ico">{m.icon}</span><b>{n}</b><small>{m.label}</small></a>{/each}
+    {#if data.savedTiles}
+      <a class="tile amber" class:on={data.saved === 'coupon'} href={data.saved === 'coupon' ? href('', data.store) : href('', data.store, true, false, 1, 'coupon')} title={data.savedTiles.nextExpiry ? `Next expires ${data.savedTiles.nextExpiry}` : 'No saved coupons'}><span class="ico">🎟</span><b>{data.savedTiles.coupon}</b><small>Coupons</small></a>
+      <a class="tile amber" class:on={data.saved === 'gift-card'} href={data.saved === 'gift-card' ? href('', data.store) : href('', data.store, true, false, 1, 'gift-card')} title="Gift cards do not expire"><span class="ico">🎁</span><b>{data.savedTiles.giftCard}</b><small>Gift Cards</small></a>
+    {/if}
+    {#if !shop}<a class="tile all" class:on={data.showAll && !data.kind && !data.store} href={href('', '', true, true)} title="List every email in this view (50 at a time)"><span class="ico">▦</span><b>{data.searched}</b><small>Show all</small></a>{/if}
+    {#each data.kinds as [kind, n] (kind)}{@const m = meta(kind)}<a class="tile {m.tone}" class:on={data.kind === kind && !data.saved} href={shop && data.kind === kind ? href('', data.store) : href(kind, data.store)}><span class="ico">{m.icon}</span><b>{n}</b><small>{m.label}</small></a>{/each}
   </div>
   {#if data.stores.length}
-    <div class="stores"><span class="lbl">Stores</span>{#each data.stores as [name, n] (name)}<a class="chip" class:on={data.store === name} href={href(data.kind, data.store === name ? '' : name)}>{name}<i>{n}</i></a>{/each}</div>
+    <div class="stores"><span class="lbl">Stores</span>{#each data.stores as [name, n] (name)}<a class="chip" class:on={data.store === name} href={href(data.kind, data.store === name ? '' : name, true, false, 1, data.saved)}>{name}<i>{n}</i></a>{/each}</div>
   {/if}
 
   {#if data.listing}
   <section>{#if data.items.length === 0}<div class="empty">{data.total ? 'No emails match this filter.' : 'No messages synced from this folder yet.'}</div>{/if}
-    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.kind, store: data.store, q: data.q }} aiAvailable={data.aiAvailable} aiBlocked={data.aiBlocked} />
-    {#if data.matched > data.items.length}<a class="more" href={href(data.kind, data.store, true, data.showAll, data.pages + 1)} data-sveltekit-noscroll>Show {Math.min(data.pageSize, data.matched - data.items.length)} more · {data.items.length} of {data.matched}</a>{/if}</section>
+    <ItemList items={data.items} matched={data.matched} filters={{ kind: data.saved ? '' : data.kind, store: data.store, q: data.q, saved: data.saved }} aiAvailable={data.aiAvailable} aiBlocked={data.aiBlocked} />
+    {#if data.matched > data.items.length}<a class="more" href={href(data.kind, data.store, true, data.showAll, data.pages + 1, data.saved)} data-sveltekit-noscroll>Show {Math.min(data.pageSize, data.matched - data.items.length)} more · {data.items.length} of {data.matched}</a>{/if}</section>
   {:else if !data.total}<div class="empty">No messages synced from this folder yet.</div>{/if}
   {/snippet}
   {#if data.review}<details class="evidence"><summary>Source emails <i>{data.total}</i></summary><div class="evidence-body">{@render sourceEmails()}</div></details>{:else}{@render sourceEmails()}{/if}

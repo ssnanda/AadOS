@@ -1,10 +1,12 @@
-import { fail, type Actions } from '@sveltejs/kit';
+import { fail, redirect, type Actions } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { emailList, markEmails } from '$lib/server/email-list';
 
 // List and mark logic live in $lib/server/email-list (shared with the mobile app API).
 export const load: PageServerLoad = async ({ url, locals }) => {
   const { folders: _folders, ...data } = await emailList(url.searchParams, locals.user);
+  // Shopping on the web is the view page (tiles only, no unread/all tabs).
+  if (data.shop) throw redirect(302, `/pipelines/${encodeURIComponent(data.query.pipeline || '')}`);
   return data;
 };
 

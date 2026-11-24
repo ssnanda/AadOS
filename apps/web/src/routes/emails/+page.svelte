@@ -126,13 +126,6 @@
   {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
   {#if notice}<div class="alert">{notice}{#if /read-only access/.test(notice)} <a href="/settings/emails">Open Settings</a>{/if} <button class="link" onclick={() => notice = ''}>Dismiss</button></div>{/if}
 
-  {#if data.views.find((v) => v.id === data.query.pipeline)?.parser === 'shop' && (data.saved.coupons.length || data.saved.giftCards.length)}
-    <section class="saved-tiles" aria-label="Saved email value">
-      {#if data.saved.coupons.length}<a href={href({ view: 'all' })}><span>Coupon</span><b>{data.saved.coupons.length}</b><small>Next expires {data.saved.coupons[0].expiresOn}</small></a>{/if}
-      {#if data.saved.giftCards.length}<a href={href({ view: 'all' })}><span>Gift Card</span><b>{data.saved.giftCards.length}</b><small>No expiry</small></a>{/if}
-    </section>
-  {/if}
-
   <form class="find" method="GET"><span>⌕</span><input type="search" name="q" value={data.query.q} placeholder="Search all accounts…" aria-label="Search all accounts">
     {#each Object.entries({ view: data.query.view === 'unread' ? '' : data.query.view, account: data.query.account, category: data.query.category, read: data.query.read, sender: data.query.sender, from: data.query.from, to: data.query.to, pipeline: data.query.pipeline, thread: data.query.thread, folder: data.query.folder }) as [k, v] (k)}{#if v}<input type="hidden" name={k} value={v}>{/if}{/each}
     {#if data.query.view === 'all'}<button type="button" class="link" onclick={() => showFilters = !showFilters}>Filters{hasFilters ? ' •' : ''}</button>{/if}</form>
@@ -204,7 +197,7 @@
   .checked i,.ufolders i{font-style:normal;font-weight:800;font-size:9px;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;background:#eef1fb;color:#3157de}.checked i.gmail,.ufolders i.gmail{background:#fdecea;color:#c5392f}
   .btn{border:1px solid #d9dfeb;background:#fff;border-radius:9px;padding:8px 13px;color:#43516c;font-weight:700;cursor:pointer;font-size:13px}.btn:hover{border-color:#8da2f0}
   .alert{padding:9px 14px;border-radius:9px;margin-bottom:10px;font-size:13px;background:#fff0f1;color:#a5414d}.alert a{color:#a5414d;font-weight:700}
-  .saved-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:10px}.saved-tiles a{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:12px 14px;border:1px solid #e4d6a5;border-radius:11px;background:#fffaf0;color:#55451e;text-decoration:none}.saved-tiles span{font-size:12px;font-weight:800;text-transform:uppercase}.saved-tiles b{grid-row:1/3;grid-column:2;font-size:25px}.saved-tiles small{color:#806d3d}.tag.saved{background:#fff3c7;color:#735a12}
+  .tag.saved{background:#fff3c7;color:#735a12}
   .find{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:0 12px;margin-bottom:10px}.find:focus-within{border-color:#8da2f0}.find span{color:#8a95a8;font-size:18px}.find input[type=search]{border:0;outline:0;flex:1;padding:10px 0;font-size:14px;background:transparent}
   .link{border:0;background:none;color:#3157de;font-weight:700;cursor:pointer;padding:0;font-size:12px;text-decoration:none}
   .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;background:#fff;border:1px solid #e4e9f2;border-radius:10px;padding:12px;margin-bottom:10px}

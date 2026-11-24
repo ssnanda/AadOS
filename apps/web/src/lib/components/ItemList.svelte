@@ -6,7 +6,7 @@
   import { mailAction } from '$lib/mail-action';
   type Item = { id: string; key: string; accountId: string; pipelineId: string; messageId: string; unread?: boolean; seen?: boolean; subject: string; sender: string; receivedAt: string; summary: string; kind: string; facts: Record<string, string | number | boolean> };
   // `filters` is what "select all matching" re-applies on the server; `names` labels the view in search results.
-  let { items, matched, filters = {}, names, aiAvailable = false, aiBlocked = '' }: { items: Item[]; matched: number; filters?: { kind?: string; store?: string; q?: string; unread?: boolean }; names?: Record<string, string>; aiAvailable?: boolean; aiBlocked?: string } = $props();
+  let { items, matched, filters = {}, names, aiAvailable = false, aiBlocked = '' }: { items: Item[]; matched: number; filters?: { kind?: string; store?: string; q?: string; unread?: boolean; saved?: string }; names?: Record<string, string>; aiAvailable?: boolean; aiBlocked?: string } = $props();
   let selected = $state<string[]>([]);
   let allMatching = $state(false);
   let count = $derived(allMatching ? matched : selected.length);
@@ -35,7 +35,7 @@
 </script>
 {#if items.length > 0}
 <form method="POST" action="?/remove" use:enhance={guard}>
-  {#if allMatching}<input type="hidden" name="all" value="1"><input type="hidden" name="kind" value={filters.kind ?? ''}><input type="hidden" name="store" value={filters.store ?? ''}><input type="hidden" name="q" value={filters.q ?? ''}>{/if}
+  {#if allMatching}<input type="hidden" name="all" value="1"><input type="hidden" name="kind" value={filters.kind ?? ''}><input type="hidden" name="store" value={filters.store ?? ''}><input type="hidden" name="q" value={filters.q ?? ''}><input type="hidden" name="saved" value={filters.saved ?? ''}>{/if}
   <div class="bulk" class:on={count > 0}>
     <label><input type="checkbox" checked={allShown || allMatching} onchange={(e) => toggleShown(e.currentTarget.checked)}> Select all shown ({items.length})</label>
     {#if allShown && matched > items.length && !allMatching}<button type="button" class="link" onclick={() => allMatching = true}>Select all {matched} matching</button>{/if}

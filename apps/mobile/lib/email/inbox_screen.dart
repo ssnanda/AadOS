@@ -55,9 +55,11 @@ class _InboxScreenState extends State<InboxScreen> {
               '',
             )
           : 'Folder';
-    if (q.pipeline.isNotEmpty)
-      return d?.views.where((v) => v.id == q.pipeline).firstOrNull?.name ??
-          'View';
+    if (q.pipeline.isNotEmpty) {
+      final name = d?.views.where((v) => v.id == q.pipeline).firstOrNull?.name ?? 'View';
+      final tile = _tiles.where((t) => t.key == q.tileKey).firstOrNull;
+      return tile == null ? name : '$name · ${tile.label}';
+    }
     if (q.account.isNotEmpty)
       return d?.accounts
               .where((a) => a.id == q.account)
@@ -219,21 +221,45 @@ class _InboxScreenState extends State<InboxScreen> {
     return '$unread unread${checked != null ? ' · checked ${shortTime(checked)}' : ''}';
   }
 
-  Widget _savedTiles() {
-    final d = c.data;
-    final shopping = d?.views.where((v) => v.id == c.query.pipeline).firstOrNull?.parser == 'shop';
-    if (d == null || !shopping || (d.savedCoupons.isEmpty && d.savedGiftCards.isEmpty)) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-      child: Row(children: [
-        if (d.savedCoupons.isNotEmpty)
-          Expanded(child: _SavedTile(icon: Icons.local_offer_outlined, label: 'Coupon', count: d.savedCoupons.length, detail: 'Next expires ${d.savedCoupons.first.expiresOn}')),
-        if (d.savedCoupons.isNotEmpty && d.savedGiftCards.isNotEmpty) const SizedBox(width: 8),
-        if (d.savedGiftCards.isNotEmpty)
-          Expanded(child: _SavedTile(icon: Icons.card_giftcard_outlined, label: 'Gift Card', count: d.savedGiftCards.length, detail: 'No expiry')),
-      ]),
-    );
-  }
+  /// Shopping views are tiles only (saved Coupons, Gift Cards, then each parsed kind); a tile opens its emails.
+  bool get _shop => c.query.pipeline.isNotEmpty && c.data?.views.where((v) => v.id == c.query.pipeline).firstOrNull?.parser == 'shop';
+  List<ShopTile> get _tiles => c.data?.shopTiles ?? const [];
+  bool get _shopGrid => _shop && c.query.tileKey.isEmpty && c.query.q.isEmpty;
+
+  void _openTile(String key) => _open(c.query.withTile(c.query.tileKey == key ? '' : key));
+
+  Widget _tileGrid() => RefreshIndicator(
+        onRefresh: () => c.sync(force: true),
+        child: GridView.count(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(12),
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 1.9,
+          children: [for (final t in _tiles) _ShopTileCard(tile: t, onTap: () => _openTile(t.key))],
+        ),
+      );
+
+  Widget _tileStrip() => SizedBox(
+        height: 46,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          children: [
+            for (final t in _tiles)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  avatar: Icon(_ShopTileCard.iconOf(t.key), size: 16),
+                  label: Text('${t.label} ${t.count}'),
+                  selected: c.query.tileKey == t.key,
+                  onSelected: (_) => _openTile(t.key),
+                ),
+              ),
+          ],
+        ),
+      );
 
   Widget _filters() {
     final q = c.query;
@@ -272,10 +298,15 @@ class _InboxScreenState extends State<InboxScreen> {
             d?.accounts.where((a) => a.lastError.isNotEmpty).toList() ??
             const [];
         return PopScope(
-          canPop: _selected.isEmpty && !_searching,
+          canPop: _selected.isEmpty && !_searching && !(_shop && c.query.tileKey.isNotEmpty),
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop)
-              setState(() {
+            if (didPop) return;
+            // Back from a Shopping tile's emails returns to the tiles.
+            if (_selected.isEmpty && !_searching && c.query.tileKey.isNotEmpty) {
+              _open(c.query.withTile(''));
+              return;
+            }
+            setState(() {
                 _selected.clear();
                 _searching = false;
               });
@@ -295,12 +326,12 @@ class _InboxScreenState extends State<InboxScreen> {
                   const LinearProgressIndicator(minHeight: 2)
                 else
                   const SizedBox(height: 2),
-                _savedTiles(),
+                if (_shop && !_shopGrid) _tileStrip(),
                 _filters(),
                 for (final a in errors) _Banner('${a.email}: ${a.lastError}'),
                 if (c.error.isNotEmpty) _Banner(c.error),
                 Expanded(
-                  child: RefreshIndicator(
+                  child: _shopGrid ? _tileGrid() : RefreshIndicator(
                     onRefresh: () => c.sync(force: true),
                     child: c.rows.isEmpty
                         ? ListView(
@@ -402,23 +433,48 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 }
 
-class _SavedTile extends StatelessWidget {
-  const _SavedTile({required this.icon, required this.label, required this.count, required this.detail});
-  final IconData icon;
-  final String label, detail;
-  final int count;
+class _ShopTileCard extends StatelessWidget {
+  const _ShopTileCard({required this.tile, required this.onTap});
+  final ShopTile tile;
+  final VoidCallback onTap;
+
+  static IconData iconOf(String key) => switch (key) {
+        'saved:coupon' => Icons.local_offer_outlined,
+        'saved:gift-card' => Icons.card_giftcard_outlined,
+        'kind:order' => Icons.receipt_long_outlined,
+        'kind:shipping' => Icons.local_shipping_outlined,
+        'kind:return' => Icons.assignment_return_outlined,
+        'kind:coupon' => Icons.sell_outlined,
+        _ => Icons.mail_outline,
+      };
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: const Color(0xFFFFF8E5), border: Border.all(color: const Color(0xFFE4D6A5)), borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          Icon(icon, color: const Color(0xFF80621A)),
-          const SizedBox(width: 9),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontWeight: FontWeight.w800)), Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Color(0xFF806D3D)))])),
-          Text('$count', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF55451E))),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final saved = tile.key.startsWith('saved:');
+    return Material(
+      color: saved ? const Color(0xFFFFF8E5) : t.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: saved ? const Color(0xFFE4D6A5) : t.dividerColor)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            Icon(iconOf(tile.key), color: saved ? const Color(0xFF80621A) : t.colorScheme.primary),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(tile.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w800, color: saved ? const Color(0xFF55451E) : null)),
+                if (tile.detail.isNotEmpty) Text(tile.detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: saved ? const Color(0xFF806D3D) : t.colorScheme.onSurfaceVariant)),
+              ]),
+            ),
+            Text('${tile.count}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: saved ? const Color(0xFF55451E) : t.colorScheme.primary)),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
 class _Banner extends StatelessWidget {

@@ -7,6 +7,10 @@ export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply'
 export type InboxQuery = {
   view?: InboxView; account?: string; provider?: string; sender?: string; from?: string; to?: string;
   read?: 'read' | 'unread' | ''; category?: string; importance?: 'high' | ''; pipeline?: string; thread?: string; folder?: string;
+  /** Parsed kind of the copy in `pipeline` (Shopping: order, shipping, return, coupon, other). */
+  kind?: string;
+  /** Saved value on the message (Shopping tiles: Coupons, Gift Cards). */
+  saved?: 'coupon' | 'gift-card' | '';
   q?: string; page?: number; pageSize?: number;
 };
 export type InboxRow = {
@@ -14,6 +18,8 @@ export type InboxRow = {
   unread: boolean; accountId: string; accountEmail: string; provider: 'zoho' | 'gmail' | ''; categories: string[];
   importance: 'high' | 'normal'; action: ActionKind | null; actionReason: string; due: string; reviewed: boolean; followUp: string;
   savedKind: 'coupon' | 'gift-card' | ''; savedExpiry: string;
+  /** `${pipelineId}:${kind}` for each view copy (the parsed kind differs per view parser). */
+  kinds: string[];
   inInbox: boolean; threadId: string; threadCount: number; pipelines: string[]; copyIds: string[]; folders: string[];
 };
 export type InboxResult = {
@@ -110,6 +116,7 @@ export function buildRows(input: { pipelines: Pipeline[]; accounts: MailAccount[
       inInbox: copies.some((c) => byPipeline.get(c.pipelineId)?.system), threadId, threadCount: 1,
       pipelines: [...new Set(copies.map((c) => byPipeline.get(c.pipelineId)).filter((p): p is Pipeline => Boolean(p && !p.system)).map((p) => p.name))],
       copyIds: copies.map((c) => c.id),
+      kinds: [...new Set(copies.filter((c) => c.kind).map((c) => `${c.pipelineId}:${c.kind}`))],
       folders: [...new Set(copies.map((c) => itemFolder(c, byPipeline.get(c.pipelineId))).filter(Boolean))]
     });
   }
@@ -180,7 +187,11 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     && (query.importance !== 'high' || r.importance === 'high')
     && (!query.pipeline || r.copyIds.some((id) => id.startsWith(`${query.pipeline}:`)))
     && (!query.thread || r.threadId === query.thread)
+    && (!query.kind || r.kinds.some((k) => query.pipeline ? k === `${query.pipeline}:${query.kind}` : k.endsWith(`:${query.kind}`)))
+    && (!query.saved || r.savedKind === query.saved)
     && matchesText(r, terms)));
+  // Saved coupons: soonest expiry first.
+  if (query.saved === 'coupon') filtered.sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry));
   // Recent is simply the newest messages, no paging.
   if (view === 'recent') { const rows = filtered.slice(0, RECENT_COUNT); return { rows, total: rows.length, page: 1, pageSize: RECENT_COUNT, pages: 1, counts: { ...counts, recent: Math.min(RECENT_COUNT, filtered.length) } }; }
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
