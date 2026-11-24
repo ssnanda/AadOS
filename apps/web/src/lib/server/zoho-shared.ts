@@ -3,9 +3,9 @@
 //   sendMailDetails with mode "group", grouped by display name since one box has several aliases); each is probed with
 //   GET /api/v2/sharedmailbox/{address}/counts and only HTTP 200 ones are real boxes the user can read.
 // - Messages: /api/v2/sharedmailbox/{address}/messages/{all|unread}; fields are nested, so they are looked up by key.
-// - Body: V2 "Get a message" returns data.message.content as {summary, title, htmlSummary?} — documented as a summary
-//   only, with no folder/account ids. So: use a detail field if it is clearly longer than the summary, otherwise read
-//   the member's own delivered copy (v1 search by subject + nearest time → /folders/{f}/messages/{m}/content).
+// - Body: V2 "Get a message" requested with fields=content,… (and includeAttachments) returns the full HTML body; without
+//   `fields` it is a summary only. Fallback for anything else: the member's own delivered copy (v1 search by subject +
+//   nearest time → /folders/{f}/messages/{m}/content) — which fails for shared mail never delivered to the member.
 import type { AadOSState, MailAccount } from './aados-store';
 import { zohoRequest } from './zoho';
 
@@ -80,11 +80,26 @@ const plainLen = (s: string) => s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').t
  *  The docs only promise a truncated `summary`; take any content string clearly longer than it (HTML preferred). */
 function bodyFromDetail(detail: Raw, summary: string): string {
   const content = detail?.data?.message?.content;
-  if (!content || typeof content !== 'object') return '';
   const floor = plainLen(summary) + 20;
-  const strings = ['htmlContent', 'content', 'body', 'messageBody', 'htmlSummary', 'summary']
-    .map((k) => content[k]).filter((v): v is string => typeof v === 'string' && plainLen(v) > floor);
-  return strings.find(isHtml) || strings[0] || '';
+  const strings = content && typeof content === 'object'
+    ? ['htmlContent', 'content', 'body', 'messageBody', 'htmlSummary', 'summary']
+      .map((k) => content[k]).filter((v): v is string => typeof v === 'string' && plainLen(v) > floor)
+    : [];
+  const named = strings.find(isHtml) || strings[0] || '';
+  if (named) return named;
+  // With fields=content,… the full HTML body comes back under a key the docs don't name: take the longest HTML string
+  // anywhere in the response that is clearly longer than the summary (same rule as AJCore's shared_body_fields()).
+  const html = stringLeaves(detail?.data ?? detail).map(entities)
+    .filter((v) => isHtml(v) && v.length > Math.max(600, summary.length * 2) && plainLen(v) > floor)
+    .sort((a, b) => b.length - a.length)[0];
+  return html || '';
+}
+
+/** Every string value in a nested response (objects and arrays). */
+function stringLeaves(root: unknown, out: string[] = []): string[] {
+  if (typeof root === 'string') out.push(root);
+  else if (root && typeof root === 'object') for (const v of Object.values(root as Raw)) stringLeaves(v, out);
+  return out;
 }
 
 /** Group mail is also delivered to each member's own mailbox. Find that copy (same subject, closest receive time,
@@ -113,7 +128,10 @@ export async function sharedBody(state: AadOSState, account: MailAccount, addres
   if (!m) return { html: '', text: '', note: 'Reload the list and open the message again.' };
   const reasons: string[] = [];
   try {
-    const detail = await zohoRequest(state, account, 'GET', `/v2/sharedmailbox/${encodeURIComponent(address)}/messages/${encodeURIComponent(id)}`);
+    // Without `fields` Zoho returns only the summary; asking for content (as AJCore does) returns the full body, so
+    // shared mail that was never delivered to this login's own mailbox still opens in full.
+    const q = new URLSearchParams({ fields: 'content,htmlSummary,summary,title,folderDetails,groupId,mailSpaceId', includeAttachments: 'true' });
+    const detail = await zohoRequest(state, account, 'GET', `/v2/sharedmailbox/${encodeURIComponent(address)}/messages/${encodeURIComponent(id)}?${q}`);
     const raw = bodyFromDetail(detail, m.summary);
     if (raw) return asBody(raw);
     const c = detail?.data?.message?.content;
