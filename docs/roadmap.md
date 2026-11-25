@@ -181,3 +181,10 @@ Keep scope small: deliver useful inbox access before extending to household task
 108. [x] Native Finance: Overview (net worth, chart, allocation, alerts), Positions, Accounts, Watchlist, Real estate, Insights (mute); price refresh. Editing holdings/accounts/connections stays on the web — awaiting owner verification
 109. [x] Server: JSON `GET /calendar/data`, `/room/data` (+POST pick), `/asana/data`, `/finance/data`, `/messages/data` reuse each page's load; session 401s carry `x-aados-signin` so Asana/BlueBubbles 401s no longer sign the app out — `npm run check` not run by agent
 
+### Inbox property tiles (2026-11-24)
+
+110. [x] Inbox view **Leads**: listing-site prospects (Zillow/Trulia/HotPads relays, Apartments.com, Rent.com, Zumper, Realtor, Redfin, TurboTenant, ShowMojo …) and Rentec applications, any age — awaiting owner verification
+111. [x] Inbox view **Scanned Docs**: subject "Scan from …" or sender sandip.smtp@itspector.com — awaiting owner verification
+112. [x] Inbox view **Rent Payments**: money received via Cash App (cash@square.com "sent you $" / "You accepted $"), Zelle, Venmo "paid you", PayPal, Rentec EasyPay — awaiting owner verification
+113. [x] Needs attention / People / Bills & renewals / Bulk removed from the inbox tabs (web) and app Dashboard tiles; `?view=` links still work — awaiting owner verification
+

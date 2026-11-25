@@ -4,7 +4,7 @@ import type { MailAccount, Pipeline, PipelineItem } from './aados-store';
 import { classify, couponExpiry, detectAction, importance, type ActionKind } from './categories.ts';
 import { recipients } from '../recipients.ts';
 
-export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply' | 'recent' | 'read' | 'attention' | 'people' | 'bills' | 'bulk';
+export type InboxView = 'inbox' | 'all' | 'unread' | 'important' | 'needs-reply' | 'recent' | 'read' | 'attention' | 'people' | 'bills' | 'bulk' | 'leads' | 'scans' | 'rent';
 export type InboxQuery = {
   view?: InboxView; account?: string; provider?: string; sender?: string; from?: string; to?: string;
   read?: 'read' | 'unread' | ''; category?: string; importance?: 'high' | ''; pipeline?: string; thread?: string; folder?: string;
@@ -27,7 +27,7 @@ export type InboxRow = {
 };
 export type InboxResult = {
   rows: InboxRow[]; total: number; page: number; pageSize: number; pages: number;
-  counts: { inbox: number; all: number; unread: number; important: number; needsReply: number; recent: number; read: number; attention: number; people: number; bills: number; bulk: number; categories: Record<string, number>; accounts: Record<string, number> };
+  counts: { inbox: number; all: number; unread: number; important: number; needsReply: number; recent: number; read: number; attention: number; people: number; bills: number; bulk: number; leads: number; scans: number; rent: number; categories: Record<string, number>; accounts: Record<string, number> };
 };
 
 export const RECENT_DAYS = 7;
@@ -141,6 +141,39 @@ const isAttention = (r: InboxRow, now: number) => !r.reviewed && !isBulk(r) && w
 /** Bills & renewals: billing/subscription mail from the last 45 days, or with a due date still ahead. */
 const isBills = (r: InboxRow, now: number) => r.categories.some((c) => c === 'Bills' || c === 'Payments' || c === 'Renewals' || c === 'Subscriptions') && (within(r, 45, now) || (r.due !== '' && Date.parse(r.due) >= now - 86_400_000));
 
+// Inbox tiles for property work. Matched on the sender address and subject, any age (new and old).
+const addressOf = (sender: string) => (sender.match(/<([^>]+)>/)?.[1] || sender).trim().toLowerCase();
+// Older Zoho mail kept only the sender's name ("Zillow Rentals"), so a name without an address matches on its first word.
+const fromDomain = (r: InboxRow, domains: readonly string[]) => {
+  const a = addressOf(r.sender);
+  if (!a.includes('@')) return domains.some((x) => a.replace(/[^a-z0-9.]/g, '').startsWith(x.split('.')[0]));
+  const d = a.split('@')[1];
+  return domains.some((x) => d === x || d.endsWith(`.${x}`));
+};
+/** Rental listing sites; their reply relays (convo.zillow.com …) and lead mailboxes. */
+const LEAD_SITES = ['zillow.com', 'trulia.com', 'hotpads.com', 'apartments.com', 'rent.com', 'rentals.com', 'zumper.com', 'padmapper.com', 'realtor.com', 'redfin.com', 'turbotenant.com', 'showmojo.com', 'avail.co', 'apartmentlist.com', 'rentler.com', 'craigslist.org', 'facebookmail.com'];
+const LEAD_SUBJECT = /\b(request(ing|ed|s)?|inquir(y|ies)|lead|interested|application|tour|showing|question|contact(ed)?|message from|wants to)\b/i;
+/** Leads: a prospect via a listing site (not the site's own marketing), or an application received in Rentec Direct. */
+const isLead = (r: InboxRow) => {
+  const a = addressOf(r.sender);
+  if (/^applications@rentecdirect\.com$/.test(a)) return true;
+  if (!fromDomain(r, LEAD_SITES)) return false;
+  if (fromDomain(r, ['facebookmail.com'])) return /\b(marketplace|listing|rental|interested)\b/i.test(r.subject) && LEAD_SUBJECT.test(r.subject);
+  return /^(lead|leads|inquiries|inquiry)@/.test(a) || /@convo\./.test(a) || LEAD_SUBJECT.test(r.subject);
+};
+/** Scans: the office printer's "Scan from …" mail (sent through the itspector relay). */
+const isScan = (r: InboxRow) => /^scan(ned)? from\b/i.test(r.subject.trim()) || addressOf(r.sender) === 'sandip.smtp@itspector.com';
+/** Rent: money received through Cash App, Zelle, Venmo, PayPal or Rentec Direct EasyPay (not money you sent, codes or statements). */
+const isRent = (r: InboxRow) => {
+  const a = addressOf(r.sender), s = r.subject.trim();
+  if (a === 'cash@square.com' || /^cash ?app\b/.test(a)) return /\bsent you \$|^you accepted \$|\bpaid you \$/i.test(s);
+  if (a.includes('zelle')) return /money sent to you|received|deposited|you('ve)? got money/i.test(s) && !/requested/i.test(s);
+  if (fromDomain(r, ['venmo.com'])) return /\bpaid you \$/i.test(s);
+  if (fromDomain(r, ['paypal.com'])) return /you('ve)? got money|sent you \$|payment received/i.test(s);
+  if (fromDomain(r, ['rentecdirect.com'])) return /payment/i.test(s) && !/^applications@/.test(a);
+  return false;
+};
+
 /** Every search word must appear in subject, sender, preview, account, provider, categories or view names. */
 function matchesText(row: InboxRow, terms: string[]) {
   if (!terms.length) return true;
@@ -161,7 +194,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
 
   // Counts reflect the whole (deduplicated) mailbox, narrowed only by account/provider scope.
   const scoped = rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider) && (!query.folder || r.folders.includes(query.folder)));
-  const counts: InboxResult['counts'] = { inbox: 0, all: scoped.length, unread: 0, important: 0, needsReply: 0, recent: 0, read: 0, attention: 0, people: 0, bills: 0, bulk: 0, categories: {}, accounts: {} };
+  const counts: InboxResult['counts'] = { inbox: 0, all: scoped.length, unread: 0, important: 0, needsReply: 0, recent: 0, read: 0, attention: 0, people: 0, bills: 0, bulk: 0, leads: 0, scans: 0, rent: 0, categories: {}, accounts: {} };
   for (const r of scoped) {
     if (r.inInbox) counts.inbox++;
     if (r.unread) counts.unread++;
@@ -172,6 +205,9 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     if (isPeople(r)) counts.people++;
     if (isBills(r, now)) counts.bills++;
     if (isBulk(r)) counts.bulk++;
+    if (isLead(r)) counts.leads++;
+    if (isScan(r)) counts.scans++;
+    if (isRent(r)) counts.rent++;
     for (const c of r.categories) counts.categories[c] = (counts.categories[c] || 0) + 1;
   }
   counts.recent = Math.min(RECENT_COUNT, scoped.length);
@@ -184,6 +220,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     (view !== 'inbox' || r.inInbox) && (view !== 'unread' || r.unread) && (view !== 'important' || r.importance === 'high') && (view !== 'needs-reply' || needsReply(r))
     && (view !== 'read' || !r.unread)
     && (view !== 'attention' || isAttention(r, now)) && (view !== 'people' || isPeople(r)) && (view !== 'bills' || isBills(r, now)) && (view !== 'bulk' || isBulk(r))
+    && (view !== 'leads' || isLead(r)) && (view !== 'scans' || isScan(r)) && (view !== 'rent' || isRent(r))
     && (!sender || r.sender.toLowerCase().includes(sender))
     && (Number.isNaN(from) || Date.parse(r.receivedAt) >= from) && (Number.isNaN(to) || Date.parse(r.receivedAt) <= to)
     && (query.read !== 'unread' || r.unread) && (query.read !== 'read' || !r.unread)

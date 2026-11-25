@@ -58,10 +58,10 @@ class DashboardScreenState extends State<DashboardScreen> {
     final metrics = <(IconData, String, int, InboxQuery, Color)>[
       (Icons.mark_email_unread_outlined, 'Unread', _count('unread'), const InboxQuery(), AppColors.accent),
       (Icons.reply_outlined, 'Needs reply', _count('needsReply'), const InboxQuery(view: 'needs-reply'), AppColors.action),
-      (Icons.priority_high, 'Needs attention', _count('attention'), const InboxQuery(view: 'attention'), AppColors.danger),
-      (Icons.receipt_long_outlined, 'Bills & renewals', _count('bills'), const InboxQuery(view: 'bills'), AppColors.action),
-      (Icons.people_outline, 'People', _count('people'), const InboxQuery(view: 'people'), AppColors.follow),
-      (Icons.inventory_2_outlined, 'Bulk', _count('bulk'), const InboxQuery(view: 'bulk'), Colors.blueGrey),
+      // Property tiles (same views as the inbox's top strip).
+      (Icons.home_work_outlined, 'Leads', _count('leads'), const InboxQuery(view: 'leads'), AppColors.follow),
+      (Icons.print_outlined, 'Scanned Docs', _count('scans'), const InboxQuery(view: 'scans'), Colors.blueGrey),
+      (Icons.payments_outlined, 'Rent Payments', _count('rent'), const InboxQuery(view: 'rent'), AppColors.action),
       (Icons.local_offer_outlined, 'Coupons', d?.savedCoupons.length ?? 0, const InboxQuery(view: 'all', saved: 'coupon'), AppColors.star),
       (Icons.card_giftcard_outlined, 'Gift Cards', d?.savedGiftCards.length ?? 0, const InboxQuery(view: 'all', saved: 'gift-card'), AppColors.star),
     ];

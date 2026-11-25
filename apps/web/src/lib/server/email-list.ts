@@ -15,7 +15,7 @@ import { kindMeta } from '../kinds';
 export type ShopTile = { key: string; label: string; icon: string; tone: string; count: number; detail: string };
 
 // Tabs: unread, recent, smart views, all. Older views (important, needs-reply, inbox, read) still work for existing links.
-const VIEWS: InboxView[] = ['unread', 'recent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
+const VIEWS: InboxView[] = ['unread', 'recent', 'leads', 'scans', 'rent', 'attention', 'people', 'bills', 'bulk', 'all', 'inbox', 'important', 'needs-reply', 'read'];
 
 /** URL parameters → inbox query (unknown values fall back to the defaults). */
 export function parseInboxQuery(p: URLSearchParams, pageSize = 50): InboxQuery {

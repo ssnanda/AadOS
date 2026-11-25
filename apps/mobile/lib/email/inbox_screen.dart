@@ -61,6 +61,8 @@ class _InboxScreenState extends State<InboxScreen> {
       final tile = _tiles.where((t) => t.key == q.tileKey).firstOrNull;
       return tile == null ? name : '$name · ${tile.label}';
     }
+    final view = _viewNames[q.view];
+    if (view != null && q.view != 'unread') return view;
     if (q.account.isNotEmpty)
       return d?.accounts
               .where((a) => a.id == q.account)
@@ -222,6 +224,31 @@ class _InboxScreenState extends State<InboxScreen> {
     return '$unread unread${checked != null ? ' · checked ${shortTime(checked)}' : ''}';
   }
 
+  /// Top strip: Unread, the property tiles (Leads, Scanned Docs, Rent Payments) and All mail, with counts.
+  static const _viewNames = {'unread': 'Unread', 'leads': 'Leads', 'scans': 'Scanned Docs', 'rent': 'Rent Payments', 'all': 'All mail'};
+  static const _viewIcons = {'unread': Icons.mark_email_unread_outlined, 'leads': Icons.home_work_outlined, 'scans': Icons.print_outlined, 'rent': Icons.payments_outlined, 'all': Icons.all_inbox_outlined};
+  bool get _viewStrip => c.query.pipeline.isEmpty && c.query.q.isEmpty && c.query.thread.isEmpty && !_searching;
+
+  Widget _views() => SizedBox(
+        height: 46,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+          children: [
+            for (final e in _viewNames.entries)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  avatar: Icon(_viewIcons[e.key], size: 16),
+                  label: Text(e.key == 'all' ? e.value : '${e.value} ${c.count(e.key)}'),
+                  selected: c.query.view == e.key,
+                  onSelected: (_) => _open(InboxQuery(view: e.key, account: c.query.account, folder: e.key == 'unread' || e.key == 'all' ? c.query.folder : '')),
+                ),
+              ),
+          ],
+        ),
+      );
+
   /// Shopping views are tiles only (saved Coupons, Gift Cards, then each parsed kind); a tile opens its emails.
   bool get _shop => c.query.pipeline.isNotEmpty && c.data?.views.where((v) => v.id == c.query.pipeline).firstOrNull?.parser == 'shop';
   List<ShopTile> get _tiles => c.data?.shopTiles ?? const [];
@@ -327,6 +354,7 @@ class _InboxScreenState extends State<InboxScreen> {
                   const LinearProgressIndicator(minHeight: 2)
                 else
                   const SizedBox(height: 2),
+                if (_viewStrip) _views(),
                 if (_shop && !_shopGrid) _tileStrip(),
                 _filters(),
                 for (final a in errors) _Banner('${a.email}: ${a.lastError}'),

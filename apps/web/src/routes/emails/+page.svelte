@@ -30,10 +30,12 @@
   // While reading, load the next email's body ahead of time (not marked seen), so ↓ opens instantly.
   $effect(() => { const next = viewing ? rows[viewingIndex + 1] : undefined; if (next) untrack(() => void fetch(`/pipelines/${next.pipelineId}/message/${encodeURIComponent(next.messageId)}?prefetch=1`).catch(() => undefined)); });
 
-  // Unread, Recent (newest 10), smart views (hidden when empty), All mail.
-  const TABS = [['unread', 'Unread', 'Unread mail'], ['recent', 'Recent', 'The newest 10 messages'], ['attention', 'Needs attention', 'Important, replies, payments and appointments from the last 14 days that you have not reviewed'], ['people', 'People', 'Mail from real people, not newsletters or notifications'], ['bills', 'Bills & renewals', 'Bills, payments, renewals and subscriptions (last 45 days or still due)'], ['bulk', 'Bulk', 'Newsletters, promotions and notifications — good for cleaning up'], ['all', 'All mail', 'Everything']] as const;
-  const tabCount = (v: string) => ({ all: data.counts.all, unread: data.counts.unread, recent: data.counts.recent, attention: data.counts.attention, people: data.counts.people, bills: data.counts.bills, bulk: data.counts.bulk } as Record<string, number>)[v] ?? 0;
-  const tabs = $derived(TABS.filter(([v]) => v === 'unread' || v === 'all' || v === data.query.view || tabCount(v) > 0));
+  // Unread, Recent (newest 10), the property tiles (Leads, Scans, Rent — always shown), All mail.
+  // Needs attention / People / Bills / Bulk are no longer tabs; their ?view= links still work.
+  const TABS = [['unread', 'Unread', 'Unread mail'], ['recent', 'Recent', 'The newest 10 messages'], ['leads', '🏠 Leads', 'Rental prospects from Zillow, Trulia, HotPads, Apartments.com, Rent.com and similar sites, plus Rentec applications — new and old'], ['scans', '🖨 Scanned Docs', 'Printer scans ("Scan from UPOS Reception")'], ['rent', '💵 Rent Payments', 'Money received through Cash App, Zelle, Venmo, PayPal and Rentec EasyPay'], ['attention', 'Needs attention', ''], ['people', 'People', ''], ['bills', 'Bills & renewals', ''], ['bulk', 'Bulk', ''], ['all', 'All mail', 'Everything']] as const;
+  const tabCount = (v: string) => ({ all: data.counts.all, unread: data.counts.unread, recent: data.counts.recent, leads: data.counts.leads, scans: data.counts.scans, rent: data.counts.rent, attention: data.counts.attention, people: data.counts.people, bills: data.counts.bills, bulk: data.counts.bulk } as Record<string, number>)[v] ?? 0;
+  const SHOWN = ['unread', 'recent', 'leads', 'scans', 'rent', 'all'];
+  const tabs = $derived(TABS.filter(([v]) => SHOWN.includes(v) || v === data.query.view));
   // Keeps every active filter when switching view/page, so "back" always lands on the same list.
   const href = (over: Record<string, string | number>) => {
     const q = new URLSearchParams();
