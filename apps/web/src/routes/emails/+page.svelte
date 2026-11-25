@@ -44,7 +44,7 @@
     const s = q.toString();
     return s ? `?${s}` : '?';
   };
-  const viewHref = (view: string) => href(view === 'all' ? { view } : { view, sender: '', from: '', to: '', read: '', category: '', thread: '' });
+  const viewHref = (view: string) => href(view === 'all' ? { view } : { view, sender: '', from: '', to: '', read: '', category: '', thread: '', ...(['leads', 'scans', 'rent'].includes(view) ? { folder: '' } : {}) });
   const unreadHref = (over: Record<string, string>) => href({ view: 'unread', sender: '', from: '', to: '', read: '', category: '', thread: '', ...over });
   const hasFilters = $derived(Boolean(data.query.account || data.query.provider || data.query.sender || data.query.from || data.query.to || data.query.read || data.query.category || data.query.pipeline || data.query.thread || data.query.q));
   const ago = (iso: string) => { const d = new Date(iso); return Date.now() - d.getTime() < 86_400_000 ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }); };

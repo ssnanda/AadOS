@@ -162,16 +162,21 @@ const isLead = (r: InboxRow) => {
   return /^(lead|leads|inquiries|inquiry)@/.test(a) || /@convo\./.test(a) || LEAD_SUBJECT.test(r.subject);
 };
 /** Scans: the office printer's "Scan from …" mail (sent through the itspector relay). */
-const isScan = (r: InboxRow) => /^scan(ned)? from\b/i.test(r.subject.trim()) || addressOf(r.sender) === 'sandip.smtp@itspector.com';
-/** Rent: money received through Cash App, Zelle, Venmo, PayPal or Rentec Direct EasyPay (not money you sent, codes or statements). */
+const isScan = (r: InboxRow) => /\bscan(ned)? from\b/i.test(r.subject) || /\bscan\b.*\breception\b/i.test(r.subject) || addressOf(r.sender) === 'sandip.smtp@itspector.com' || /itspector/i.test(r.sender);
+/** Rent: money received through Cash App, Zelle (any bank's alert), Venmo, PayPal or Rentec EasyPay, and tenants' own
+ *  rent emails or forwarded payment proof. Not money you sent, requests, codes or statements. */
+const SENT_BY_YOU = /\byou sent\b|\byou paid\b|\byou requested\b|requested money|\bstatements?\b|\bcode\b|unlinked|privacy/i;
 const isRent = (r: InboxRow) => {
   const a = addressOf(r.sender), s = r.subject.trim();
+  if (SENT_BY_YOU.test(s) && !/^(fw|fwd):/i.test(s)) return false;
   if (a === 'cash@square.com' || /^cash ?app\b/.test(a)) return /\bsent you \$|^you accepted \$|\bpaid you \$/i.test(s);
-  if (a.includes('zelle')) return /money sent to you|received|deposited|you('ve)? got money/i.test(s) && !/requested/i.test(s);
+  // Zelle alerts come from the bank (Truist: alertnotifications@message.truist.com, "Money was sent to you with Zelle"; older BB&T: alerts@zelle.bbt.com).
+  if (/zelle/i.test(s) || a.includes('zelle')) return /sent to you|you('ve)? (received|got)|received|deposited|payment of \$.* has been sent/i.test(s);
   if (fromDomain(r, ['venmo.com'])) return /\bpaid you \$/i.test(s);
   if (fromDomain(r, ['paypal.com'])) return /you('ve)? got money|sent you \$|payment received/i.test(s);
   if (fromDomain(r, ['rentecdirect.com'])) return /payment/i.test(s) && !/^applications@/.test(a);
-  return false;
+  // A tenant writing about rent ("Rent 9/2026 partial") or forwarding a receipt ("… Payment Received …"); not listing sites or bulk mail.
+  return (/\brent\b/i.test(s) || /payment (received|confirmation)|\bpaid\b.*\$\d/i.test(s)) && !isBulk(r) && !fromDomain(r, LEAD_SITES);
 };
 
 /** Every search word must appear in subject, sender, preview, account, provider, categories or view names. */
@@ -182,6 +187,8 @@ function matchesText(row: InboxRow, terms: string[]) {
   const noAddress = !row.sender.includes('@');
   return terms.every((term) => hay.includes(term) || (noAddress && term.includes('@')));
 }
+
+const PROPERTY_VIEWS: InboxView[] = ['leads', 'scans', 'rent'];
 
 export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()): InboxResult {
   const view = query.view || 'all';
@@ -205,17 +212,17 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     if (isPeople(r)) counts.people++;
     if (isBills(r, now)) counts.bills++;
     if (isBulk(r)) counts.bulk++;
-    if (isLead(r)) counts.leads++;
-    if (isScan(r)) counts.scans++;
-    if (isRent(r)) counts.rent++;
     for (const c of r.categories) counts.categories[c] = (counts.categories[c] || 0) + 1;
   }
+  // Leads, Scans and Rent span every folder of the account (mail filed out of the Inbox still counts).
+  const accountRows = rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider));
+  for (const r of accountRows) { if (isLead(r)) counts.leads++; if (isScan(r)) counts.scans++; if (isRent(r)) counts.rent++; }
   counts.recent = Math.min(RECENT_COUNT, scoped.length);
   for (const r of rows) counts.accounts[r.accountId] = (counts.accounts[r.accountId] || 0) + 1;
 
   // Searching works like a mail client: the whole account (or all inboxes), every folder and tab — not just the tab/folder on screen.
   const searching = terms.length > 0;
-  const pool = searching ? rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider)) : scoped;
+  const pool = searching || PROPERTY_VIEWS.includes(view) ? accountRows : scoped;
   const filtered = pool.filter((r) => searching ? matchesText(r, terms) : (
     (view !== 'inbox' || r.inInbox) && (view !== 'unread' || r.unread) && (view !== 'important' || r.importance === 'high') && (view !== 'needs-reply' || needsReply(r))
     && (view !== 'read' || !r.unread)
