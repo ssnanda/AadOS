@@ -7,6 +7,7 @@ import '../core/scope.dart';
 import '../email/inbox_controller.dart';
 import '../finance/finance_screen.dart';
 import '../messages/messages_screen.dart';
+import '../settings/settings_screen.dart';
 import '../shared/shared_screen.dart';
 import 'web_section_screen.dart';
 
@@ -47,7 +48,10 @@ class MoreScreen extends StatelessWidget {
         for (final (icon, title, path, permission) in sections)
           if (permission.isEmpty || (user?.can(permission) ?? true))
             ListTile(leading: Icon(icon), title: Text(title), trailing: const Icon(Icons.open_in_new, size: 16), onTap: () => open(title, path)),
-        if (user?.owner ?? false) ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('AadOS settings'), trailing: const Icon(Icons.open_in_new, size: 16), onTap: () => open('Settings', '/settings')),
+        if (user?.owner ?? false) ...[
+          const Divider(),
+          ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('Settings'), trailing: const Icon(Icons.chevron_right), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()))),
+        ],
         const Divider(),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text('ACCOUNT', style: t.textTheme.labelSmall?.copyWith(letterSpacing: 1, fontWeight: FontWeight.w700))),
         ListTile(leading: const Icon(Icons.person_outline), title: Text(user?.name ?? 'Signed in'), subtitle: Text(Uri.parse(session.server).host)),

@@ -99,6 +99,15 @@ class Session extends ChangeNotifier {
     refreshMe();
   }
 
+  /// A re-issued token (password change in Settings signs every other session out). Updated in place on the shared
+  /// [Api], without notifying, so open screens and the home shell (keyed by token) are not rebuilt.
+  Future<void> replaceToken(String next) async {
+    if (next.isEmpty || next == token) return;
+    token = next;
+    api.token = next;
+    await _store.write(key: _kToken, value: next);
+  }
+
   /// Forgets the token on this device. (Settings → General → "Sign out everywhere" on the web ends it server-side.)
   Future<void> signOut() async {
     token = null;

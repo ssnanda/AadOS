@@ -1,6 +1,6 @@
 # AadOS mobile app (iOS + Android)
 
-Flutter app in `apps/mobile`. Bottom tabs: **Dashboard · Mail · Calendar (+ Conference Room) · Asana · More**. Native in More: **Messages, Finance, Shared mailboxes**. Contacts, Documents, Assistant, Briefing and Settings still open the signed-in web page. This is the app packaged by `bin/build-ipa.sh`; the SwiftUI web shell in `ios/` is legacy source.
+Flutter app in `apps/mobile`. Bottom tabs: **Dashboard · Mail · Calendar (+ Conference Room) · Asana · More**. Native in More: **Messages, Finance, Shared mailboxes, Settings** (owner). Contacts, Documents, Assistant and Briefing still open the signed-in web page. This is the app packaged by `bin/build-ipa.sh`; the SwiftUI web shell in `ios/` is legacy source.
 
 | | |
 | --- | --- |
@@ -38,12 +38,21 @@ Section data (each `GET` returns the web page's own `load` as JSON, same permiss
 | `GET /finance/data`, `POST /finance/api` | Finance |
 | `GET /messages/data`, `POST /messages/api`, `GET /messages/attachment/{guid}` | Messages |
 | `POST /emails/shared/api` | Shared mailboxes |
+| `GET /settings/app?page=general\|emails\|views\|family\|messages\|ai\|storage`, `POST /settings/app {page, action, fields}`, `GET /settings/app?oauth=<state>` | Settings (owner only) |
 
 A 401 signs the app out only when it is AadOS's own session (`x-aados-signin: 1`); Asana and BlueBubbles answer 401 for their own tokens.
 
 Reused as-is with the bearer token: `POST /sync/live`, `GET /pipelines/{id}/message/{mid}` (`?prefetch=1`), `POST /emails/tools` (details, prepare, prepareResidential, send, related), `POST /emails/ai` (state, summarize, followup, draft).
 
 The list and mark logic moved from `routes/emails/+page.server.ts` into `lib/server/email-list.ts`, so the web page and the app run the same code. `hooks.server.ts` accepts the bearer header and answers 401 JSON (not a login redirect) for `/api/*` and bearer requests. Family members get the same permission checks (`/api/mobile/emails` maps to the Emails section).
+
+## Settings
+
+All web Settings tabs are native (More → Settings): Emails & Calendar, Email views, General, Family, Messages, AI, Storage. `/settings/app` runs each web page's own `load` and form `actions` unchanged (fields become the form data), so validation and messages match the web.
+
+- **Reconnect / connect Gmail or Zoho**: Google refuses OAuth inside an embedded web view, so the consent page opens in the in-app browser (SFSafariViewController / Custom Tab). The server remembers app-started flows (in memory, `lib/server/oauth-mobile.ts`); the callback then shows a "return to the app" page instead of redirecting to `/settings`, and the app polls `?oauth=<state>` to close the Safari view (iOS) and refresh. On Android the user closes the tab.
+- **Password change** returns the re-issued session token, so the phone stays signed in while other devices are signed out.
+- **Sign out everywhere** revokes all sessions, this phone included.
 
 ## Email features
 

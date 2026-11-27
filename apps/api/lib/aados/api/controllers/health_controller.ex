@@ -2,6 +2,6 @@ defmodule AadOS.Api.Controllers.HealthController do
   use Phoenix.Controller, formats: [:json]
 
   def index(conn, _params) do
-    json(conn, %{status: "ok", service: "aados-api", version: "0.1.110"})
+    json(conn, %{status: "ok", service: "aados-api", version: "0.1.111"})
   end
 end
