@@ -210,3 +210,4 @@ Keep scope small: deliver useful inbox access before extending to household task
 130. [x] Undo: delete (Gmail untrash; Zoho move back to its folder), mark read (incl. by opening), mark unread; rule actions too; last 20 changes kept (server `mail-undo.ts`, `/api/mobile/emails/undo`, `/emails/undo`) — Zoho restore by message id unverified — awaiting owner verification
 131. [x] Web: ↶ Undo in the Emails header and ⌘/Ctrl+Z — awaiting owner verification
 132. [x] Phone: shake to undo (sensors_plus, deliberate two-swing shake, foreground only) → confirm dialog → result snackbar — needs `flutter pub get` + app build — awaiting owner verification
+133. [x] Phone: Settings → Rules (opens the web Rules page in the signed-in web view) — awaiting owner verification

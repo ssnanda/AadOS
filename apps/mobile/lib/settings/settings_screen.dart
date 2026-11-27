@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/scope.dart';
 import '../core/ui.dart';
+import '../more/web_section_screen.dart';
 import 'emails_settings.dart';
 import 'family_settings.dart';
 import 'general_settings.dart';
@@ -54,6 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final rows = <(IconData, String, String?, Widget)>[
       (Icons.mail_outline, 'Emails & Calendar', mailSub, const EmailSettingsScreen()),
       (Icons.view_agenda_outlined, 'Email views', null, const ViewsSettingsScreen()),
+      // Rules: the web page (suggestions, AadOS rules, Gmail filters, built-in rules, activity) in a signed-in web view.
+      (Icons.rule, 'Rules', 'Suggestions, AadOS rules, Gmail filters', WebSectionScreen(session: SessionScope.read(context), title: 'Rules', path: '/settings/rules')),
       (Icons.tune, 'General', 'Time zone, password, sessions', const GeneralSettingsScreen()),
       (Icons.family_restroom, 'Family', null, const FamilySettingsScreen()),
       (Icons.sms_outlined, 'Messages', 'BlueBubbles server', const MessagesSettingsScreen()),
