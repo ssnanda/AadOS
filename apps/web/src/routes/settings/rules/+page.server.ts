@@ -8,7 +8,7 @@ import { ACTION_LABEL, applyRule, describeRule, matchesLoaded, regexError, rowsO
 //   Suggestions (owner picks action, where it lives, and auto vs ask) · AadOS rules · native Gmail filters ·
 //   Zoho (native filters live in Zoho Mail; not readable through its API) · built-in AadOS behaviour (read-only) · activity.
 
-const FIELDS = ['from', 'subject', 'to', 'body'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high', 'follow-up', 'actionable', 'reviewed'] as const;
+const FIELDS = ['from', 'subject', 'to', 'body'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high', 'follow-up', 'actionable', 'reviewed', 'save-coupon'] as const;
 
 /** Built-in AadOS rules, read-only. Keep in step with categories.ts, inbox.ts and the preview/sync code. */
 const BUILT_IN: { group: string; rules: [string, string][] }[] = [
