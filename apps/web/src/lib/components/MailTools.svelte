@@ -80,6 +80,8 @@
     if (!confirm('Delete this Gmail filter?')) return;
     if (await run('rule', () => call('deleteRule', { accountId, id }))) rulesData = await run('rules', () => call('rules', { accountId }));
   }
+  // Settings → Rules, prefilled with this sender's address and account.
+  const rulesHref = () => `/settings/rules?from=${encodeURIComponent((info?.from.match(/[\w.+'-]+@[\w.-]+/) || [''])[0])}&account=${encodeURIComponent(accountId || item.key.slice(0, item.key.indexOf(':')))}`;
   const labelName = (id: string) => rulesData?.labels.find((l) => l.id === id)?.name || id;
   const describe = (f: { criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }) =>
     `${Object.entries(f.criteria).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;
@@ -98,7 +100,7 @@
         {#if !aiAvailable && aiBlocked}<a class="aihint" href="/settings/ai">{aiBlocked}</a>{/if}
       </div>{/if}
     </div>
-    {#if info?.provider === 'gmail'}<button onclick={openRules} class:on={rulesOpen}>☰ Rules</button>{/if}
+    {#if info?.provider === 'gmail'}<button onclick={openRules} class:on={rulesOpen}>☰ Rules</button>{:else if info}<a class="btnlink" href={rulesHref()} title="Create an AadOS rule for this sender (Settings → Rules)">☰ Rules</a>{/if}
     <button onclick={() => { findOpen = !findOpen; if (!findOpen) { term = ''; onfind?.(''); } }} class:on={findOpen}>⌕ Find</button>
     {#if onmore}<button onclick={onmore} class:on={moreOpen}>More from sender</button>{/if}
     {#if busy}<span class="busy">{busy === 'send' ? 'Sending…' : 'Working…'}</span>{/if}
@@ -144,7 +146,7 @@
 
   {#if rulesOpen}
     <div class="panel">
-      <h4>Rules <small>Gmail filters for {info?.account} — applied by Gmail to new mail</small></h4>
+      <h4>Rules <small>Gmail filters for {info?.account} — applied by Gmail to new mail</small><a class="all" href={rulesHref()}>All rules →</a></h4>
       <form class="rule" onsubmit={(e) => { e.preventDefault(); addRule(); }}>
         <select bind:value={rule.field} aria-label="Match"><option value="from">From</option><option value="subject">Subject</option></select>
         <input bind:value={rule.text} placeholder="contains…" aria-label="Match text">
@@ -167,7 +169,7 @@
   button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}button.on{background:#eef1ff;border-color:#8da2f0;color:#3157de}
   .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}.foot{grid-column:auto;flex:1;border-top:0;padding-top:0}.foot .menu{top:auto;bottom:28px}.menu button:disabled{color:#a3adbf;cursor:not-allowed;background:none}.aihint{font-size:11px;color:#3157de;padding:2px 10px 6px;text-decoration:none;max-width:220px}
   .busy{color:#8a95a8}.ok{color:#0f7f74}.err{color:#a5414d;margin:6px 0 0}.err a{color:#a5414d;font-weight:700}.muted{color:#8a95a8}
-  .link{border:0;background:none;padding:0;color:#3157de}.x{color:#a5414d}
+  .link{border:0;background:none;padding:0;color:#3157de}.btnlink{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;text-decoration:none}.btnlink:hover{border-color:#8da2f0;color:#3157de}.all{margin-left:auto;color:#3157de;font-weight:700;text-decoration:none}.x{color:#a5414d}
   .find{margin-top:6px}.find input{width:100%;box-sizing:border-box;border:1px solid #e4e9f2;border-radius:8px;padding:6px 9px;font-size:12px}
   .compose{margin-top:8px;border:1px solid #e4e9f2;border-radius:10px;padding:10px;display:grid;gap:6px;background:#fbfcff}
   .compose .row{display:grid;grid-template-columns:54px 1fr auto;gap:6px;align-items:center}.compose label{color:#8a95a8;font-weight:700}

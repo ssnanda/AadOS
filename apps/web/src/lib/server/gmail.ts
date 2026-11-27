@@ -285,18 +285,32 @@ async function syncGmailLabel(state: AadOSState, account: MailAccount, pipeline:
 }
 
 /** Fetch one message body on demand (prefers HTML, falls back to plain text). */
-export async function fetchGmailBody(state: AadOSState, account: MailAccount, item: PipelineItem): Promise<{ html: string; text: string }> {
+/** `inlineImages: false` skips embedding cid: images (the search index needs text only). */
+export async function fetchGmailBody(state: AadOSState, account: MailAccount, item: PipelineItem, opts: { inlineImages?: boolean } = {}): Promise<{ html: string; text: string }> {
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
   const message = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}?format=full`, { headers }));
   const found: Record<string, string> = {};
+  // Embedded images (Content-ID parts) referenced as cid:… in the HTML; inlined below as data: URIs.
+  const inline: { cid: string; mime: string; data?: string; attachmentId?: string }[] = [];
   const walk = (part: Record<string, any> | undefined) => {
     if (!part) return;
     const type = String(part.mimeType || '');
     if (part.body?.data && (type === 'text/html' || type === 'text/plain') && !found[type]) found[type] = Buffer.from(String(part.body.data), 'base64url').toString('utf8');
+    const cid = (part.headers || []).find((h: { name: string }) => /^content-id$/i.test(h.name))?.value;
+    if (cid && type.startsWith('image/') && (part.body?.data || part.body?.attachmentId)) inline.push({ cid: String(cid).replace(/^<|>$/g, ''), mime: type, data: part.body.data, attachmentId: part.body.attachmentId });
     for (const child of part.parts || []) walk(child);
   };
   walk(message.payload);
-  return { html: found['text/html'] || '', text: found['text/plain'] || '' };
+  let html = found['text/html'] || '';
+  const used = opts.inlineImages === false ? [] : inline.filter((p) => html.includes(`cid:${p.cid}`)).slice(0, 20);
+  await Promise.all(used.map(async (p) => {
+    try {
+      const b64 = p.data ? Buffer.from(String(p.data), 'base64url').toString('base64')
+        : Buffer.from(String((await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}/attachments/${encodeURIComponent(p.attachmentId!)}`, { headers })).data || ''), 'base64url').toString('base64');
+      html = html.split(`cid:${p.cid}`).join(`data:${p.mime};base64,${b64}`);
+    } catch { /* leave the cid: reference; the image just won't show */ }
+  }));
+  return { html, text: found['text/plain'] || '' };
 }
 
 export type AttachmentInfo = { id: string; name: string; size: number; mime: string };

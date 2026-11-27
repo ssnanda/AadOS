@@ -189,3 +189,19 @@ Keep scope small: deliver useful inbox access before extending to household task
 113. [x] Needs attention / People / Bills & renewals / Bulk removed from the inbox tabs (web) and app Dashboard tiles; `?view=` links still work — awaiting owner verification
 114. [x] Mobile app: native Settings (all web tabs) via `/settings/app`; Gmail/Zoho reconnect in the in-app browser with auto-return — awaiting owner verification
 
+
+### Email reader, speed and body search (2026-11-27)
+
+115. [x] Preview: "Delete & close" / "Unread & close" always visible (no hover); full action row (incl. Reply, Rules, Find, More from sender, ↑ ↓) repeated below the body — awaiting owner verification
+116. [x] Images: frame allows http: images, no referrer; Gmail cid: inline images embedded; next email's images warmed — Zoho cid: images not handled yet — awaiting owner verification
+117. [x] Background read-only prefetch of every unread email body (all accounts) after each sync; nothing marked read — awaiting owner verification
+118. [x] Emails page shows one search bar (global top search hidden there) — awaiting owner verification
+119. [x] Body full-text search: PostgreSQL `mail_bodies` (API migration 20261127000001) filled in the background (300/run, text only, read-only); Emails search and /search match body text — awaiting migration + owner verification
+120. [ ] Zoho inline (cid:) images
+121. [ ] Image proxy (fetch remote images server-side so senders never see the browser; makes wider image prefetch safe)
+122. [x] Settings → Rules: one page for Suggestions, AadOS rules, native Gmail filters (list/create/delete), Zoho (link to Zoho filters; not readable via API), built-in AadOS rules (read-only), activity log — awaiting owner verification
+123. [x] Rule suggestions from stored mail (bulk senders piling up unread); owner picks action, where it lives (Gmail filter · AadOS this account · AadOS all accounts) and Auto vs Ask first; Hide — awaiting owner verification
+124. [x] AadOS rule engine: Auto acts only on mail received after the rule exists (runs after live sync adds mail); Ask first waits for Apply/Skip; existing mail only via Apply now; delete = mailbox Trash; logged — awaiting owner verification
+125. [x] Rules links: sidebar (under Emails), Emails header, reader "☰ Rules" (Zoho → prefilled AadOS rule; Gmail panel → All rules) — awaiting owner verification
+126. [ ] AI-evaluated rule suggestions (beyond the bulk-sender heuristic)
+127. [ ] Gmail native Delete/Important via filters (TRASH / IMPORTANT labels) — not offered until verified against the Gmail API

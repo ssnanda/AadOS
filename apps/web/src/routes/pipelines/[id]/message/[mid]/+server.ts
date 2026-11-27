@@ -4,23 +4,15 @@ import { readState, updateState, type MailAccount } from '$lib/server/aados-stor
 import { fetchZohoBody, setZohoUnread } from '$lib/server/zoho';
 import { fetchGmailBody, setGmailUnread } from '$lib/server/gmail';
 import { canSeeAccount } from '$lib/server/auth';
+import { bodyKey, cachedBody, remember, type Body } from '$lib/server/email-bodies';
 
 // Fetches one email body from the mailbox on demand (read-only) and marks it seen in AadOS.
 // The mailbox call runs WITHOUT the state lock (it used to hold it, so every preview queued behind
 // syncs, deletes and other previews); "seen" and any refreshed token are saved afterwards, in the
 // background. Bodies never change, so they are cached in memory and in the browser.
 // `?prefetch=1` warms the cache for the next email without marking it seen.
-type Body = { html: string; text: string };
-declare global { var __aadosBodies: Map<string, Body> | undefined; var __aadosSeen: Set<string> | undefined; }
-const MAX_CACHED = 100, MAX_CACHED_BYTES = 1_000_000;
+declare global { var __aadosSeen: Set<string> | undefined; }
 const headers = { 'cache-control': 'private, max-age=600' };
-
-function remember(key: string, body: Body) {
-  const cache = (globalThis.__aadosBodies ??= new Map());
-  if (body.html.length + body.text.length > MAX_CACHED_BYTES) return;
-  cache.delete(key); cache.set(key, body);
-  while (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value!);
-}
 
 /** Background save: item seen (+ folder found by the Zoho lookup) and a token refreshed during the fetch. */
 function persist(pipelineId: string, messageId: string, change: { seen: boolean; folderId?: string; account?: MailAccount }) {
@@ -70,9 +62,9 @@ export const GET: RequestHandler = async ({ params, url, locals }) => {
     if (!it || !canSeeAccount(locals.user, it.accountId || p?.accountId || '')) throw error(404, 'Email not found');
   }
   const prefetch = url.searchParams.has('prefetch');
-  const key = `${params.id}\u0000${params.mid}`;
+  const key = bodyKey(params.id, params.mid);
   const seen = (globalThis.__aadosSeen ??= new Set());
-  const cached = globalThis.__aadosBodies?.get(key);
+  const cached = cachedBody(key);
   if (cached) {
     if (!prefetch && !seen.has(key)) { seen.add(key); persist(params.id, params.mid, { seen: true }); readInMailbox(params.id, params.mid); }
     return json(cached, { headers });

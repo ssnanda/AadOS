@@ -4,12 +4,16 @@ import type { PageServerLoad } from './$types';
 import { readState, updateState } from '$lib/server/aados-store';
 import { filterItems } from '$lib/server/search';
 import { messageKey } from '$lib/server/inbox';
+import { bodyMatches } from '$lib/server/body-index';
 
 export const load: PageServerLoad = async ({ url, locals }) => {
   const q = (url.searchParams.get('q') || '').trim();
   const state = scopeState(await readState(), locals.user);
-  const hits = q ? filterItems(state.items, { q }).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)) : [];
   const pipelines = new Map(state.pipelines.map((p) => [p.id, p]));
+  // Also match email body text (full-text index); metadata matches come first in the same list.
+  const body = q ? await bodyMatches(q) : new Set<string>();
+  const meta = q ? new Set(filterItems(state.items, { q }).map((i) => i.id)) : new Set<string>();
+  const hits = q ? state.items.filter((i) => meta.has(i.id) || body.has(`${i.accountId || pipelines.get(i.pipelineId)?.accountId || ''}\u0000${i.messageId}`)).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)) : [];
   return { q, total: state.items.length, matched: hits.length, items: hits.slice(0, 300).map((item) => { const accountId = item.accountId || pipelines.get(item.pipelineId)?.accountId || ''; return { ...item, accountId, key: messageKey(accountId, item.messageId) }; }), names: Object.fromEntries(state.pipelines.map((p) => [p.id, p.name])) };
 };
 

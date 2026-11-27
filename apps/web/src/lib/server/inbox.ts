@@ -190,7 +190,8 @@ function matchesText(row: InboxRow, terms: string[]) {
 
 const PROPERTY_VIEWS: InboxView[] = ['leads', 'scans', 'rent'];
 
-export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()): InboxResult {
+/** `bodyHits`: `account\0messageId` of emails whose indexed body text matches the search (body-index.ts). */
+export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now(), bodyHits?: Set<string>): InboxResult {
   const view = query.view || 'all';
   // Pasted senders (\"Dunkin' Rewards <noreply@…>\") search as words: brackets, quotes and commas are ignored.
   const terms = (query.q || '').toLowerCase().replace(/['’`]/g, '').replace(/[<>"(),;!?]/g, ' ').split(/\s+/).filter(Boolean);
@@ -222,8 +223,9 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
 
   // Searching works like a mail client: the whole account (or all inboxes), every folder and tab — not just the tab/folder on screen.
   const searching = terms.length > 0;
+  const textMatch = (r: InboxRow) => matchesText(r, terms) || Boolean(bodyHits?.has(`${r.accountId}\u0000${r.messageId}`));
   const pool = searching || PROPERTY_VIEWS.includes(view) ? accountRows : scoped;
-  const filtered = pool.filter((r) => searching ? matchesText(r, terms) : (
+  const filtered = pool.filter((r) => searching ? textMatch(r) : (
     (view !== 'inbox' || r.inInbox) && (view !== 'unread' || r.unread) && (view !== 'important' || r.importance === 'high') && (view !== 'needs-reply' || needsReply(r))
     && (view !== 'read' || !r.unread)
     && (view !== 'attention' || isAttention(r, now)) && (view !== 'people' || isPeople(r)) && (view !== 'bills' || isBills(r, now)) && (view !== 'bulk' || isBulk(r))
@@ -237,7 +239,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     && (!query.thread || r.threadId === query.thread)
     && (!query.kind || r.kinds.some((k) => query.pipeline ? k === `${query.pipeline}:${query.kind}` : k.endsWith(`:${query.kind}`)))
     && (!query.saved || r.savedKind === query.saved)
-    && matchesText(r, terms)));
+    && textMatch(r)));
   // Saved coupons: soonest expiry first.
   if (query.saved === 'coupon') filtered.sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry));
   // Recent is simply the newest messages, no paging.

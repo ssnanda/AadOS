@@ -22,13 +22,19 @@
   // Auto sync of the open folder/inbox: on open, on folder change, every 2 minutes while visible.
   let auto: ReturnType<typeof startAutoSync> | undefined;
   onMount(() => {
-    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, q: data.query.q }), () => (acting ? undefined : invalidateAll()), '/sync/live', (b) => (syncing = b));
+    auto = startAutoSync(() => ({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, q: data.query.q }), () => (acting ? undefined : invalidateAll()), '/sync/live', (b) => { syncing = b; if (!b) void fetch('/emails/prefetch', { method: 'POST' }).catch(() => undefined); });
     void auto.run();
     return () => auto?.stop();
   });
   $effect(() => { void [data.query.account, data.query.folder, data.query.pipeline, data.query.q]; untrack(() => void auto?.run()); });
   // While reading, load the next email's body ahead of time (not marked seen), so ↓ opens instantly.
-  $effect(() => { const next = viewing ? rows[viewingIndex + 1] : undefined; if (next) untrack(() => void fetch(`/pipelines/${next.pipelineId}/message/${encodeURIComponent(next.messageId)}?prefetch=1`).catch(() => undefined)); });
+  // Its remote images are warmed into the browser cache too (no referrer, like the viewer frame).
+  const warmImages = (html: string) => {
+    for (const [, src] of [...html.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']?(https?:\/\/[^"'\s>]+)/gi)].slice(0, 40)) {
+      const img = new Image(); img.referrerPolicy = 'no-referrer'; img.src = src.replace(/&amp;/g, '&');
+    }
+  };
+  $effect(() => { const next = viewing ? rows[viewingIndex + 1] : undefined; if (next) untrack(() => void fetch(`/pipelines/${next.pipelineId}/message/${encodeURIComponent(next.messageId)}?prefetch=1`).then((r) => (r.ok ? r.json() : null)).then((b) => b?.html && warmImages(b.html)).catch(() => undefined)); });
 
   // Unread, Recent (newest 10), the property tiles (Leads, Scans, Rent — always shown), All mail.
   // Needs attention / People / Bills / Bulk are no longer tabs; their ?view= links still work.
@@ -119,7 +125,7 @@
 <AppShell title="Emails">
 <main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
   <header class:open={headerOpen}>
-    <div><div class="title-row"><h1>Emails</h1><button class="header-toggle" aria-expanded={headerOpen} aria-controls="email-header-details" onclick={() => headerOpen = !headerOpen}>{headerOpen ? 'Hide' : 'Accounts'} <span>{headerOpen ? '▴' : '▾'}</span></button></div><div class="header-details" id="email-header-details"><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
+    <div><div class="title-row"><h1>Emails</h1><button class="header-toggle" aria-expanded={headerOpen} aria-controls="email-header-details" onclick={() => headerOpen = !headerOpen}>{headerOpen ? 'Hide' : 'Accounts'} <span>{headerOpen ? '▴' : '▾'}</span></button><a class="header-toggle" style="margin-left:0;text-decoration:none" href="/settings/rules" title="All email rules">☰ Rules</a></div><div class="header-details" id="email-header-details"><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
       {#if data.accounts.length}<div class="checked">{#each data.accounts as a (a.id)}{@const sh = shellAccounts.find((x) => x.id === a.id)}<a class="acct" class:err={Boolean(a.lastError)} class:zero={!sh?.unread} href={unreadHref({ account: a.id, folder: '' })} title={a.lastError || `${a.email} · last check ${clock(checkedOf(a))}`}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i>{a.email.split('@')[0]}{#if sh?.unread}<b>{sh.unread}</b>{/if}<small>{a.paused ? 'paused' : a.lastError ? 'error' : clock(checkedOf(a))}</small></a>{/each}</div>{/if}
       {#if unreadFolders.length}<div class="ufolders"><small>Unread</small>{#each unreadFolders as u (`${u.account.id}:${u.folder.id}`)}<a class:on={data.query.account === u.account.id && data.query.folder === u.folder.id} href={unreadHref({ account: u.account.id, folder: u.folder.id })} title={u.account.email}><i class={u.account.provider}>{u.account.provider === 'gmail' ? 'G' : 'Z'}</i>{u.folder.name.replace(/^inbox\//i, '')}<b>{u.folder.unread}</b></a>{/each}</div>{/if}
     </div></div>

@@ -3,6 +3,7 @@ import { readState, updateStateDetached, type AadOSState } from '$lib/server/aad
 import { syncLive } from '$lib/server/pipeline-sync';
 import { syncJob } from '$lib/server/sync-job';
 import { scopeState } from '$lib/server/scope';
+import { runRules } from '$lib/server/mail-rules';
 
 // Automatic sync of what is on screen (called by the page on open and every 2 minutes while visible),
 // like a mail client refreshing the open folder. Same scope within MIN_GAP_MS is answered from memory.
@@ -35,5 +36,7 @@ export const POST = async ({ request, locals }) => {
   }
   catch (cause) { return json({ changed: false, error: cause instanceof Error ? cause.message : 'Sync failed' }, { status: 502 }); }
   finally { running.delete(key); }
+  // Automatic email rules act on new mail in the background (Settings → Rules).
+  if (result.added) runRules();
   return json({ ...result, changed });
 };

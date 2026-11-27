@@ -5,6 +5,7 @@ import { applyToMailbox } from './mail-actions';
 import { keyAllowed, scopeState } from './scope';
 import { database, ensureInboxPipelines, hasDatabase, missingInboxPipelines, readState, updateState, visiblePipelines, type AadOSState } from './aados-store';
 import { getInsights } from './ai/db';
+import { bodyMatches } from './body-index';
 import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxRow, type InboxView } from './inbox';
 import { CATEGORIES } from './categories';
 import { isUnread } from './search';
@@ -57,7 +58,9 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
   const shopView = state.pipelines.find((p) => p.id === query.pipeline && p.parser === 'shop');
   if (shopView) query.view = 'all';
   const shop = shopView ? { tiles: shopTiles(rows, shopView.id) } : null;
-  const result = queryInbox(rows, query);
+  // Searches also match email body text (PostgreSQL full-text index; empty when not available).
+  const bodyHits = query.q ? await bodyMatches(query.q) : undefined;
+  const result = queryInbox(rows, query, undefined, bodyHits);
   if (shopView && !query.kind && !query.saved && !query.q) Object.assign(result, { rows: [], total: 0, page: 1, pages: 1 });
   const saved = {
     coupons: rows.filter((r) => r.savedKind === 'coupon' && r.savedExpiry).sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, expiresOn: r.savedExpiry })),
