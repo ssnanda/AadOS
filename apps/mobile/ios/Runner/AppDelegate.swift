@@ -2,6 +2,7 @@ import EventKit
 import Flutter
 import UIKit
 import UserNotifications
+import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -22,6 +23,21 @@ import UserNotifications
         return
       }
       self?.createCalendarEvent(values, result: result)
+    }
+
+    // Home-screen widgets: the app hands over the mail metrics JSON; the AadOSWidget extension reads it from the app
+    // group and draws Small / Medium / Large. Without the App Group entitlement this still succeeds but nothing is shared.
+    if let widgetRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSWidget") {
+      let widget = FlutterMethodChannel(name: "com.aadnanda.aados/widget", binaryMessenger: widgetRegistrar.messenger())
+      widget.setMethodCallHandler { call, result in
+        guard call.method == "save", let payload = call.arguments as? String else {
+          result(FlutterMethodNotImplemented)
+          return
+        }
+        UserDefaults(suiteName: "group.com.aadnanda.aados")?.set(payload, forKey: "mail")
+        if #available(iOS 14.0, *) { WidgetCenter.shared.reloadAllTimelines() }
+        result(true)
+      }
     }
 
     // Unread-mail count on the home-screen icon. iOS shows a badge only after the user allows badges (no alerts or

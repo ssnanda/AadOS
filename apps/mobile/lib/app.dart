@@ -7,6 +7,7 @@ import 'asana/asana_screen.dart';
 import 'calendar/calendar_api.dart';
 import 'calendar/calendar_screen.dart';
 import 'core/app_badge.dart';
+import 'core/home_widget.dart';
 import 'core/login_screen.dart';
 import 'core/scope.dart';
 import 'core/shake.dart';
@@ -121,7 +122,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   // Home-screen icon: all unread mail (every account and folder) + shared mailboxes. One number is all iOS allows.
-  void _badge() => AppBadge.set(_inbox.unreadAll + _sharedUnread.value);
+  void _badge() {
+    AppBadge.set(_inbox.unreadAll + _sharedUnread.value);
+    // Home-screen widgets follow the same changes (throttled to once a minute).
+    HomeWidgets.push(widget.session.api, shared: _sharedUnread.value);
+  }
 
   /// Shared mailboxes' unread total (Zoho; slower, so every 5 minutes and on resume). Errors keep the last number.
   Future<void> _loadShared() async {
