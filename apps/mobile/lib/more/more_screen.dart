@@ -53,8 +53,9 @@ class MoreScreen extends StatefulWidget {
 }
 
 class _MoreScreenState extends State<MoreScreen> {
-  static const _key = 'more.usage.v1';
+  static const _key = 'more.usage.v1', _recentKey = 'more.recent.v1';
   Map<String, int> _uses = {};
+  List<String> _recent = []; // ids, most recently opened first
   String _mailWarning = ''; // accounts that need reconnecting (shown on Emails & Calendar)
 
   @override
@@ -65,10 +66,14 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Future<void> _loadUses() async {
-    final raw = (await SharedPreferences.getInstance()).getString(_key);
-    if (raw == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_key), recent = prefs.getStringList(_recentKey) ?? [];
+    if (!mounted) return;
     try {
-      setState(() => _uses = (jsonDecode(raw) as Map).map((k, v) => MapEntry('$k', (v as num).toInt())));
+      setState(() {
+        if (raw != null) _uses = (jsonDecode(raw) as Map).map((k, v) => MapEntry('$k', (v as num).toInt()));
+        _recent = recent;
+      });
     } catch (_) {/* start fresh */}
   }
 
@@ -85,8 +90,13 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Future<void> _open(_Entry e, Session s) async {
-    setState(() => _uses = {..._uses, e.id: (_uses[e.id] ?? 0) + 1});
-    (await SharedPreferences.getInstance()).setString(_key, jsonEncode(_uses));
+    setState(() {
+      _uses = {..._uses, e.id: (_uses[e.id] ?? 0) + 1};
+      _recent = [e.id, ..._recent.where((id) => id != e.id)].take(10).toList();
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, jsonEncode(_uses));
+    await prefs.setStringList(_recentKey, _recent);
     if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => e.build(s)));
     if (e.id == 'emails') _loadMail();
@@ -105,11 +115,20 @@ class _MoreScreenState extends State<MoreScreen> {
       final d = (_uses[b.id] ?? 0).compareTo(_uses[a.id] ?? 0);
       return d != 0 ? d : order[a.id]!.compareTo(order[b.id]!);
     });
+    // Last 3 opened (newest first), from what this user can see.
+    final byId = {for (final e in visible) e.id: e};
+    final recent = [for (final id in _recent) if (byId[id] != null) byId[id]!].take(3).toList();
+    Widget tile(_Entry e) => ListTile(leading: Icon(e.icon), title: Text(e.title), trailing: const Icon(Icons.history, size: 18), onTap: () => _open(e, session));
     Widget header(String s) => Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text(s, style: t.textTheme.labelSmall?.copyWith(letterSpacing: 1, fontWeight: FontWeight.w700)));
     return Scaffold(
       appBar: AppBar(title: const Text('More')),
       body: ListView(children: [
-        header('MOST USED FIRST'),
+        if (recent.isNotEmpty) ...[
+          header('RECENT'),
+          for (final e in recent) tile(e),
+          const Divider(),
+        ],
+        header('ALL · MOST USED FIRST'),
         for (final e in visible)
           ListTile(
             leading: Icon(e.icon, color: e.id == 'emails' && _mailWarning.isNotEmpty ? t.colorScheme.error : null),

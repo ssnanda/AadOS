@@ -221,3 +221,5 @@ Keep scope small: deliver useful inbox access before extending to household task
 141. [x] Phone inbox header: **R** button (left of search) opens Settings → Rules — needs app build — awaiting owner verification
 142. [x] Phone More: web links removed; Settings pages listed directly in More with Rules, Shared mailboxes, Messages, Finance; ordered by how often each is opened on this phone (starts Rules first); reconnect warning on Emails & Calendar; old Settings screen moved to Trash — needs app build — awaiting owner verification
 143. [x] Web: Settings tabs and the header ⚙ Settings menu list the most-opened pages first (per browser; starts Rules first); Emails header Rules button is now **R** — awaiting owner verification
+144. [x] Web: sidebar ⚙ Settings item expands its pages on hover/focus (open while on a Settings page; most-opened first); header ⚙ Settings dropdown removed; duplicate Rules link under Emails removed — awaiting owner verification
+145. [x] Phone More: RECENT section (last 3 opened, newest first) above ALL · MOST USED FIRST — needs app build — awaiting owner verification

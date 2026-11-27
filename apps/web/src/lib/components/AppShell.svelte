@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import SyncProgress from './SyncProgress.svelte';
@@ -7,14 +8,16 @@
   import type { Snippet } from 'svelte';
   let { title, children }: { title: string; children: Snippet } = $props();
   let open = $state(false);
-  let settingsOpen = $state(false);
+  // Settings pages in the sidebar (open on hover), most-opened first in this browser.
+  let settingsNav = $state(SETTINGS_PAGES);
+  onMount(() => { settingsNav = byUsage(SETTINGS_PAGES); });
   // Dashboard's Views list pinned open (it also opens on hover and on a view page).
   let dashOpen = $state(false);
   // Signed-in user (owner, or a family member limited to the sections the owner allowed).
   const me = $derived(page.data.shell?.user as { name: string; owner: boolean; permissions: string[]; ownAccounts?: boolean } | null | undefined);
   const may = (p: string) => !me || me.owner || me.permissions.includes(p) || (Boolean(me.ownAccounts) && (p === 'emails' || p === 'calendar'));
   // Close the Settings menu on any click outside it, on Escape, and after navigating.
-  $effect(() => { void page.url.pathname; settingsOpen = false; open = false; });
+  $effect(() => { void page.url.pathname; open = false; });
   const tone = (parser: string) => parser === 'shop' ? 'pink' : parser === 'health' ? 'teal' : 'blue';
   let views = $derived((page.data.shell?.views ?? []) as { id: string; name: string; parser: string; count: number; total: number }[]);
   let accounts = $derived((page.data.shell?.accounts ?? []) as { id: string; provider: string; email: string; unread: number; folders: { id: string; name: string; total: number; unread: number }[] }[]);
@@ -43,7 +46,6 @@
   const here = (path: string) => path === '/' ? page.url.pathname === '/' : page.url.pathname === path;
   const icon = (parser: string) => parser === 'shop' ? '🛍' : parser === 'health' ? '♡' : '✉';
 </script>
-<svelte:window onclick={(e) => { if (settingsOpen && !(e.target as HTMLElement).closest('.menuwrap')) settingsOpen = false; }} onkeydown={(e) => { if (e.key === 'Escape') settingsOpen = false; }} />
 <div class="workspace">
   {#if open}<button class="nav-scrim" aria-label="Close navigation" onclick={() => open = false}></button>{/if}
   <aside class:expanded={open} class="sidebar" aria-label="Primary navigation">
@@ -60,10 +62,12 @@
     {#if may('emails')}<a class="nav blue" class:active={here('/emails')} href="/emails"><span>✉</span>Emails{#if !inEmails && totalUnread}<b>{totalUnread}</b>{/if}</a>{/if}
     {#if inEmails && accounts.length}<div class="inboxes" aria-label="Inboxes"><div class="mode" role="group" aria-label="Show"><a class:on={!mailAll} href={mailHref(currentAccount || '', false, currentFolder)}>Unread</a><a class:on={mailAll} href={mailHref(currentAccount || '', true, currentFolder)}>All</a></div><a class="ibx" class:on={currentAccount === ''} href={mailHref('')}>All inboxes{#if totalUnread}<b>{totalUnread}</b>{/if}</a>{#each shownAccounts as a (a.id)}<a class="ibx" class:on={currentAccount === a.id && !currentFolder} href={mailHref(a.id)} title={a.email}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i><span>{a.email}</span>{#if a.unread}<b>{a.unread}</b>{/if}</a>{#each foldersOf(a) as f (f.id)}<a class="ibx fld" class:on={currentAccount === a.id && currentFolder === f.id} href={mailHref(a.id, mailAll, f.id)} title={`${f.name} · ${f.unread} unread of ${f.total}`}><span>{f.name.replace(/^inbox\//i, '')}</span>{#if mailAll ? f.total : f.unread}<b>{mailAll ? f.total : f.unread}</b>{/if}</a>{/each}{/each}{#if !shownAccounts.length}<small class="none">No unread mail</small>{/if}</div>{/if}
     {#if may('emails') && accounts.some((a) => a.provider === 'zoho')}<a class="nav blue sub" class:active={page.url.pathname.startsWith('/emails/shared')} href="/emails/shared"><span>👥</span>Shared mailboxes</a>{/if}
-    {#if may('emails') && me?.owner !== false}<a class="nav blue sub" class:active={page.url.pathname === '/settings/rules'} href="/settings/rules"><span>☰</span>Rules</a>{/if}{#if may('messages')}<a class="nav blue" class:active={page.url.pathname.startsWith('/messages')} href="/messages"><span>💬</span>Messages{#if Number(page.data.shell?.messages) > 0}<b class="mcount">{page.data.shell.messages}</b>{/if}</a>{/if}{#if may('contacts')}<a class="nav violet" class:active={page.url.pathname.startsWith('/contacts')} href="/contacts"><span>👤</span>Contacts</a>{/if}
+    {#if may('messages')}<a class="nav blue" class:active={page.url.pathname.startsWith('/messages')} href="/messages"><span>💬</span>Messages{#if Number(page.data.shell?.messages) > 0}<b class="mcount">{page.data.shell.messages}</b>{/if}</a>{/if}{#if may('contacts')}<a class="nav violet" class:active={page.url.pathname.startsWith('/contacts')} href="/contacts"><span>👤</span>Contacts</a>{/if}
+    <!-- Settings: one item; its pages open on hover / keyboard focus, and stay open on a Settings page. Touch: tap opens Settings. -->
+    {#if me?.owner !== false}<div class="setgroup" class:here={page.url.pathname.startsWith('/settings')}><a class="nav blue" class:active={page.url.pathname.startsWith('/settings')} href="/settings"><span>⚙</span>Settings</a><div class="setlist">{#each settingsNav as st (st.href)}<a class="nav sub set" class:active={page.url.pathname === st.href} href={st.href}><span>{st.icon}</span>{st.label}</a>{/each}</div></div>{/if}
   </aside>
   <main class="main">
-    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation" aria-expanded={open}>☰</button><strong>{title}</strong>{#if !page.url.pathname.startsWith('/emails')}<form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form>{:else}<span style="flex:1" aria-hidden="true"></span>{/if}<div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if me?.owner !== false}<button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Clears the email copies stored in AadOS. Your Gmail/Zoho mailboxes are not touched; open folders re-sync automatically. Messages, calendar and finance are not affected.">⌫ <span class="btn-label">Purge emails</span></button>{/if}{#if me?.owner !== false}<div class="menuwrap"><button class="btn cfg" class:on={page.url.pathname.startsWith('/settings') || settingsOpen} aria-label="Settings" aria-haspopup="menu" aria-expanded={settingsOpen} onclick={() => (settingsOpen = !settingsOpen)}>⚙ <span class="btn-label">Settings ▾</span></button>{#if settingsOpen}<div class="smenu" role="menu">{#each byUsage(SETTINGS_PAGES) as s (s.href)}<a role="menuitem" href={s.href} class:cur={page.url.pathname === s.href}><span>{s.icon}</span>{s.label}</a>{/each}<hr><a role="menuitem" href="/asana" class:cur={page.url.pathname === '/asana'}><span>◉</span>Asana connection</a></div>{/if}</div>{:else}{#if me?.ownAccounts}<a class="btn cfg" class:on={page.url.pathname.startsWith('/me')} href="/me/accounts">⚙ <span class="btn-label">My accounts</span></a>{/if}<small class="who">{me?.name}</small>{/if}<form method="POST" action="/logout"><button class="btn out" type="submit"><span class="wide-label">Sign out</span><span class="short-label" aria-hidden="true">↪</span></button></form></div></header>
+    <header class="topbar"><button class="menu" onclick={() => open = !open} aria-label="Toggle navigation" aria-expanded={open}>☰</button><strong>{title}</strong>{#if !page.url.pathname.startsWith('/emails')}<form class="search" method="GET" action="/search" role="search"><span>⌕</span><input type="search" name="q" placeholder="Search all emails…" value={page.url.pathname === '/search' ? page.url.searchParams.get('q') ?? '' : ''} aria-label="Search all emails"></form>{:else}<span style="flex:1" aria-hidden="true"></span>{/if}<div class="actions"><small class="ver" title="AadOS version">v{__APP_VERSION__}</small>{#if me?.owner !== false}<button class="btn purge" onclick={async () => { if (await purgeEmails()) await invalidateAll(); }} title="Clears the email copies stored in AadOS. Your Gmail/Zoho mailboxes are not touched; open folders re-sync automatically. Messages, calendar and finance are not affected.">⌫ <span class="btn-label">Purge emails</span></button>{/if}{#if me?.owner !== false}{:else}{#if me?.ownAccounts}<a class="btn cfg" class:on={page.url.pathname.startsWith('/me')} href="/me/accounts">⚙ <span class="btn-label">My accounts</span></a>{/if}<small class="who">{me?.name}</small>{/if}<form method="POST" action="/logout"><button class="btn out" type="submit"><span class="wide-label">Sign out</span><span class="short-label" aria-hidden="true">↪</span></button></form></div></header>
     <div class="content">{@render children()}</div>
   </main>
 <SyncProgress />
@@ -96,8 +100,7 @@
   .topbar strong{color:#3e4860}.search{display:flex;align-items:center;gap:8px;flex:1;max-width:420px;background:#f4f6fb;border:1px solid #e6eaf3;border-radius:10px;padding:0 12px;margin:0 12px}.search:focus-within{border-color:#8da2f0;background:#fff}.search span{color:#8a95a8;font-size:18px}.search input{border:0;outline:0;background:transparent;flex:1;min-width:0;padding:9px 0;font-size:13px;color:#29344c;font-family:inherit}.actions{margin-left:auto;display:flex;align-items:center;gap:8px}.actions form{margin:0}.actions small{color:#139488;font-weight:700;font-size:12px}
   .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
   .cfg{background:#f1ebff;color:#6a3fd1}.cfg:hover,.cfg.on{background:#6a3fd1;color:#fff}
-  .menuwrap{position:relative}.nav.sub{padding-left:28px;font-size:13px}.mcount{margin-left:auto;background:#2f7cf6;color:#fff;border-radius:999px;font-size:11px;padding:1px 8px}.who{color:#6a3fd1;font-weight:700}.smenu{position:absolute;right:0;top:calc(100% + 6px);z-index:80;min-width:200px;background:#fff;border:1px solid #e4e9f2;border-radius:12px;box-shadow:0 12px 30px #151c2d26;padding:6px;display:grid}
-  .smenu a{display:flex;gap:9px;align-items:center;padding:8px 10px;border-radius:8px;color:#29344c;text-decoration:none;font-size:13px;font-weight:600}.smenu a span{width:18px;text-align:center;color:#6a3fd1}.smenu a:hover{background:#f4f1ff}.smenu a.cur{background:#f1ebff;color:#6a3fd1}.smenu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}
+  .nav.sub{padding-left:28px;font-size:13px}.setlist{display:none}.setgroup:hover .setlist,.setgroup:focus-within .setlist,.setgroup.here .setlist{display:block}.nav.set{padding-top:5px;padding-bottom:5px}.mcount{margin-left:auto;background:#2f7cf6;color:#fff;border-radius:999px;font-size:11px;padding:1px 8px}.who{color:#6a3fd1;font-weight:700}
   .out{background:#fff0f1;color:#c24457}.out:hover{background:#c24457;color:#fff}
   .purge{background:#fff0f1;color:#c24457}.purge:hover{background:#c24457;color:#fff}
   .content{max-width:2200px;margin:auto;padding:32px}
