@@ -28,6 +28,11 @@ class InboxController extends ChangeNotifier {
 
   bool get hasMore => data != null && _page < data!.pages;
   int count(String view) => data?.counts[view == 'needs-reply' ? 'needsReply' : view] ?? 0;
+  /// Unread mail across every account and folder (not just the folder on screen). Falls back to the view count.
+  int get unreadAll {
+    final accts = data?.accounts.where((a) => !a.paused).toList() ?? const [];
+    return accts.isEmpty ? count('unread') : accts.fold(0, (n, a) => n + a.unread);
+  }
 
   // ---- loading ----
   Future<void> start() async {
@@ -161,6 +166,17 @@ class InboxController extends ChangeNotifier {
       return warning;
     } on ApiException catch (e) {
       if (row != null) { row.savedKind = oldKind; row.savedExpiry = oldExpiry; notifyListeners(); }
+      return e.message;
+    }
+  }
+
+  /// Save several emails as coupons (expiry '' = none) or gift cards.
+  Future<String> saveValues(List<String> keys, {required String kind, String expiry = ''}) async {
+    try {
+      final warning = await mail.mark(kind == 'coupon' ? 'save-coupon' : 'save-gift-card', keys, value: expiry);
+      await load(quiet: true);
+      return warning;
+    } on ApiException catch (e) {
       return e.message;
     }
   }

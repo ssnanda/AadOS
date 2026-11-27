@@ -59,7 +59,7 @@ class EmailTile extends StatelessWidget {
       if (insight != null) Tag('✦ ${insight!.category}${insight!.paymentDue != null ? ' · due ${insight!.paymentDue}' : ''}', color: AppColors.ai),
       if (row.needsAction) Tag(row.due.isNotEmpty ? '${row.actionLabel} · ${row.due}' : row.actionLabel, color: AppColors.action),
       if (row.followUp) const Tag('Follow-up', color: AppColors.follow),
-      if (row.savedKind == 'coupon') Tag('Coupon · expires ${row.savedExpiry}', color: AppColors.star),
+      if (row.savedKind == 'coupon') Tag(row.savedExpiry.isEmpty ? 'Coupon' : 'Coupon · expires ${row.savedExpiry}', color: AppColors.star),
       if (row.savedKind == 'gift-card') const Tag('Gift Card · no expiry', color: AppColors.star),
       if (row.threadCount > 1) Tag('${row.threadCount}', icon: Icons.forum_outlined),
       if (showAccount) Tag(row.accountEmail.split('@').first, color: AppColors.provider(row.provider)),
@@ -125,3 +125,25 @@ IconData viewIcon(String parser) => switch (parser) {
       'digest' => Icons.edit_note,
       _ => Icons.filter_list,
     };
+
+/// Coupon expiry: a date (yyyy-mm-dd), '' for no expiry, or null when cancelled.
+Future<String?> pickCouponExpiry(BuildContext context) async {
+  final choice = await showDialog<String>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: const Text('Save as coupon'),
+      content: const Text('Does it expire?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(d, 'none'), child: const Text('No expiry')),
+        FilledButton(onPressed: () => Navigator.pop(d, 'date'), child: const Text('Pick date')),
+      ],
+    ),
+  );
+  if (choice == null) return null;
+  if (choice == 'none' || !context.mounted) return choice == 'none' ? '' : null;
+  final now = DateTime.now();
+  final d = await showDatePicker(context: context, initialDate: now.add(const Duration(days: 7)), firstDate: now.subtract(const Duration(days: 1)), lastDate: now.add(const Duration(days: 730)));
+  if (d == null) return null;
+  return '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+}

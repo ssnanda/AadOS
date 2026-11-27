@@ -4,11 +4,12 @@
   // in all stored mail, last 7 days first, wider on request. Nothing changes until Create / Save.
   type Cond = { field: string; op: string; text: string; label?: string; count?: number; picked: boolean };
   type Target = { value: string; label: string; disabled?: string };
-  type Hit = { key: string; subject: string; sender: string; receivedAt: string; accountEmail: string; unread: boolean; wouldChange: boolean };
+  type Hit = { key: string; subject: string; sender: string; receivedAt: string; accountEmail: string; unread: boolean; wouldChange: boolean; wouldDelete?: boolean };
   let { keys = [], ruleId = '', onclose, onsaved }: { keys?: string[]; ruleId?: string; onclose: () => void; onsaved?: (message: string) => void } = $props();
 
   let loading = $state(true), busy = $state(false), error = $state(''), note = $state('');
   let conds = $state<Cond[]>([]), targets = $state<Target[]>([]), actions = $state<{ value: string; label: string }[]>([]);
+  let keep = $state(false), keepN = $state(2);
   let body = $state(''), match = $state('all'), action = $state('mark-read'), target = $state('aados:'), mode = $state('ask'), applyExisting = $state(true);
   let dry = $state<{ days: number; total: number; older: number; label: string; rows: Hit[] } | null>(null);
   const editing = $derived(Boolean(ruleId));
@@ -29,11 +30,11 @@
         if (ruleId) {
           const [g, o] = await Promise.all([call({ op: 'get', id: ruleId }), call({ op: 'options' })]);
           conds = g.rule.conditions.map((c: Cond) => ({ ...c, picked: true }));
-          match = g.rule.match; action = g.rule.action; target = g.rule.target; mode = g.rule.mode;
+          match = g.rule.match; action = g.rule.action; target = g.rule.target; mode = g.rule.mode; keep = g.rule.keepLatest > 0; keepN = g.rule.keepLatest || 2;
           targets = o.targets; actions = o.actions;
         } else if (keys.length) {
           const d = await call({ op: 'draft', keys });
-          conds = d.candidates; targets = d.targets; actions = d.actions; body = d.body || '';
+          conds = d.candidates; targets = d.targets; actions = d.actions; body = d.body || ''; action = d.action || 'mark-read'; keep = d.keepLatest > 0; keepN = d.keepLatest || 2;
           target = (d.targets as Target[]).find((t) => !t.disabled)?.value || 'aados:';
         } else {
           const o = await call({ op: 'options' });
@@ -44,7 +45,7 @@
       loading = false;
     })();
   });
-  const rule = () => ({ conditions: picked, match, action, target, mode });
+  const rule = () => ({ conditions: picked, match, action, target, mode, keepLatest: keep && !gmail ? keepN : 0 });
   async function dryRun(days: number) {
     busy = true; note = '';
     try { dry = await call({ op: 'preview', days, ...rule() }); } catch (e) { note = e instanceof Error ? e.message : 'Dry run failed.'; }
@@ -96,6 +97,7 @@
     <div class="row"><select bind:value={action} aria-label="Action">{#each actions as a (a.value)}<option value={a.value}>{a.label}</option>{/each}</select>
       {#if !gmail}<select bind:value={mode} aria-label="Mode"><option value="ask">Ask first</option><option value="auto">Auto</option></select>{/if}
       {#if !gmail && !editing}<label class="chk"><input type="checkbox" bind:checked={applyExisting}> Also apply to emails I already have</label>{/if}</div>
+    {#if !gmail}<div class="row"><label class="chk"><input type="checkbox" bind:checked={keep}> Keep only the newest</label><input type="number" min="1" max="100" bind:value={keepN} disabled={!keep} class="num" aria-label="How many to keep"><span class="muted">matching emails; older ones go to Trash (↶ Undo / shake restores)</span></div>{/if}
 
     <h4>Where</h4>
     <div class="targets">{#each targets as t (t.value)}<label class:off={t.disabled} title={t.disabled || ''}><input type="radio" name="rb-target" value={t.value} bind:group={target} disabled={Boolean(t.disabled) || (editing && !t.value.startsWith('aados'))}> {t.label}{#if t.disabled}<small>{t.disabled}</small>{/if}</label>{/each}</div>
@@ -106,7 +108,7 @@
     {#if dry}
       <p class="sum"><b>{dry.total}</b> match{dry.total === 1 ? '' : 'es'} {dry.days ? `in the last ${dry.days} days` : 'in all mail'}{dry.older ? ` · ${dry.older} older` : ''}</p>
       {#if !dry.total && dry.older}<p class="muted">None in this window. <button type="button" class="link" onclick={() => dryRun(dry!.days === 7 ? 30 : dry!.days === 30 ? 90 : dry!.days === 90 ? 365 : 0)}>Look further back</button></p>{/if}
-      {#if dry.rows.length}<ul class="hits">{#each dry.rows as h (h.key)}<li class:read={!h.unread}><span class="s">{h.subject || '(no subject)'}</span><span class="m">{h.sender} · {h.accountEmail} · {when(h.receivedAt)}</span><span class="w" class:no={!h.wouldChange}>{h.wouldChange ? 'would change' : 'already done'}</span></li>{/each}</ul>{/if}
+      {#if dry.rows.length}<ul class="hits">{#each dry.rows as h (h.key)}<li class:read={!h.unread}><span class="s">{h.subject || '(no subject)'}</span><span class="m">{h.sender} · {h.accountEmail} · {when(h.receivedAt)}</span><span class="w" class:no={!h.wouldChange && !h.wouldDelete} class:del={h.wouldDelete}>{h.wouldDelete ? '→ Trash (older)' : h.wouldChange ? 'would change' : 'already done'}</span></li>{/each}</ul>{/if}
       {#if dry.total > dry.rows.length}<p class="muted">Showing the newest {dry.rows.length}.</p>{/if}
     {/if}
   </div>
@@ -126,7 +128,7 @@
   .chk{display:inline-flex;gap:4px;align-items:center}.targets{display:grid;gap:3px}.targets label{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}.targets label.off{color:#8a95a8}.targets small{flex-basis:100%;padding-left:20px;color:#8a95a8}
   .body .text{white-space:pre-wrap;max-height:180px;overflow:auto;border:1px solid #eef0f5;border-radius:7px;padding:6px;margin:4px 0;color:#53607a}
   .sum{margin:6px 0 2px}.muted{color:#8a95a8;margin:4px 0}.err{color:#a5414d}
-  .hits{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:2px;max-height:260px;overflow:auto}.hits li{display:grid;grid-template-columns:1fr auto;gap:0 8px;border-top:1px solid #eef0f5;padding:4px 0}.hits li .s{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hits li.read .s{font-weight:500}.hits li .m{grid-column:1;color:#8a95a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hits li .w{grid-row:1/3;grid-column:2;align-self:center;color:#1e7a47;font-weight:700}.hits li .w.no{color:#8a95a8;font-weight:500}
+  .hits{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:2px;max-height:260px;overflow:auto}.hits li{display:grid;grid-template-columns:1fr auto;gap:0 8px;border-top:1px solid #eef0f5;padding:4px 0}.hits li .s{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hits li.read .s{font-weight:500}.hits li .m{grid-column:1;color:#8a95a8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hits li .w{grid-row:1/3;grid-column:2;align-self:center;color:#1e7a47;font-weight:700}.hits li .w.no{color:#8a95a8;font-weight:500}.hits li .w.del{color:#a5414d}.num{width:56px}
   footer{display:flex;gap:6px;align-items:center;padding:8px 14px;border-top:1px solid #e4e9f2}.sp{flex:1}
   @media(max-width:600px){.cond{grid-template-columns:auto 1fr 1fr auto;}.cond input:not([type=checkbox]){grid-column:1/-1}.cond small{display:none}}
 </style>

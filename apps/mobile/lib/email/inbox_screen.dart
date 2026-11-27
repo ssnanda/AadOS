@@ -81,6 +81,14 @@ class _InboxScreenState extends State<InboxScreen> {
     if (keys.isEmpty) return;
     // Rule from the selection: the server finds what the emails have in common. Selection stays.
     if (op == 'rule') { await RuleScreen.open(context, c.mail, keys); return; }
+    if (op == 'save-coupon' || op == 'save-gift-card') {
+      final expiry = op == 'save-coupon' ? await pickCouponExpiry(context) : '';
+      if (expiry == null || !mounted) return;
+      setState(_selected.clear);
+      final msg = await c.saveValues(keys, kind: op == 'save-coupon' ? 'coupon' : 'gift-card', expiry: expiry);
+      if (mounted) toast(context, msg.isNotEmpty ? msg : 'Saved ${keys.length} as ${op == 'save-coupon' ? 'coupon' : 'gift card'}${keys.length == 1 ? '' : 's'}.');
+      return;
+    }
     if (op == 'delete' && keys.length > 1) {
       final ok = await showDialog<bool>(
         context: context,
@@ -161,6 +169,8 @@ class _InboxScreenState extends State<InboxScreen> {
               PopupMenuItem(value: 'follow-up', child: Text('＋ Follow-up')),
               PopupMenuItem(value: 'pending-action', child: Text('⚑ Pending action')),
               PopupMenuItem(value: 'reviewed', child: Text('✓ Reviewed')),
+              PopupMenuItem(value: 'save-coupon', child: Text('🏷 Save as coupon')),
+              PopupMenuItem(value: 'save-gift-card', child: Text('🎁 Save as gift card')),
               PopupMenuDivider(),
               PopupMenuItem(value: 'rule', child: Text('☰ Create rule…')),
             ],

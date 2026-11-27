@@ -30,7 +30,8 @@ class _Cond {
 }
 
 class _RuleScreenState extends State<RuleScreen> {
-  bool _loading = true, _busy = false, _applyExisting = true;
+  bool _loading = true, _busy = false, _applyExisting = true, _keep = false;
+  int _keepN = 2;
   String _error = '', _body = '', _match = 'all', _action = 'mark-read', _target = '', _mode = 'ask', _preview = '';
   Map<String, dynamic>? _dry; // dry run: {days, total, older, rows[]}
   final List<_Cond> _conds = [];
@@ -60,6 +61,10 @@ class _RuleScreenState extends State<RuleScreen> {
         _targets = (d['targets'] as List? ?? []).cast<Map<String, dynamic>>();
         _actions = (d['actions'] as List? ?? []).cast<Map<String, dynamic>>();
         _body = '${d['body'] ?? ''}';
+        _action = '${d['action'] ?? 'mark-read'}';
+        _keepN = (d['keepLatest'] as num?)?.toInt() ?? 0;
+        _keep = _keepN > 0;
+        if (_keepN < 1) _keepN = 2;
         _target = '${_targets.firstWhere((t) => t['disabled'] == null, orElse: () => const {'value': 'aados:'})['value']}';
         _loading = false;
       });
@@ -74,6 +79,7 @@ class _RuleScreenState extends State<RuleScreen> {
   Map<String, dynamic> _rule(String op) => {
         'op': op, 'conditions': _picked, 'match': _match, 'action': _action, 'target': _target, 'mode': _mode,
         'applyExisting': _applyExisting && _target.startsWith('aados'),
+        'keepLatest': _keep && !_gmail ? _keepN : 0,
       };
 
   /// Dry run: what the rule matches in the last [days] (0 = all mail). Nothing changes.
@@ -115,7 +121,10 @@ class _RuleScreenState extends State<RuleScreen> {
             dense: true,
             title: Text('${h['subject']}'.isEmpty ? '(no subject)' : '${h['subject']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: h['unread'] == true ? FontWeight.w700 : FontWeight.w400)),
             subtitle: Text('${h['sender']} · ${h['accountEmail']} · ${_when('${h['receivedAt']}')}', maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: Text(h['wouldChange'] == true ? 'would change' : 'already done', style: TextStyle(fontSize: 12, color: h['wouldChange'] == true ? Colors.green.shade700 : t.hintColor)),
+            trailing: Text(
+              h['wouldDelete'] == true ? '→ Trash' : h['wouldChange'] == true ? 'would change' : 'already done',
+              style: TextStyle(fontSize: 12, color: h['wouldDelete'] == true ? t.colorScheme.error : h['wouldChange'] == true ? Colors.green.shade700 : t.hintColor),
+            ),
           ),
         if (total > rows.length) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text('Showing the newest ${rows.length}.', style: t.textTheme.bodySmall)),
       ],
@@ -248,6 +257,18 @@ class _RuleScreenState extends State<RuleScreen> {
                         segments: const [ButtonSegment(value: 'ask', label: Text('Ask first')), ButtonSegment(value: 'auto', label: Text('Auto'))],
                         selected: {_mode}, showSelectedIcon: false, onSelectionChanged: (s) => setState(() => _mode = s.first),
                       ),
+                    ),
+                    CheckboxListTile(
+                      value: _keep, dense: true,
+                      title: Text('Keep only the newest $_keepN matching emails'),
+                      subtitle: const Text('Older ones go to Trash. Undo with a shake.'),
+                      secondary: _keep
+                          ? Row(mainAxisSize: MainAxisSize.min, children: [
+                              IconButton(icon: const Icon(Icons.remove), onPressed: _keepN > 1 ? () => setState(() => _keepN--) : null),
+                              IconButton(icon: const Icon(Icons.add), onPressed: _keepN < 100 ? () => setState(() => _keepN++) : null),
+                            ])
+                          : null,
+                      onChanged: (v) => setState(() => _keep = v ?? false),
                     ),
                     CheckboxListTile(value: _applyExisting, dense: true, title: const Text('Also apply to matching emails I already have'), subtitle: const Text('Undo with a shake'), onChanged: (v) => setState(() => _applyExisting = v ?? false)),
                   ],

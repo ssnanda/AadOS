@@ -4,6 +4,7 @@
   import type { ActionData, PageData } from './$types';
   import { invalidateAll } from '$app/navigation';
   import RuleBuilder from '$lib/components/RuleBuilder.svelte';
+  import TabRules from '$lib/components/TabRules.svelte';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   const acct = (id: string) => data.accounts.find((a) => a.id === id);
   const acctLabel = (id: string) => (id ? acct(id)?.email || id : 'All accounts');
@@ -73,6 +74,11 @@
       </div>
     </article>
   {/each}
+</section>
+
+<section>
+  <h2>Inbox tabs <small>Leads · Scanned Docs · Rent Payments</small></h2>
+  <TabRules />
 </section>
 
 <section>

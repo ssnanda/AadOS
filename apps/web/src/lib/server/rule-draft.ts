@@ -2,7 +2,7 @@ import { readState, updateState, type AadOSState, type MailRule, type MailRuleCo
 import type { SessionUser } from './auth';
 import { bodyTexts } from './body-index';
 import type { InboxRow } from './inbox';
-import { ACTION_LABEL, applyRule, conditionHit, conditionsOf, dryRun, matchesLoaded, regexError, rowsOf } from './mail-rules';
+import { ACTION_LABEL, applyRule, conditionHit, conditionsOf, dryRun, matchesLoaded, needsBody, regexError, rowsOf, trimKeys } from './mail-rules';
 import { createRuleCriteria } from './mail-tools';
 import { keyAllowed } from './scope';
 
@@ -108,11 +108,14 @@ export async function draft(user: SessionUser | null, keys: string[]) {
     ok: true as const, count: rows.length, accountIds, body,
     candidates: cands.map((c) => ({ ...c, count: countOf(c, all, accountIds) })) as Candidate[],
     targets: targetsFor(state, accountIds),
+    // Promotions/coupons: suggest saving as coupon and keeping only the newest 2 (older → Trash).
+    ...(rows.every((r) => r.savedKind === 'coupon' || r.categories.includes('Promotions')) ? { action: 'save-coupon', keepLatest: 2 } : { action: 'mark-read', keepLatest: 0 }),
     actions: ACTIONS.map((a) => ({ value: a, label: ACTION_LABEL[a] }))
   };
 }
 
-export type RuleInput = { conditions: MailRuleCondition[]; match?: 'all' | 'any'; action: string; target: string; mode?: string; archive?: boolean; applyExisting?: boolean };
+export type RuleInput = { conditions: MailRuleCondition[]; match?: 'all' | 'any'; action: string; target: string; mode?: string; archive?: boolean; applyExisting?: boolean; keepLatest?: number };
+const keepOf = (input: RuleInput) => { const n = Math.floor(Number(input.keepLatest) || 0); return n >= 1 && n <= 100 ? n : 0; };
 /** Validated conditions or an error message. */
 function validate(input: RuleInput): { conditions: MailRuleCondition[]; action: MailRule['action'] } | string {
   const conditions = (input.conditions || []).slice(0, 6).map((c) => ({ field: c.field, op: c.op === 'regex' ? 'regex' as const : 'contains' as const, text: String(c.text || '').trim().slice(0, 300) })).filter((c) => c.text);
@@ -127,7 +130,7 @@ function validate(input: RuleInput): { conditions: MailRuleCondition[]; action: 
 }
 const ruleOf = (input: RuleInput, v: { conditions: MailRuleCondition[]; action: MailRule['action'] }, accountId: string): MailRule => ({
   id: crypto.randomUUID(), field: v.conditions[0].field, text: v.conditions[0].text, conditions: v.conditions, match: input.match === 'any' ? 'any' : 'all',
-  action: v.action, accountId, mode: input.mode === 'auto' ? 'auto' : 'ask', enabled: true, createdAt: new Date().toISOString()
+  action: v.action, ...(keepOf(input) ? { keepLatest: keepOf(input) } : {}), accountId, mode: input.mode === 'auto' ? 'auto' : 'ask', enabled: true, createdAt: new Date().toISOString()
 });
 
 /** Dry run: the emails the rule would match in the last `days` (0 = all time). Nothing is changed. */
@@ -154,7 +157,7 @@ export async function getRule(user: SessionUser | null, id: string) {
   if (!user?.owner) return { ok: false as const, error: 'Only the owner can edit rules.' };
   const r = (await readState()).mailRules?.find((x) => x.id === id);
   if (!r) return { ok: false as const, error: 'Rule not found.' };
-  return { ok: true as const, rule: { id: r.id, conditions: conditionsOf(r).map((c) => ({ field: c.field, op: c.op || 'contains', text: c.text })), match: r.match || 'all', action: r.action, target: `aados:${r.accountId}`, mode: r.mode, enabled: r.enabled } };
+  return { ok: true as const, rule: { id: r.id, conditions: conditionsOf(r).map((c) => ({ field: c.field, op: c.op || 'contains', text: c.text })), match: r.match || 'all', action: r.action, target: `aados:${r.accountId}`, mode: r.mode, enabled: r.enabled, keepLatest: r.keepLatest || 0 } };
 }
 
 /** Save edits to an AadOS rule. Keeps when it was made (Auto still acts only on newer mail) and what it already did. */
@@ -170,6 +173,7 @@ export async function update(user: SessionUser | null, id: string, input: RuleIn
     if (!r) return;
     found = true;
     Object.assign(r, { field: v.conditions[0].field, text: v.conditions[0].text, conditions: v.conditions, match: input.match === 'any' ? 'any' : 'all', action: v.action, accountId, mode: input.mode === 'auto' ? 'auto' : 'ask' });
+    if (keepOf(input)) r.keepLatest = keepOf(input); else delete r.keepLatest;
   });
   return found ? { ok: true as const, message: 'Rule saved.' } : { ok: false as const, error: 'Rule not found.' };
 }
@@ -185,6 +189,7 @@ export async function create(user: SessionUser | null, input: RuleInput): Promis
     if (v.conditions.some((c) => c.op === 'regex')) return { ok: false, error: 'Gmail filters do not support patterns. Use “contains”, or pick an AadOS rule.' };
     if (input.match === 'any' && v.conditions.length > 1) return { ok: false, error: 'Gmail filters need all conditions to match. Pick an AadOS rule for “any”.' };
     if (v.action !== 'mark-read') return { ok: false, error: 'Gmail filters here can mark read (and skip the inbox). For other actions pick an AadOS rule.' };
+    if (keepOf(input)) return { ok: false, error: 'Keep newest N is an AadOS rule feature. Pick an AadOS rule.' };
     const criteria: { from?: string; to?: string; subject?: string; query?: string } = {};
     for (const c of v.conditions) {
       const f = c.field;
@@ -204,6 +209,11 @@ export async function create(user: SessionUser | null, input: RuleInput): Promis
     const m = await matchesLoaded(rule, rowsOf(state).filter((r) => keyAllowed(user, r.key)), state);
     const r = await applyRule(rule, m.existing.map((x) => x.key), 'manual');
     extra = ` ${ACTION_LABEL[rule.action]}: ${r.count} existing email${r.count === 1 ? '' : 's'}.${r.error ? ` ${r.error}` : ''}`;
+    if (rule.keepLatest) {
+      const after = await readState(), rows = rowsOf(after).filter((x) => keyAllowed(user, x.key));
+      const t = await applyRule(rule, trimKeys(rule, rows, needsBody(rule) ? await bodyTexts(after, rows) : undefined), 'manual', 'delete');
+      extra += ` Kept the newest ${rule.keepLatest}; ${t.count} older moved to Trash (shake / ↶ Undo to restore).`;
+    }
   }
   return { ok: true, message: `Rule created (${rule.mode === 'auto' ? 'Auto' : 'Ask first'}).${extra}` };
 }

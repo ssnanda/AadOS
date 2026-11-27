@@ -193,7 +193,7 @@
         {#each r.pipelines as p (p)}<span class="tag view">{p}</span>{/each}
         {#if r.action && !r.reviewed}<span class="tag act" title={r.actionReason}>{r.action === 'reply' ? 'Needs reply' : r.action === 'financial' ? 'Payment' : r.action === 'appointment' ? 'Appointment' : 'To-do'}{r.due ? ` · ${r.due}` : ''}</span>{/if}
         {#if r.followUp}<span class="tag follow">Follow-up</span>{/if}
-        {#if r.savedKind === 'coupon'}<span class="tag saved">Coupon · expires {r.savedExpiry}</span>{:else if r.savedKind === 'gift-card'}<span class="tag saved">Gift Card · no expiry</span>{/if}
+        {#if r.savedKind === 'coupon'}<span class="tag saved">Coupon{r.savedExpiry ? ` · expires ${r.savedExpiry}` : ''}</span>{:else if r.savedKind === 'gift-card'}<span class="tag saved">Gift Card · no expiry</span>{/if}
         <form method="POST" action="?/mark" use:enhance class="ops"><input type="hidden" name="key" value={r.key}>
           {#if r.action === 'reply' && !r.reviewed}<button name="op" value="reviewed" title="Mark reviewed">✓ Reviewed</button><button name="op" value="dismissed" title="Not actionable">✕ Not needed</button>{:else if !r.action}<button name="op" value="actionable" title="Mark as needing action">⚑ Needs action</button>{:else}<button name="op" value="clear-action">↺ Reset</button>{/if}
           {#if r.followUp}<button name="op" value="clear-follow-up">Remove follow-up</button>{:else}<button name="op" value="follow-up">＋ Follow-up</button>{/if}

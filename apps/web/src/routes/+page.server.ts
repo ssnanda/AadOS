@@ -44,7 +44,7 @@ export const load: PageServerLoad = async ({ locals }) => {
   });
   // Deduplicated across accounts and views; the page size of 1 keeps this cheap (only counts are used).
   const rows = buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
-  const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 });
+  const { counts } = queryInbox(rows, { view: 'all', pageSize: 1 }, undefined, undefined, state.tabRules);
   const brief = overview({ rows, accounts: state.accounts, today: todayIn(state.prefs.timeZone) }, 8);
   const tz = validZone(state.prefs.timeZone) ? state.prefs.timeZone : 'UTC';
   const cal = dailyCalendar(state.events, tz, Date.now(), state.calendarDisabled);

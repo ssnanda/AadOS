@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { readState, updateState, type MailRule, type MailRuleCondition } from '$lib/server/aados-store';
 import { createRule as createGmailRule, removeRule as removeGmailRule, rules as gmailRules } from '$lib/server/mail-tools';
-import { ACTION_LABEL, applyRule, describeRule, matchesLoaded, regexError, rowsOf, skipKeys, suggestions } from '$lib/server/mail-rules';
+import { ACTION_LABEL, applyRule, describeRule, matchesLoaded, regexError, rowsOf, skipKeys, suggestions, trimKeys } from '$lib/server/mail-rules';
 
 // Settings → Rules: every email rule in one place.
 //   Suggestions (owner picks action, where it lives, and auto vs ask) · AadOS rules · native Gmail filters ·
@@ -29,13 +29,6 @@ const BUILT_IN: { group: string; rules: [string, string][] }[] = [
     ['Notifications', 'Security alerts, codes, sign-ins; or an automated sender (no-reply, alerts, updates…).'],
     ['Family / Personal', 'Sender matches a family name; person-to-person mail that is not bulk.'],
     ['Important / Needs Reply', 'Importance and reply detection from sender and wording.']
-  ] },
-  { group: 'Inbox tabs', rules: [
-    ['Unread', 'Every unread email.'],
-    ['Recent', 'The newest 10 emails.'],
-    ['Leads', 'Listing-site prospects (Zillow, Trulia, HotPads, Apartments.com, Rent.com, Zumper, Realtor, Redfin, …) and Rentec applications.'],
-    ['Scanned Docs', 'Subject "Scan from …" or the office printer relay sender.'],
-    ['Rent Payments', 'Money received via Cash App, Zelle, Venmo, PayPal or Rentec EasyPay, and tenants\' rent emails.']
   ] },
   { group: 'Saved value', rules: [
     ['Coupon', 'Detected only with expiry wording plus a concrete date.'],
@@ -121,6 +114,8 @@ export const actions: Actions = {
     if (!rule) return fail(404, { error: 'Rule not found.' });
     const m = await matchesLoaded(rule, rowsOf(state), state), list = form.get('which') === 'existing' ? m.existing : m.fresh;
     const r = await applyRule(rule, list.map((x) => x.key), 'manual');
+    // Keep newest N: Apply now also trims older matches to Trash.
+    if (rule.keepLatest) { const after = await readState(); await applyRule(rule, trimKeys(rule, rowsOf(after)), 'manual', 'delete'); }
     return r.error && !r.count ? fail(400, { error: r.error }) : { ok: `${ACTION_LABEL[rule.action]}: ${r.count} email${r.count === 1 ? '' : 's'}.${r.error ? ` ${r.error}` : ''}` };
   },
   skip: async ({ request }) => {

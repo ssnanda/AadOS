@@ -61,10 +61,10 @@ export async function emailList(params: URLSearchParams, user: SessionUser | nul
   const shop = shopView ? { tiles: shopTiles(rows, shopView.id) } : null;
   // Searches also match email body text (PostgreSQL full-text index; empty when not available).
   const bodyHits = query.q ? await bodyMatches(query.q) : undefined;
-  const result = queryInbox(rows, query, undefined, bodyHits);
+  const result = queryInbox(rows, query, undefined, bodyHits, state.tabRules);
   if (shopView && !query.kind && !query.saved && !query.q) Object.assign(result, { rows: [], total: 0, page: 1, pages: 1 });
   const saved = {
-    coupons: rows.filter((r) => r.savedKind === 'coupon' && r.savedExpiry).sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, expiresOn: r.savedExpiry })),
+    coupons: rows.filter((r) => r.savedKind === 'coupon').sort((a, b) => (a.savedExpiry || '9999').localeCompare(b.savedExpiry || '9999')).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, expiresOn: r.savedExpiry })),
     giftCards: rows.filter((r) => r.savedKind === 'gift-card').sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender }))
   };
   // Cached AI insights for the visible rows only (never computed here).
@@ -158,8 +158,9 @@ export async function markEmails(user: SessionUser | null, rawKeys: string[], op
         else if (op === 'importance-high' || op === 'importance-normal') item.importance = op === 'importance-high' ? 'high' : 'normal';
         else if (op === 'clear-importance') delete item.importance;
         else if (op === 'save-coupon') {
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T12:00:00Z`))) throw new Error('Choose a valid coupon expiry date.');
-          item.savedValue = { kind: 'coupon', expiresOn: value, savedAt: new Date().toISOString() };
+          // Expiry is optional (rules and quick saves have none): '' = no expiry.
+          if (value && (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T12:00:00Z`)))) throw new Error('Choose a valid coupon expiry date.');
+          item.savedValue = { kind: 'coupon', ...(value ? { expiresOn: value } : {}), savedAt: new Date().toISOString() };
           delete item.savedValueDismissed;
         }
         else if (op === 'save-gift-card') { item.savedValue = { kind: 'gift-card', savedAt: new Date().toISOString() }; delete item.savedValueDismissed; }

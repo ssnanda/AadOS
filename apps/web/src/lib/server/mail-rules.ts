@@ -12,10 +12,10 @@ import { bodyTexts } from './body-index';
 
 const RULES_USER: SessionUser = { id: 'rules', name: 'Rules', owner: true, permissions: [], mailboxes: 'all', ownAccounts: false };
 const LOG_MAX = 100, SKIP_MAX = 1000;
-export const ACTION_LABEL: Record<MailRule['action'], string> = { 'mark-read': 'Mark read', delete: 'Delete (to Trash)', 'importance-high': 'Mark important', 'follow-up': 'Follow-up', actionable: 'Pending action', reviewed: 'Reviewed' };
+export const ACTION_LABEL: Record<MailRule['action'], string> = { 'mark-read': 'Mark read', delete: 'Delete (to Trash)', 'importance-high': 'Mark important', 'follow-up': 'Follow-up', actionable: 'Pending action', reviewed: 'Reviewed', 'save-coupon': 'Save as coupon' };
 export const conditionsOf = (r: MailRule): MailRuleCondition[] => (r.conditions?.length ? r.conditions : [{ field: r.field, text: r.text }]);
 const showCond = (c: MailRuleCondition) => (c.op === 'regex' ? `${c.field} matches /${c.text}/` : `${c.field} contains “${c.text}”`);
-export const describeRule = (r: MailRule) => `${conditionsOf(r).map(showCond).join(r.match === 'any' ? ' or ' : ' and ')} → ${ACTION_LABEL[r.action]}`;
+export const describeRule = (r: MailRule) => `${conditionsOf(r).map(showCond).join(r.match === 'any' ? ' or ' : ' and ')} → ${ACTION_LABEL[r.action]}${r.keepLatest ? ` · keep newest ${r.keepLatest}` : ''}`;
 const addressOf = (sender: string) => (sender.match(/<([^>]+)>/)?.[1] || sender.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] || sender).trim().toLowerCase();
 
 const regexCache = new Map<string, RegExp | null>();
@@ -48,7 +48,15 @@ export function actionApplies(rule: MailRule, row: InboxRow) {
   if (rule.action === 'importance-high') return row.importance !== 'high';
   if (rule.action === 'follow-up') return !row.followUp;
   if (rule.action === 'reviewed') return !row.reviewed;
+  if (rule.action === 'save-coupon') return row.savedKind !== 'coupon';
   return true;
+}
+
+/** Keep newest N: matching emails beyond the newest `keepLatest` (skipped ones left alone), to move to Trash. */
+export function trimKeys(rule: MailRule, rows: InboxRow[], bodies?: Map<string, string>) {
+  if (!rule.keepLatest || rule.keepLatest < 1) return [] as string[];
+  const skipped = new Set(rule.skipped || []);
+  return rows.filter((r) => !skipped.has(r.key) && conditionsMatch(rule, r, bodies)).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(rule.keepLatest).map((r) => r.key);
 }
 /** Does this email match the rule, and would the action still change something? */
 export const matches = (rule: MailRule, row: InboxRow, bodies?: Map<string, string>) => conditionsMatch(rule, row, bodies) && actionApplies(rule, row);
@@ -81,25 +89,26 @@ export async function dryRun(rule: MailRule, rows: InboxRow[], state: AadOSState
   const bodies = needsBody(rule) ? await bodyTexts(state, bodyCandidates(rule, rows)) : undefined;
   const hits = rows.filter((r) => conditionsMatch(rule, r, bodies)).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
   const inside = hits.filter((r) => Date.parse(r.receivedAt) >= since);
+  const trimmed = new Set(rule.keepLatest ? hits.slice(rule.keepLatest).map((r) => r.key) : []);
   return {
     days, total: inside.length, older: hits.length - inside.length, label: describeRule(rule),
-    rows: inside.slice(0, limit).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, receivedAt: r.receivedAt, accountId: r.accountId, accountEmail: r.accountEmail, unread: r.unread, wouldChange: actionApplies(rule, r) }))
+    rows: inside.slice(0, limit).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, receivedAt: r.receivedAt, accountId: r.accountId, accountEmail: r.accountEmail, unread: r.unread, wouldChange: actionApplies(rule, r), wouldDelete: trimmed.has(r.key) }))
   };
 }
 
 export const rowsOf = (state: AadOSState) => buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
 
 /** Apply a rule's action to these emails (mailbox first, then AadOS) and log it. */
-export async function applyRule(rule: MailRule, keys: string[], how: 'auto' | 'manual') {
+export async function applyRule(rule: MailRule, keys: string[], how: 'auto' | 'manual', op: string = rule.action) {
   if (!keys.length) return { count: 0 };
-  const r = await markEmails(RULES_USER, keys, rule.action);
+  const r = await markEmails(RULES_USER, keys, op);
   const count = r.ok ? r.marked.length : 0, error = r.ok ? r.warning : r.error;
   const changed = r.ok ? r.marked : [];
   await updateState((s) => {
     // Remember what this rule handled, so it never acts on the same email twice.
     const saved = s.mailRules?.find((x) => x.id === rule.id);
-    if (saved && changed.length) saved.done = [...new Set([...(saved.done || []), ...changed])].slice(-SKIP_MAX);
-    s.mailRuleLog = [{ at: new Date().toISOString(), ruleId: rule.id, rule: describeRule(rule), action: rule.action, count, how, ...(error ? { error } : {}) }, ...(s.mailRuleLog || [])].slice(0, LOG_MAX);
+    if (saved && changed.length && op === rule.action) saved.done = [...new Set([...(saved.done || []), ...changed])].slice(-SKIP_MAX);
+    s.mailRuleLog = [{ at: new Date().toISOString(), ruleId: rule.id, rule: op === rule.action ? describeRule(rule) : `${describeRule(rule)} (trim older → Trash)`, action: op, count, how, ...(error ? { error } : {}) }, ...(s.mailRuleLog || [])].slice(0, LOG_MAX);
   });
   return { count, error };
 }
@@ -127,6 +136,14 @@ export function runRules() {
       const keys = matchesOf(rule, rows, bodies).fresh.map((r) => r.key).filter((k) => !taken.has(k));
       keys.forEach((k) => taken.add(k));
       await applyRule(rule, keys, 'auto');
+      // Keep newest N: new matching mail arrived, so trim the older matches (Trash; undoable).
+      const newHere = rows.some((r) => Date.parse(r.receivedAt) >= created && conditionsMatch(rule, r, bodies));
+      if (rule.keepLatest && newHere) {
+        const fresh = await readState();
+        const all = rowsOf(fresh);
+        const allBodies = needsBody(rule) ? await bodyTexts(fresh, bodyCandidates(rule, all)) : undefined;
+        await applyRule(rule, trimKeys(rule, all, allBodies), 'auto', 'delete');
+      }
     }
   })().catch((cause) => console.warn('[aados] rules run failed:', cause instanceof Error ? cause.message : cause)).finally(() => { globalThis.__aadosRulesRunning = false; });
 }

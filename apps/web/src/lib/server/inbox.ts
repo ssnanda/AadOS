@@ -1,6 +1,6 @@
 // Unified inbox: one row per source message across every connected account and view.
 // Pure module (type-only imports) so it can be tested with `node --test`.
-import type { MailAccount, Pipeline, PipelineItem } from './aados-store';
+import type { MailAccount, Pipeline, PipelineItem, TabId, TabRule, TabRuleCondition } from './aados-store';
 import { classify, couponExpiry, detectAction, importance, type ActionKind } from './categories.ts';
 import { recipients } from '../recipients.ts';
 
@@ -179,6 +179,40 @@ const isRent = (r: InboxRow) => {
   return (/\brent\b/i.test(s) || /payment (received|confirmation)|\bpaid\b.*\$\d/i.test(s)) && !isBulk(r) && !fromDomain(r, LEAD_SITES);
 };
 
+// ---- Inbox tab rules: built-in detection above, plus the owner's include/exclude conditions (Settings → Rules). ----
+export type TabRules = Partial<Record<TabId, TabRule>>;
+export const TABS: { id: TabId; label: string; view: InboxView }[] = [{ id: 'leads', label: '🏠 Leads', view: 'leads' }, { id: 'scans', label: '🖨 Scanned Docs', view: 'scans' }, { id: 'rent', label: '💵 Rent Payments', view: 'rent' }];
+/** Built-in detection in words (keep in step with isLead / isScan / isRent above). */
+export const TAB_BUILTIN: Record<TabId, string[]> = {
+  leads: [
+    'From applications@rentecdirect.com (Rentec applications), or',
+    `From a listing site (${LEAD_SITES.join(', ')}) and: a lead/inquiry mailbox, a reply relay (@convo.…), or a subject like request, inquiry, lead, interested, application, tour, showing, question, contacted, message from, wants to`,
+    'Facebook mail only when the subject mentions marketplace/listing/rental/interested and a lead word'
+  ],
+  scans: ['Subject “Scan from …” / “Scanned from …”, or “scan … reception”', 'or from sandip.smtp@itspector.com, or a sender containing “itspector”'],
+  rent: [
+    'Not when the subject says you sent / you paid / you requested / statement / code (unless forwarded)',
+    'Cash App (cash@square.com): “sent you $”, “You accepted $”, “paid you $”',
+    'Zelle (subject or sender): sent to you / received / deposited',
+    'Venmo “paid you $” · PayPal “you’ve got money”, “sent you $”, “payment received” · Rentec Direct emails about a payment',
+    'Otherwise: subject mentions rent, “payment received/confirmation” or “paid … $”, and not bulk mail or a listing site'
+  ]
+};
+const BUILTIN: Record<TabId, (r: InboxRow) => boolean> = { leads: (r) => isLead(r), scans: (r) => isScan(r), rent: (r) => isRent(r) };
+const tabCondHit = (c: TabRuleCondition, r: InboxRow) => {
+  const hay = c.field === 'from' ? r.sender : c.field === 'subject' ? r.subject : r.to.join(' ');
+  if (c.op === 'regex') { try { return new RegExp(c.text, 'i').test(hay); } catch { return false; } }
+  return hay.toLowerCase().includes(c.text.toLowerCase());
+};
+/** Is this email in the tab, and why: 'excluded' (your exclude wins), 'yours' (your include), 'built-in', or ''. */
+export function tabReason(tab: TabId, r: InboxRow, rules?: TabRules): '' | 'excluded' | 'yours' | 'built-in' {
+  const t = rules?.[tab];
+  if (t?.exclude?.some((c) => tabCondHit(c, r))) return 'excluded';
+  if (t?.include?.some((c) => tabCondHit(c, r))) return 'yours';
+  return t?.builtIn !== false && BUILTIN[tab](r) ? 'built-in' : '';
+}
+const inTab = (tab: TabId, r: InboxRow, rules?: TabRules) => { const w = tabReason(tab, r, rules); return w === 'yours' || w === 'built-in'; };
+
 /** Every search word must appear in subject, sender, preview, account, provider, categories or view names. */
 function matchesText(row: InboxRow, terms: string[]) {
   if (!terms.length) return true;
@@ -191,7 +225,7 @@ function matchesText(row: InboxRow, terms: string[]) {
 const PROPERTY_VIEWS: InboxView[] = ['leads', 'scans', 'rent'];
 
 /** `bodyHits`: `account\0messageId` of emails whose indexed body text matches the search (body-index.ts). */
-export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now(), bodyHits?: Set<string>): InboxResult {
+export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now(), bodyHits?: Set<string>, tabs?: TabRules): InboxResult {
   const view = query.view || 'all';
   // Pasted senders (\"Dunkin' Rewards <noreply@…>\") search as words: brackets, quotes and commas are ignored.
   const terms = (query.q || '').toLowerCase().replace(/['’`]/g, '').replace(/[<>"(),;!?]/g, ' ').split(/\s+/).filter(Boolean);
@@ -217,7 +251,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
   }
   // Leads, Scans and Rent span every folder of the account (mail filed out of the Inbox still counts).
   const accountRows = rows.filter((r) => (!query.account || r.accountId === query.account) && (!query.provider || r.provider === query.provider));
-  for (const r of accountRows) { if (isLead(r)) counts.leads++; if (isScan(r)) counts.scans++; if (isRent(r)) counts.rent++; }
+  for (const r of accountRows) { if (inTab('leads', r, tabs)) counts.leads++; if (inTab('scans', r, tabs)) counts.scans++; if (inTab('rent', r, tabs)) counts.rent++; }
   counts.recent = Math.min(RECENT_COUNT, scoped.length);
   for (const r of rows) counts.accounts[r.accountId] = (counts.accounts[r.accountId] || 0) + 1;
 
@@ -229,7 +263,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     (view !== 'inbox' || r.inInbox) && (view !== 'unread' || r.unread) && (view !== 'important' || r.importance === 'high') && (view !== 'needs-reply' || needsReply(r))
     && (view !== 'read' || !r.unread)
     && (view !== 'attention' || isAttention(r, now)) && (view !== 'people' || isPeople(r)) && (view !== 'bills' || isBills(r, now)) && (view !== 'bulk' || isBulk(r))
-    && (view !== 'leads' || isLead(r)) && (view !== 'scans' || isScan(r)) && (view !== 'rent' || isRent(r))
+    && (view !== 'leads' || inTab('leads', r, tabs)) && (view !== 'scans' || inTab('scans', r, tabs)) && (view !== 'rent' || inTab('rent', r, tabs))
     && (!sender || r.sender.toLowerCase().includes(sender))
     && (Number.isNaN(from) || Date.parse(r.receivedAt) >= from) && (Number.isNaN(to) || Date.parse(r.receivedAt) <= to)
     && (query.read !== 'unread' || r.unread) && (query.read !== 'read' || !r.unread)
@@ -241,7 +275,7 @@ export function queryInbox(rows: InboxRow[], query: InboxQuery, now = Date.now()
     && (!query.saved || r.savedKind === query.saved)
     && textMatch(r)));
   // Saved coupons: soonest expiry first.
-  if (query.saved === 'coupon') filtered.sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry));
+  if (query.saved === 'coupon') filtered.sort((a, b) => (a.savedExpiry || '9999').localeCompare(b.savedExpiry || '9999')); // no expiry last
   // Recent is simply the newest messages, no paging.
   if (view === 'recent') { const rows = filtered.slice(0, RECENT_COUNT); return { rows, total: rows.length, page: 1, pageSize: RECENT_COUNT, pages: 1, counts: { ...counts, recent: Math.min(RECENT_COUNT, filtered.length) } }; }
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));

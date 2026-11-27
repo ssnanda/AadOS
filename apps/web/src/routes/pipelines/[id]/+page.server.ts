@@ -22,7 +22,7 @@ const savedParam = (value: unknown): Saved => (value === 'coupon' || value === '
 function savedOf(state: AadOSState, pipeline: Pipeline) {
   const rows = pipeline.parser !== 'shop' ? [] : buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items })
     .filter((r) => r.savedKind && r.copyIds.some((id) => id.startsWith(`${pipeline.id}:`)));
-  const coupons = rows.filter((r) => r.savedKind === 'coupon').sort((a, b) => a.savedExpiry.localeCompare(b.savedExpiry));
+  const coupons = rows.filter((r) => r.savedKind === 'coupon').sort((a, b) => (a.savedExpiry || '9999').localeCompare(b.savedExpiry || '9999'));
   return { coupon: coupons.map((r) => r.key), 'gift-card': rows.filter((r) => r.savedKind === 'gift-card').map((r) => r.key), nextExpiry: coupons[0]?.savedExpiry || '' };
 }
 const keyOf = (item: { accountId?: string; messageId: string }, pipeline: Pipeline) => messageKey(item.accountId || pipeline.accountId, item.messageId);

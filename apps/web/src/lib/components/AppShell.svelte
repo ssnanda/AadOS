@@ -33,6 +33,29 @@
   const foldersOf = (a: (typeof accounts)[number]) => a.folders.filter((f) => mailAll || f.unread > 0);
   const mailHref = (account: string, all = mailAll, folder = '') => { const q = new URLSearchParams(); if (account) q.set('account', account); if (folder) q.set('folder', folder); if (all) q.set('view', 'all'); const s = q.toString(); return s ? `/emails?${s}` : '/emails'; };
   const totalUnread = $derived(accounts.reduce((n, a) => n + a.unread, 0));
+  // Browser tab: "(mail · shared) Page" — all unread mail (every account and folder) and shared mailboxes, like the phone.
+  let sharedUnread = $state(0);
+  async function loadShared() {
+    if (!may('emails') || !accounts.some((a) => a.provider === 'zoho')) return;
+    try {
+      const b = await fetch('/emails/shared/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'boxes', fresh: false }) }).then((r) => r.json());
+      let n = 0;
+      for (const a of b.accounts || []) for (const x of a.boxes || []) n += Number(x.unread) || 0;
+      sharedUnread = n;
+    } catch { /* keep the last number */ }
+  }
+  const tabLabel = $derived(totalUnread || sharedUnread ? `(${totalUnread}${sharedUnread ? ` · ${sharedUnread}` : ''}) ` : '');
+  const applyTitle = () => { const base = document.title.replace(/^\(\d[\d ·]*\)\s*/, ''); if (document.title !== tabLabel + base) document.title = tabLabel + base; };
+  onMount(() => {
+    void loadShared();
+    const timer = setInterval(loadShared, 300_000);
+    // Pages set their own <title>; put the numbers back in front whenever it changes.
+    const head = document.querySelector('head');
+    const watch = new MutationObserver(() => applyTitle());
+    if (head) watch.observe(head, { subtree: true, childList: true, characterData: true });
+    return () => { clearInterval(timer); watch.disconnect(); };
+  });
+  $effect(() => { void tabLabel; void page.url.pathname; const id = setTimeout(applyTitle, 0); return () => clearTimeout(id); });
   // Count badges for Calendar / Conference Room (Asana, Finance, Documents stream in via page.data.navCounts).
   const counts = $derived((page.data.shell?.counts ?? { calendar: 0, room: 0 }) as { calendar: number; room: number });
   // Report the browser's time zone once, so calendar days match the owner's clock.

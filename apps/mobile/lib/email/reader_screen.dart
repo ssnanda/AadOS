@@ -384,6 +384,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _run(() => widget.inbox.review('actionable', [row.key]));
       case 'clear-action':
         _run(() => widget.inbox.review('clear-action', [row.key]));
+      case 'save-coupon':
+        pickCouponExpiry(context).then((expiry) {
+          if (expiry != null) _run(() => widget.inbox.saveValue(row.key, kind: 'coupon', expiry: expiry));
+        });
       case 'save-gift-card':
         _run(() => widget.inbox.saveValue(row.key, kind: 'gift-card'));
       case 'clear-saved-value':
@@ -517,6 +521,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     child: ListTile(leading: Icon(Icons.bookmark_remove_outlined), title: Text('Remove saved item')),
                   )
                 else ...[
+                  const PopupMenuItem(
+                    value: 'save-coupon',
+                    child: ListTile(leading: Icon(Icons.local_offer_outlined), title: Text('Save as coupon')),
+                  ),
                   const PopupMenuItem(
                     value: 'save-gift-card',
                     child: ListTile(leading: Icon(Icons.card_giftcard_outlined), title: Text('Save as gift card')),
@@ -765,7 +773,7 @@ class _EmailPage extends StatelessWidget {
               ],
               if (row.savedKind.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                Tag(row.savedKind == 'coupon' ? 'Coupon · expires ${row.savedExpiry}' : 'Gift Card · no expiry', color: AppColors.star),
+                Tag(row.savedKind == 'coupon' ? (row.savedExpiry.isEmpty ? 'Coupon' : 'Coupon · expires ${row.savedExpiry}') : 'Gift Card · no expiry', color: AppColors.star),
               ],
             ],
           ),

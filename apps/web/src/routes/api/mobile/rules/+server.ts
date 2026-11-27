@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import { create, draft, getRule, options, preview, update, type RuleInput } from '$lib/server/rule-draft';
+import { tabDry, tabsInfo, tabUpdate } from '$lib/server/tab-rules';
 
 // "Create rule…" from emails (phone and web).
 //   POST {op:'draft', keys}        → candidate conditions, targets (AadOS / Gmail / Zoho-disabled), actions, body text
@@ -7,6 +8,7 @@ import { create, draft, getRule, options, preview, update, type RuleInput } from
 //   POST {op:'create', ...rule}    → create (owner only); applyExisting also acts on current matches
 //   POST {op:'options'}            → AadOS targets + actions (new rule without emails)
 //   POST {op:'get', id} / {op:'update', id, ...rule} → edit an AadOS rule
+//   POST {op:'tabs'} / {op:'tab-update', tab, builtIn, include, exclude} / {op:'tab-dry', tab, days, ...} → inbox tab rules
 export const POST = async ({ request, locals }) => {
   const b = await request.json().catch(() => null);
   if (!b || typeof b !== 'object') return json({ error: 'Invalid request.' }, { status: 400 });
@@ -16,6 +18,9 @@ export const POST = async ({ request, locals }) => {
     : b.op === 'options' ? await options(locals.user)
     : b.op === 'get' ? await getRule(locals.user, String(b.id || ''))
     : b.op === 'update' ? await update(locals.user, String(b.id || ''), b as RuleInput)
+    : b.op === 'tabs' ? await tabsInfo(locals.user)
+    : b.op === 'tab-update' ? await tabUpdate(locals.user, String(b.tab || ''), b)
+    : b.op === 'tab-dry' ? await tabDry(locals.user, String(b.tab || ''), b, [0, 7, 30, 90, 365].includes(Number(b.days)) ? Number(b.days) : 7)
     : { ok: false as const, error: 'Unknown op.' };
   return json(r, { status: r.ok ? 200 : 400 });
 };

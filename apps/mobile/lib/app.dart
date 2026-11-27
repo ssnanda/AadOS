@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'asana/asana_api.dart';
@@ -16,6 +18,8 @@ import 'email/inbox_screen.dart';
 import 'email/mail_api.dart';
 import 'email/models.dart';
 import 'more/more_screen.dart';
+import 'shared/shared_screen.dart' show SharedApi;
+import 'core/ui.dart' show maps, numOf;
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -91,6 +95,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late final AsanaApi _asana = AsanaApi(widget.session.api);
   final _dashboard = GlobalKey<DashboardScreenState>();
   final _asanaDue = ValueNotifier<int>(0);
+  final _sharedUnread = ValueNotifier<int>(0); // unread in Zoho shared mailboxes
+  Timer? _sharedTimer;
   late final ShakeDetector _shake = ShakeDetector(_promptUndo);
   bool _undoOpen = false;
   String _tab = 'dashboard';
@@ -114,16 +120,34 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _select('mail');
   }
 
-  // Unread mail on the home-screen icon, kept in step with the Mail tab badge.
-  void _badge() => AppBadge.set(_inbox.count('unread'));
+  // Home-screen icon: all unread mail (every account and folder) + shared mailboxes. One number is all iOS allows.
+  void _badge() => AppBadge.set(_inbox.unreadAll + _sharedUnread.value);
+
+  /// Shared mailboxes' unread total (Zoho; slower, so every 5 minutes and on resume). Errors keep the last number.
+  Future<void> _loadShared() async {
+    if (!(widget.session.user?.can('emails') ?? true)) return;
+    try {
+      final r = await SharedApi(widget.session.api).op('boxes', {'fresh': false}, timeout: const Duration(seconds: 60));
+      var n = 0;
+      for (final a in maps(r['accounts'])) {
+        for (final b in maps(a['boxes'])) {
+          n += numOf(b['unread']).toInt();
+        }
+      }
+      _sharedUnread.value = n;
+    } catch (_) {/* no shared mailboxes or offline */}
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _inbox.addListener(_badge);
+    _sharedUnread.addListener(_badge);
     _inbox.start();
     _shake.start();
+    _loadShared();
+    _sharedTimer = Timer.periodic(const Duration(minutes: 5), (_) => _loadShared());
   }
 
   /// Shake to undo: shows the newest delete / mark read / mark unread and undoes it on confirm.
@@ -162,13 +186,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Live sync pauses in the background and runs again when the app comes back (like the web's visibility check).
     // It keeps running on every tab so the icon and Mail badges stay current.
     _inbox.setVisible(state == AppLifecycleState.resumed);
-    if (state == AppLifecycleState.resumed) { _shake.start(); } else { _shake.stop(); }
+    if (state == AppLifecycleState.resumed) { _shake.start(); _loadShared(); } else { _shake.stop(); }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _shake.stop();
+    _sharedTimer?.cancel();
+    _sharedUnread.removeListener(_badge);
+    _sharedUnread.dispose();
     _inbox.removeListener(_badge);
     _inbox.dispose();
     _asanaDue.dispose();
@@ -192,9 +219,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return Scaffold(
       body: IndexedStack(index: index, children: [for (final t in tabs) KeyedSubtree(key: ValueKey(t), child: _opened.contains(t) ? _screen(t) : const SizedBox())]),
       bottomNavigationBar: ListenableBuilder(
-        listenable: Listenable.merge([_inbox, _asanaDue]),
+        listenable: Listenable.merge([_inbox, _asanaDue, _sharedUnread]),
         builder: (context, _) {
-          final unread = _inbox.count('unread');
+          final unread = _inbox.unreadAll, shared = _sharedUnread.value;
+          // Mail: all unread mail (red, top right) and shared mailboxes (blue, top left).
+          Widget mail(Widget icon) => Badge(
+                isLabelVisible: shared > 0, alignment: AlignmentDirectional.topStart, backgroundColor: Colors.blue.shade600,
+                label: Text(shared > 999 ? '999+' : '$shared'), child: count(unread, icon));
           return NavigationBar(
             height: 64,
             selectedIndex: index,
@@ -203,7 +234,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             destinations: [
               for (final t in tabs)
                 switch (t) {
-                  'mail' => NavigationDestination(icon: count(unread, const Icon(Icons.mail_outline)), selectedIcon: count(unread, const Icon(Icons.mail)), label: 'Mail'),
+                  'mail' => NavigationDestination(icon: mail(const Icon(Icons.mail_outline)), selectedIcon: mail(const Icon(Icons.mail)), label: 'Mail', tooltip: 'Unread: $unread mail, $shared shared'),
                   'calendar' => const NavigationDestination(icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Calendar'),
                   'asana' => NavigationDestination(icon: count(_asanaDue.value, const Icon(Icons.task_alt_outlined)), selectedIcon: count(_asanaDue.value, const Icon(Icons.task_alt)), label: 'Asana'),
                   'more' => const NavigationDestination(icon: Icon(Icons.apps_outlined), selectedIcon: Icon(Icons.apps), label: 'More'),
