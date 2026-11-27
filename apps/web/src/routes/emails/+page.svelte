@@ -69,6 +69,20 @@
     try { await fetch('/sync/live', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account: data.query.account, folder: data.query.folder, pipeline: data.query.pipeline, force: true }) }); await invalidateAll(); }
     finally { syncing = false; }
   }
+  // Undo the newest mailbox change (delete → back from Trash, mark read/unread). Same endpoint as the phone's shake to undo.
+  async function undoLast() {
+    const latest = await fetch('/emails/undo').then((r) => r.json()).catch(() => null);
+    if (!latest?.undo) { alert('Nothing to undo.'); return; }
+    if (!confirm(`Undo?\n\n${latest.undo.label}`)) return;
+    const r = await fetch('/emails/undo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: latest.undo.id }) }).then((x) => x.json()).catch(() => ({ error: 'Undo failed.' }));
+    hidden = [];
+    await invalidateAll();
+    alert(r.message || r.error || 'Done.');
+  }
+  function undoKey(e: KeyboardEvent) {
+    const t = e.target as HTMLElement | null;
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !(t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName)))) { e.preventDefault(); void undoLast(); }
+  }
   const allShown = $derived(rows.length > 0 && selected.length === rows.length);
   const viewingIndex = $derived(viewing ? rows.findIndex((r) => r.key === viewing?.key) : -1);
   // Opening a message marks it read in the mailbox; reflect that immediately in the preview.
@@ -121,11 +135,12 @@
     await act('mark-unread', [current.key]);
   }
 </script>
+<svelte:window onkeydown={undoKey} />
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
 <main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
   <header class:open={headerOpen}>
-    <div><div class="title-row"><h1>Emails</h1><button class="header-toggle" aria-expanded={headerOpen} aria-controls="email-header-details" onclick={() => headerOpen = !headerOpen}>{headerOpen ? 'Hide' : 'Accounts'} <span>{headerOpen ? '▴' : '▾'}</span></button><a class="header-toggle" style="margin-left:0;text-decoration:none" href="/settings/rules" title="All email rules">☰ Rules</a></div><div class="header-details" id="email-header-details"><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
+    <div><div class="title-row"><h1>Emails</h1><button class="header-toggle" aria-expanded={headerOpen} aria-controls="email-header-details" onclick={() => headerOpen = !headerOpen}>{headerOpen ? 'Hide' : 'Accounts'} <span>{headerOpen ? '▴' : '▾'}</span></button><button class="header-toggle" style="margin-left:0" onclick={undoLast} title="Undo the last delete / read / unread (⌘Z)">↶ Undo</button><a class="header-toggle" style="margin-left:0;text-decoration:none" href="/settings/rules" title="All email rules">☰ Rules</a></div><div class="header-details" id="email-header-details"><p>{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} · {data.counts.unread} unread · {data.counts.needsReply} need a reply · {syncing ? 'checking all folders…' : `checked ${clock(lastChecked)}`} <button class="link" onclick={checkNow} disabled={syncing}>↻ Check now</button></p>
       {#if data.accounts.length}<div class="checked">{#each data.accounts as a (a.id)}{@const sh = shellAccounts.find((x) => x.id === a.id)}<a class="acct" class:err={Boolean(a.lastError)} class:zero={!sh?.unread} href={unreadHref({ account: a.id, folder: '' })} title={a.lastError || `${a.email} · last check ${clock(checkedOf(a))}`}><i class={a.provider}>{a.provider === 'gmail' ? 'G' : 'Z'}</i>{a.email.split('@')[0]}{#if sh?.unread}<b>{sh.unread}</b>{/if}<small>{a.paused ? 'paused' : a.lastError ? 'error' : clock(checkedOf(a))}</small></a>{/each}</div>{/if}
       {#if unreadFolders.length}<div class="ufolders"><small>Unread</small>{#each unreadFolders as u (`${u.account.id}:${u.folder.id}`)}<a class:on={data.query.account === u.account.id && data.query.folder === u.folder.id} href={unreadHref({ account: u.account.id, folder: u.folder.id })} title={u.account.email}><i class={u.account.provider}>{u.account.provider === 'gmail' ? 'G' : 'Z'}</i>{u.folder.name.replace(/^inbox\//i, '')}<b>{u.folder.unread}</b></a>{/each}</div>{/if}
     </div></div>

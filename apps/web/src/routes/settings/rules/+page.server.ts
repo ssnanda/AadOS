@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { readState, updateState, type MailRule } from '$lib/server/aados-store';
+import { readState, updateState, type MailRule, type MailRuleCondition } from '$lib/server/aados-store';
 import { createRule as createGmailRule, removeRule as removeGmailRule, rules as gmailRules } from '$lib/server/mail-tools';
 import { ACTION_LABEL, applyRule, describeRule, matchesOf, rowsOf, skipKeys, suggestions } from '$lib/server/mail-rules';
 
@@ -8,7 +8,7 @@ import { ACTION_LABEL, applyRule, describeRule, matchesOf, rowsOf, skipKeys, sug
 //   Suggestions (owner picks action, where it lives, and auto vs ask) · AadOS rules · native Gmail filters ·
 //   Zoho (native filters live in Zoho Mail; not readable through its API) · built-in AadOS behaviour (read-only) · activity.
 
-const FIELDS = ['from', 'subject', 'to'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high'] as const;
+const FIELDS = ['from', 'subject', 'to'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high', 'follow-up', 'actionable', 'reviewed'] as const;
 
 /** Built-in AadOS rules, read-only. Keep in step with categories.ts, inbox.ts and the preview/sync code. */
 const BUILT_IN: { group: string; rules: [string, string][] }[] = [
@@ -64,17 +64,18 @@ export const load: PageServerLoad = async ({ url }) => {
     accounts, rules, gmail, views, builtIn: BUILT_IN, actionLabels: ACTION_LABEL,
     suggestions: suggestions(state, covered),
     log: (state.mailRuleLog || []).slice(0, 30),
-    prefill: { text: url.searchParams.get('from') || '', account: url.searchParams.get('account') || '' }
+    prefill: { text: url.searchParams.get('from') || '', subject: url.searchParams.get('subject') || '', account: url.searchParams.get('account') || '' }
   };
 };
 
-/** Validated rule fields from a form. */
+/** Validated rule fields from a form: one or more conditions (field[] + text[]), all/any, action, account, mode. */
 function ruleFrom(form: FormData): Omit<MailRule, 'id' | 'createdAt' | 'enabled'> | string {
-  const field = String(form.get('field') || 'from') as MailRule['field'], action = String(form.get('action') || '') as MailRule['action'];
-  const text = String(form.get('text') || '').trim().slice(0, 200), mode = form.get('mode') === 'auto' ? 'auto' : 'ask';
-  if (!FIELDS.includes(field) || !ACTIONS.includes(action)) return 'Choose what to match and an action.';
-  if (text.length < 3) return 'Enter at least 3 characters to match.';
-  return { field, text, action, mode, accountId: String(form.get('accountId') || '') };
+  const fields = form.getAll('field').map(String), texts = form.getAll('text').map((t) => String(t).trim().slice(0, 200));
+  const conditions = texts.map((text, i) => ({ field: (fields[i] || 'from') as MailRuleCondition['field'], text })).filter((c) => c.text);
+  const action = String(form.get('action') || '') as MailRule['action'], mode = form.get('mode') === 'auto' ? 'auto' : 'ask';
+  if (!conditions.length || !conditions.every((c) => FIELDS.includes(c.field)) || !ACTIONS.includes(action)) return 'Choose what to match and an action.';
+  if (conditions.some((c) => c.text.length < 3)) return 'Enter at least 3 characters for each condition.';
+  return { field: conditions[0].field, text: conditions[0].text, conditions, match: form.get('match') === 'any' ? 'any' : 'all', action, mode, accountId: String(form.get('accountId') || '') };
 }
 const newRule = (r: Omit<MailRule, 'id' | 'createdAt' | 'enabled'>): MailRule => ({ ...r, id: crypto.randomUUID(), createdAt: new Date().toISOString(), enabled: true });
 

@@ -81,7 +81,7 @@
     if (await run('rule', () => call('deleteRule', { accountId, id }))) rulesData = await run('rules', () => call('rules', { accountId }));
   }
   // Settings → Rules, prefilled with this sender's address and account.
-  const rulesHref = () => `/settings/rules?from=${encodeURIComponent((info?.from.match(/[\w.+'-]+@[\w.-]+/) || [''])[0])}&account=${encodeURIComponent(accountId || item.key.slice(0, item.key.indexOf(':')))}`;
+  const rulesHref = () => `/settings/rules?from=${encodeURIComponent((info?.from.match(/[\w.+'-]+@[\w.-]+/) || [''])[0])}&subject=${encodeURIComponent(item.subject.replace(/^(re|fwd?):\s*/i, '').split(':')[0].slice(0, 60))}&account=${encodeURIComponent(accountId || item.key.slice(0, item.key.indexOf(':')))}`;
   const labelName = (id: string) => rulesData?.labels.find((l) => l.id === id)?.name || id;
   const describe = (f: { criteria: Record<string, string>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }) =>
     `${Object.entries(f.criteria).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;

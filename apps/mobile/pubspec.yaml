@@ -25,6 +25,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   # Unread count on the Android launcher icon (iOS uses the native channel in AppDelegate)
   app_badge_plus: ^1.4.0
+  # Shake to undo (accelerometer; no permission prompt needed)
+  sensors_plus: ^6.1.1
 
 dev_dependencies:
   flutter_test:

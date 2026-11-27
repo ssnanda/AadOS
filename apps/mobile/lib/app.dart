@@ -7,6 +7,7 @@ import 'calendar/calendar_screen.dart';
 import 'core/app_badge.dart';
 import 'core/login_screen.dart';
 import 'core/scope.dart';
+import 'core/shake.dart';
 import 'core/session.dart';
 import 'core/theme.dart';
 import 'dashboard/dashboard_screen.dart';
@@ -90,6 +91,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late final AsanaApi _asana = AsanaApi(widget.session.api);
   final _dashboard = GlobalKey<DashboardScreenState>();
   final _asanaDue = ValueNotifier<int>(0);
+  late final ShakeDetector _shake = ShakeDetector(_promptUndo);
+  bool _undoOpen = false;
   String _tab = 'dashboard';
   final Set<String> _opened = {'dashboard', 'mail', 'asana'}; // Asana loads at start for its due badge; Calendar when opened
 
@@ -120,6 +123,38 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _inbox.addListener(_badge);
     _inbox.start();
+    _shake.start();
+  }
+
+  /// Shake to undo: shows the newest delete / mark read / mark unread and undoes it on confirm.
+  Future<void> _promptUndo() async {
+    final ctx = navigatorKey.currentContext;
+    if (_undoOpen || ctx == null) return;
+    _undoOpen = true;
+    try {
+      final info = await _mail.latestUndo();
+      final c = navigatorKey.currentContext;
+      if (c == null || !c.mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(c);
+      if (info == null) { messenger?.showSnackBar(const SnackBar(content: Text('Nothing to undo.'))); return; }
+      final ok = await showDialog<bool>(
+        context: c,
+        builder: (d) => AlertDialog(
+          title: Text(info.op == 'delete' ? 'Undo delete?' : 'Undo?'),
+          content: Text(info.label),
+          actions: [TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Undo'))],
+        ),
+      );
+      if (ok != true) return;
+      final message = await _mail.undo(info.id);
+      await _inbox.load(quiet: true);
+      messenger?.showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      final c = navigatorKey.currentContext;
+      if (c != null && c.mounted) ScaffoldMessenger.maybeOf(c)?.showSnackBar(SnackBar(content: Text('Undo failed: $e')));
+    } finally {
+      _undoOpen = false;
+    }
   }
 
   @override
@@ -127,11 +162,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     // Live sync pauses in the background and runs again when the app comes back (like the web's visibility check).
     // It keeps running on every tab so the icon and Mail badges stay current.
     _inbox.setVisible(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) { _shake.start(); } else { _shake.stop(); }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _shake.stop();
     _inbox.removeListener(_badge);
     _inbox.dispose();
     _asanaDue.dispose();

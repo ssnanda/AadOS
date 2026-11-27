@@ -338,6 +338,16 @@ export async function setZohoUnread(state: AadOSState, account: MailAccount, mes
   await jsonResponse(res);
 }
 
+/** Documented: PUT .../updatemessage {mode: moveMessage, destfolderId: long, messageId: [long]} (used to restore from Trash). Raw digits: IDs exceed 2^53. */
+export async function moveZohoMessages(state: AadOSState, account: MailAccount, messageIds: string[], destFolderId: string): Promise<void> {
+  const ids = messageIds.filter((id) => /^\d{1,20}$/.test(id));
+  if (!ids.length || !/^\d{1,20}$/.test(destFolderId)) throw new Error('Zoho folder or message id unknown');
+  const token = await accessToken(state, account);
+  const body = `{"mode":"moveMessage","destfolderId":${destFolderId},"messageId":[${ids.join(',')}]}`;
+  const res = await fetchRetry(`${mailHost(state.zoho.dataCenter)}/api/accounts/${encodeURIComponent(account.remoteId)}/updatemessage`, { method: 'PUT', headers: { Authorization: `Zoho-oauthtoken ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' }, body });
+  await jsonResponse(res);
+}
+
 /** Documented: GET .../messages/{id}/header?raw=false -> data.headerContent {Name: [values]}. Names lower-cased here. */
 export async function zohoHeaders(state: AadOSState, account: MailAccount, folderId: string, messageId: string): Promise<Record<string, string>> {
   if (!folderId) return {};

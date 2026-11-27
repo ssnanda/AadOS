@@ -22,6 +22,19 @@ class MailApi {
     return r is Map ? (r['warning'] ?? '').toString() : '';
   }
 
+  /// The newest undoable change (delete, mark read incl. by opening, mark unread), or null.
+  Future<UndoInfo?> latestUndo() async {
+    final r = await api.get('/api/mobile/emails/undo');
+    final u = r is Map ? r['undo'] : null;
+    return u is Map ? UndoInfo(id: '${u['id']}', label: '${u['label']}', op: '${u['op']}') : null;
+  }
+
+  /// Undo it: deleted mail comes back from the mailbox Trash; read/unread flips back. Returns the server's message.
+  Future<String> undo(String id) async {
+    final r = await api.post('/api/mobile/emails/undo', {'id': id}, timeout: const Duration(seconds: 60));
+    return r is Map ? '${r['message'] ?? r['error'] ?? 'Done.'}' : 'Done.';
+  }
+
   /// Opening (not prefetching) marks the email read, in AadOS and in the mailbox.
   Future<MessageBody> body(EmailRow row, {bool prefetch = false}) async {
     final r = await api.get('/pipelines/${Uri.encodeComponent(row.pipelineId)}/message/${Uri.encodeComponent(row.messageId)}',
@@ -70,4 +83,10 @@ class MailApi {
         timeout: const Duration(seconds: 90)) as Map<String, dynamic>;
     return ((r['draft'] as Map?)?['content'] ?? '').toString();
   }
+}
+
+/// One undoable mailbox change, as the server describes it.
+class UndoInfo {
+  const UndoInfo({required this.id, required this.label, required this.op});
+  final String id, label, op;
 }

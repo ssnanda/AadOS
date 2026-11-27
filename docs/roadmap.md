@@ -205,3 +205,8 @@ Keep scope small: deliver useful inbox access before extending to household task
 125. [x] Rules links: sidebar (under Emails), Emails header, reader "☰ Rules" (Zoho → prefilled AadOS rule; Gmail panel → All rules) — awaiting owner verification
 126. [ ] AI-evaluated rule suggestions (beyond the bulk-sender heuristic)
 127. [ ] Gmail native Delete/Important via filters (TRASH / IMPORTANT labels) — not offered until verified against the Gmail API
+128. [x] AadOS rules: up to 3 conditions (From/Subject/To contains) with all/any; actions Mark read · Delete (Trash) · Important · Follow-up · Pending action · Reviewed; rules never act on the same email twice; reader ☰ Rules prefills sender + subject — awaiting owner verification
+129. [x] Zoho native filters: not possible — Zoho Mail REST API has no filter endpoints (checked 2026-11-27); Zoho users use AadOS rules or Zoho Mail → Settings → Filters
+130. [x] Undo: delete (Gmail untrash; Zoho move back to its folder), mark read (incl. by opening), mark unread; rule actions too; last 20 changes kept (server `mail-undo.ts`, `/api/mobile/emails/undo`, `/emails/undo`) — Zoho restore by message id unverified — awaiting owner verification
+131. [x] Web: ↶ Undo in the Emails header and ⌘/Ctrl+Z — awaiting owner verification
+132. [x] Phone: shake to undo (sensors_plus, deliberate two-swing shake, foreground only) → confirm dialog → result snackbar — needs `flutter pub get` + app build — awaiting owner verification

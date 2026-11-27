@@ -5,6 +5,7 @@ import { fetchZohoBody, setZohoUnread } from '$lib/server/zoho';
 import { fetchGmailBody, setGmailUnread } from '$lib/server/gmail';
 import { canSeeAccount } from '$lib/server/auth';
 import { bodyKey, cachedBody, remember, type Body } from '$lib/server/email-bodies';
+import { recordUndo } from '$lib/server/mail-undo';
 
 // Fetches one email body from the mailbox on demand (read-only) and marks it seen in AadOS.
 // The mailbox call runs WITHOUT the state lock (it used to hold it, so every preview queued behind
@@ -48,7 +49,10 @@ async function markReadInMailbox(pipelineId: string, messageId: string) {
     if (account.accessToken !== token) { a.accessToken = account.accessToken; a.expiresAt = account.expiresAt; }
     const owner = new Map(s.pipelines.map((p) => [p.id, p.accountId]));
     const folders = new Set<string>();
-    for (const i of s.items) if (i.messageId === messageId && (i.accountId || owner.get(i.pipelineId)) === a.id && i.unread !== false) { i.unread = false; if (i.folderId) folders.add(i.folderId); }
+    const flipped = s.items.filter((i) => i.messageId === messageId && (i.accountId || owner.get(i.pipelineId)) === a.id && i.unread !== false);
+    // Opening marked it read: undoable like any mark read (Undo / shake to undo).
+    if (flipped.length) recordUndo(s, 'mark-read', [`${a.id}:${messageId}`], flipped);
+    for (const i of flipped) { i.unread = false; if (i.folderId) folders.add(i.folderId); }
     a.folders = (a.folders || []).map((f) => (folders.has(f.id) && f.unread ? { ...f, unread: f.unread - 1 } : f));
   });
 }

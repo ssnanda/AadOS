@@ -1,4 +1,4 @@
-import { readState, updateState, type AadOSState, type MailRule } from './aados-store';
+import { readState, updateState, type AadOSState, type MailRule, type MailRuleCondition } from './aados-store';
 import type { SessionUser } from './auth';
 import { markEmails } from './email-list';
 import { buildRows, type InboxRow } from './inbox';
@@ -11,24 +11,28 @@ import { buildRows, type InboxRow } from './inbox';
 
 const RULES_USER: SessionUser = { id: 'rules', name: 'Rules', owner: true, permissions: [], mailboxes: 'all', ownAccounts: false };
 const LOG_MAX = 100, SKIP_MAX = 1000;
-export const ACTION_LABEL: Record<MailRule['action'], string> = { 'mark-read': 'Mark read', delete: 'Delete (to Trash)', 'importance-high': 'Mark important' };
-export const describeRule = (r: MailRule) => `${r.field} contains “${r.text}” → ${ACTION_LABEL[r.action]}`;
+export const ACTION_LABEL: Record<MailRule['action'], string> = { 'mark-read': 'Mark read', delete: 'Delete (to Trash)', 'importance-high': 'Mark important', 'follow-up': 'Follow-up', actionable: 'Pending action', reviewed: 'Reviewed' };
+export const conditionsOf = (r: MailRule): MailRuleCondition[] => (r.conditions?.length ? r.conditions : [{ field: r.field, text: r.text }]);
+export const describeRule = (r: MailRule) => `${conditionsOf(r).map((c) => `${c.field} contains “${c.text}”`).join(r.match === 'any' ? ' or ' : ' and ')} → ${ACTION_LABEL[r.action]}`;
 const addressOf = (sender: string) => (sender.match(/<([^>]+)>/)?.[1] || sender.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] || sender).trim().toLowerCase();
 
 /** Does this email match the rule, and would the action still change something? */
 export function matches(rule: MailRule, row: InboxRow) {
   if (rule.accountId && row.accountId !== rule.accountId) return false;
-  const text = rule.text.toLowerCase();
-  const hay = rule.field === 'from' ? row.sender : rule.field === 'subject' ? row.subject : row.to.join(' ');
-  if (!hay.toLowerCase().includes(text)) return false;
+  const hit = (c: MailRuleCondition) => (c.field === 'from' ? row.sender : c.field === 'subject' ? row.subject : row.to.join(' ')).toLowerCase().includes(c.text.toLowerCase());
+  const conds = conditionsOf(rule);
+  if (!(rule.match === 'any' ? conds.some(hit) : conds.every(hit))) return false;
+  // Only when the action would still change something.
   if (rule.action === 'mark-read') return row.unread;
   if (rule.action === 'importance-high') return row.importance !== 'high';
+  if (rule.action === 'follow-up') return !row.followUp;
+  if (rule.action === 'reviewed') return !row.reviewed;
   return true;
 }
 
 /** Matches split into mail that arrived after the rule (new) and before it (existing); skipped keys left out. */
 export function matchesOf(rule: MailRule, rows: InboxRow[]) {
-  const skipped = new Set(rule.skipped || []), created = Date.parse(rule.createdAt) || 0;
+  const skipped = new Set([...(rule.skipped || []), ...(rule.done || [])]), created = Date.parse(rule.createdAt) || 0;
   const fresh: InboxRow[] = [], existing: InboxRow[] = [];
   for (const r of rows) if (!skipped.has(r.key) && matches(rule, r)) (Date.parse(r.receivedAt) >= created ? fresh : existing).push(r);
   return { fresh, existing };
@@ -41,7 +45,11 @@ export async function applyRule(rule: MailRule, keys: string[], how: 'auto' | 'm
   if (!keys.length) return { count: 0 };
   const r = await markEmails(RULES_USER, keys, rule.action);
   const count = r.ok ? r.marked.length : 0, error = r.ok ? r.warning : r.error;
+  const changed = r.ok ? r.marked : [];
   await updateState((s) => {
+    // Remember what this rule handled, so it never acts on the same email twice.
+    const saved = s.mailRules?.find((x) => x.id === rule.id);
+    if (saved && changed.length) saved.done = [...new Set([...(saved.done || []), ...changed])].slice(-SKIP_MAX);
     s.mailRuleLog = [{ at: new Date().toISOString(), ruleId: rule.id, rule: describeRule(rule), action: rule.action, count, how, ...(error ? { error } : {}) }, ...(s.mailRuleLog || [])].slice(0, LOG_MAX);
   });
   return { count, error };
@@ -86,7 +94,7 @@ export function suggestions(state: AadOSState, covered: string[] = []): Suggesti
     e.count++; if (r.unread) e.unread++; if (r.categories.some((c) => bulk.has(c))) e.bulk++; e.accounts.add(r.accountId);
     by.set(a, e);
   }
-  const ruleTexts = [...(state.mailRules || []).filter((r) => r.field === 'from').map((r) => r.text.toLowerCase()), ...covered.map((c) => c.toLowerCase())];
+  const ruleTexts = [...(state.mailRules || []).flatMap((r) => conditionsOf(r).filter((c) => c.field === 'from').map((c) => c.text.toLowerCase())), ...covered.map((c) => c.toLowerCase())];
   const dismissed = new Set(state.mailRuleDismissed || []);
   const out: Suggestion[] = [];
   for (const [address, e] of by) {

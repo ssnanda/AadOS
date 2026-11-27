@@ -343,6 +343,11 @@ export async function trashGmailMessage(state: AadOSState, account: MailAccount,
   const headers = { Authorization: `Bearer ${await token(state, account)}` };
   await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/trash`, { method: 'POST', headers }));
 }
+/** Take a message out of Gmail's Trash (users.messages.untrash). Requires gmail.modify. */
+export async function untrashGmailMessage(state: AadOSState, account: MailAccount, messageId: string): Promise<void> {
+  const headers = { Authorization: `Bearer ${await token(state, account)}` };
+  await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}/untrash`, { method: 'POST', headers }));
+}
 /** Mark messages read/unread in Gmail (users.messages.batchModify on the UNREAD label). Requires gmail.modify. */
 export async function setGmailUnread(state: AadOSState, account: MailAccount, messageIds: string[], unread: boolean): Promise<void> {
   if (!messageIds.length) return;

@@ -6,6 +6,7 @@ import { keyAllowed, scopeState } from './scope';
 import { database, ensureInboxPipelines, hasDatabase, missingInboxPipelines, readState, updateState, visiblePipelines, type AadOSState } from './aados-store';
 import { getInsights } from './ai/db';
 import { bodyMatches } from './body-index';
+import { recordUndo } from './mail-undo';
 import { buildRows, folderSummary, queryInbox, type InboxQuery, type InboxRow, type InboxView } from './inbox';
 import { CATEGORIES } from './categories';
 import { isUnread } from './search';
@@ -105,7 +106,8 @@ export type MarkResult = { ok: true; marked: string[]; warning?: string } | { ok
  * Delete (to the provider's Trash) and read/unread are changed in Gmail/Zoho first; AadOS follows only where that worked.
  * The other ops are AadOS-only review state for the message (all its copies); the mailbox is never modified for them.
  */
-export async function markEmails(user: SessionUser | null, rawKeys: string[], op: string, value = ''): Promise<MarkResult> {
+/** `record: false` skips the undo log (used by Undo itself). */
+export async function markEmails(user: SessionUser | null, rawKeys: string[], op: string, value = '', opts: { record?: boolean } = {}): Promise<MarkResult> {
   const keys = rawKeys.map(String).filter((k) => k && keyAllowed(user, k));
   let errors: string[] = [];
   let applyKeys = keys;
@@ -123,6 +125,11 @@ export async function markEmails(user: SessionUser | null, rawKeys: string[], op
       const wanted = new Set(applyKeys);
       const copies = state.items.filter((item) => wanted.has(`${account(state, item)}:${item.messageId}`));
       if (!keys.length || !copies.length) throw new Error('Choose at least one email.');
+      // Undo log: deletes, and read/unread changes that actually flipped something.
+      if (opts.record !== false && (op === 'delete' || op === 'mark-read' || op === 'mark-unread')) {
+        const flipped = op === 'delete' ? copies : copies.filter((c) => (op === 'mark-read' ? isUnread(c) : !isUnread(c)));
+        recordUndo(state, op, [...new Set(flipped.map((c) => `${account(state, c)}:${c.messageId}`))], flipped);
+      }
       // Keep the sidebar's per-folder unread counts (the provider's count, refreshed by the unread scan) in step right away.
       if (op === 'delete' || op === 'mark-read' || op === 'mark-unread') {
         const delta = op === 'mark-unread' ? 1 : -1, seen = new Set<string>();
