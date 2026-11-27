@@ -3,13 +3,19 @@
   // The viewer puts its title (`header`) and its own buttons (`lead` first, `trail` last) in the same row.
   import type { Snippet } from 'svelte';
   type Item = { key: string; pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; unread?: boolean };
-  let { item, accountId = '', aiAvailable = false, aiBlocked = '', onfind, header, lead, trail, moreOpen = false, onmore }: { item: Item; accountId?: string; aiAvailable?: boolean; aiBlocked?: string; onfind?: (term: string) => void; header?: Snippet; lead?: Snippet; trail?: Snippet; moreOpen?: boolean; onmore?: () => void } = $props();
+  // `footer`: an element below the email body where the same button row is mounted again (shared state).
+  let { item, accountId = '', aiAvailable = false, aiBlocked = '', onfind, header, lead, trail, footer = null, moreOpen = false, onmore }: { item: Item; accountId?: string; aiAvailable?: boolean; aiBlocked?: string; onfind?: (term: string) => void; header?: Snippet; lead?: Snippet; trail?: Snippet; footer?: HTMLElement | null; moreOpen?: boolean; onmore?: () => void } = $props();
+  // Moves the node into `target`, keeping it reactive and owned by this component.
+  function portal(node: HTMLElement, target: HTMLElement) {
+    target.appendChild(node);
+    return { update(t: HTMLElement) { t.appendChild(node); }, destroy() { node.remove(); } };
+  }
 
   type Details = { from: string; to: string; cc: string; account: string; provider: string; unsubscribe: { url: string; mailto: string }; canSend: boolean; canFilter: boolean };
   let info = $state<Details | null>(null);
   let error = $state('');
   let note = $state('');
-  let menu = $state(false);
+  let menu = $state<'' | 'top' | 'bottom'>(''); // which Reply dropdown is open
   let busy = $state('');
   let compose = $state<{ mode: 'reply' | 'replyAll' | 'forward'; from: string; to: string; cc: string; bcc: string; subject: string; text: string; quoted: string; showQuoted: boolean; showBcc: boolean; attachments: boolean; provider: string; residential: boolean; templateTitle: string } | null>(null);
   let findOpen = $state(false);
@@ -36,14 +42,14 @@
   const copy = async (text: string, label: string) => { await navigator.clipboard.writeText(text); note = `${label} copied.`; setTimeout(() => (note = ''), 1500); };
 
   async function startCompose(mode: 'reply' | 'replyAll' | 'forward', withAi = false) {
-    menu = false;
+    menu = '';
     const p = await run('compose', () => call('prepare', { mode }));
     if (!p) return;
     compose = { mode, from: p.from, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: '', quoted: p.quoted, showQuoted: false, showBcc: false, attachments: mode === 'forward', provider: p.provider, residential: false, templateTitle: '' };
     if (withAi) await aiDraft();
   }
   async function startResidential() {
-    menu = false;
+    menu = '';
     const p = await run('compose', () => call('prepareResidential'));
     if (!p) return;
     compose = { mode: 'reply', from: p.from, to: p.to, cc: p.cc, bcc: '', subject: p.subject, text: p.template, quoted: p.quoted, showQuoted: false, showBcc: false, attachments: false, provider: p.provider, residential: true, templateTitle: p.templateTitle };
@@ -62,7 +68,7 @@
     if (r) { compose = null; note = r.note ? `Sent. ${r.note}` : 'Sent.'; }
   }
   async function openRules() {
-    rulesOpen = !rulesOpen; menu = false;
+    rulesOpen = !rulesOpen; menu = '';
     if (!rulesOpen) return;
     rule = { field: 'from', text: (info?.from.match(/[\w.+'-]+@[\w.-]+/) || [''])[0], labelId: '', markRead: false, archive: false };
     rulesData = await run('rules', () => call('rules', { accountId }));
@@ -79,13 +85,11 @@
     `${Object.entries(f.criteria).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;
 </script>
 
-<section class="tools">
-  <div class="top">{@render header?.()}
-  <div class="bar">
+{#snippet buttons(where: 'top' | 'bottom')}
     {@render lead?.()}
     <div class="menuwrap">
-      <button onclick={() => (menu = !menu)} aria-haspopup="menu" aria-expanded={menu}>↩ Reply ▾</button>
-      {#if menu}<div class="menu" role="menu">
+      <button onclick={() => (menu = menu === where ? '' : where)} aria-haspopup="menu" aria-expanded={menu === where}>↩ Reply ▾</button>
+      {#if menu === where}<div class="menu" role="menu">
         <button role="menuitem" onclick={() => startCompose('reply')}>Reply</button>
         <button role="menuitem" onclick={() => startCompose('replyAll')}>Reply All</button>
         <button role="menuitem" onclick={() => startCompose('forward')}>Forward</button>
@@ -100,8 +104,13 @@
     {#if busy}<span class="busy">{busy === 'send' ? 'Sending…' : 'Working…'}</span>{/if}
     {#if note}<span class="ok">{note}</span>{/if}
     {@render trail?.()}
+{/snippet}
+
+<section class="tools">
+  <div class="top">{@render header?.()}
+  <div class="bar">{@render buttons('top')}</div>
   </div>
-  </div>
+  {#if footer}<div class="bar foot" use:portal={footer}>{@render buttons('bottom')}</div>{/if}
   {#if info}
     <div class="who">
       <span><b>From:</b> {info.from}<button class="cp" title="Copy" onclick={() => copy(info!.from, 'From')}>⧉</button></span>
@@ -156,7 +165,7 @@
   .unsub{color:#3157de;font-weight:700;text-decoration:none}
   .top{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:start;margin-bottom:6px}.bar{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;border-top:1px solid #eef0f5}
   button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:4px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.5;cursor:default}button.on{background:#eef1ff;border-color:#8da2f0;color:#3157de}
-  .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}.menu button:disabled{color:#a3adbf;cursor:not-allowed;background:none}.aihint{font-size:11px;color:#3157de;padding:2px 10px 6px;text-decoration:none;max-width:220px}
+  .menuwrap{position:relative}.menu{position:absolute;top:28px;left:0;z-index:5;background:#fff;border:1px solid #e4e9f2;border-radius:10px;box-shadow:0 8px 24px #151c2d22;padding:5px;display:grid;min-width:170px}.menu button{border:0;text-align:left;padding:7px 10px;font-size:12px;border-radius:6px}.menu button:hover{background:#f4f6fb}.menu hr{border:0;border-top:1px solid #eef0f5;margin:4px 0}.foot{grid-column:auto;flex:1;border-top:0;padding-top:0}.foot .menu{top:auto;bottom:28px}.menu button:disabled{color:#a3adbf;cursor:not-allowed;background:none}.aihint{font-size:11px;color:#3157de;padding:2px 10px 6px;text-decoration:none;max-width:220px}
   .busy{color:#8a95a8}.ok{color:#0f7f74}.err{color:#a5414d;margin:6px 0 0}.err a{color:#a5414d;font-weight:700}.muted{color:#8a95a8}
   .link{border:0;background:none;padding:0;color:#3157de}.x{color:#a5414d}
   .find{margin-top:6px}.find input{width:100%;box-sizing:border-box;border:1px solid #e4e9f2;border-radius:8px;padding:6px 9px;font-size:12px}
