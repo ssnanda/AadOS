@@ -305,8 +305,12 @@ export async function fetchGmailBody(state: AadOSState, account: MailAccount, it
   const used = opts.inlineImages === false ? [] : inline.filter((p) => html.includes(`cid:${p.cid}`)).slice(0, 20);
   await Promise.all(used.map(async (p) => {
     try {
-      const b64 = p.data ? Buffer.from(String(p.data), 'base64url').toString('base64')
-        : Buffer.from(String((await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}/attachments/${encodeURIComponent(p.attachmentId!)}`, { headers })).data || ''), 'base64url').toString('base64');
+      let data = p.data;
+      if (!data) {
+        const att = await json(await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(item.messageId)}/attachments/${encodeURIComponent(p.attachmentId!)}`, { headers }));
+        data = att.data;
+      }
+      const b64 = Buffer.from(String(data || ''), 'base64url').toString('base64');
       html = html.split(`cid:${p.cid}`).join(`data:${p.mime};base64,${b64}`);
     } catch { /* leave the cid: reference; the image just won't show */ }
   }));
