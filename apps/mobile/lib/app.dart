@@ -222,10 +222,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         listenable: Listenable.merge([_inbox, _asanaDue, _sharedUnread]),
         builder: (context, _) {
           final unread = _inbox.unreadAll, shared = _sharedUnread.value;
-          // Mail: all unread mail (red, top right) and shared mailboxes (blue, top left).
-          Widget mail(Widget icon) => Badge(
-                isLabelVisible: shared > 0, alignment: AlignmentDirectional.topStart, backgroundColor: Colors.blue.shade600,
-                label: Text(shared > 999 ? '999+' : '$shared'), child: count(unread, icon));
+          // Mail: shared mailboxes on the left (blue), all unread mail on the right (red); each grows outward, no overlap.
+          String n(int v) => v > 999 ? '999+' : '$v';
+          Widget mail(Widget icon) => SizedBox(
+                width: 64,
+                height: 32,
+                child: Stack(clipBehavior: Clip.none, alignment: Alignment.center, children: [
+                  icon,
+                  if (shared > 0) Positioned(right: 38, top: -4, child: Badge(label: Text(n(shared)), backgroundColor: Colors.blue.shade600, textColor: Colors.white)),
+                  if (unread > 0) Positioned(left: 38, top: -4, child: Badge(label: Text(n(unread)))),
+                ]),
+              );
           return NavigationBar(
             height: 64,
             selectedIndex: index,
