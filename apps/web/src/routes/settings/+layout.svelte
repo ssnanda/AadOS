@@ -2,15 +2,20 @@
   // Settings open inside the normal app frame (left menu + top bar); the settings pages are tabs above the content.
   import { page } from '$app/state';
   import AppShell from '$lib/components/AppShell.svelte';
-  import { SETTINGS_PAGES as items } from '$lib/settings-nav';
+  import { onMount } from 'svelte';
+  import { SETTINGS_PAGES as items, byUsage, bumpUsage } from '$lib/settings-nav';
   let { children, data } = $props();
   const providers = [{ key: 'zoho', label: 'Zoho Mail' }, { key: 'gmail', label: 'Gmail' }];
   const active = (href: string) => href === '/settings' ? page.url.pathname === href : page.url.pathname.startsWith(href);
   const current = $derived(items.find((i) => active(i.href))?.label || 'General');
+  // Most-opened pages first (this browser). Order is set once per visit so tabs don't jump while clicking.
+  let tabs = $state(items);
+  onMount(() => { tabs = byUsage(items); });
+  $effect(() => { const hit = items.find((i) => i.href === page.url.pathname); if (hit) bumpUsage(hit.href); });
 </script>
 <AppShell title={`Settings · ${current}`}>
 <div class="settings">
-  <nav class="tabs" aria-label="Settings">{#each items as item (item.href)}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>{/each}</nav>
+  <nav class="tabs" aria-label="Settings">{#each tabs as item (item.href)}<a href={item.href} class:active={active(item.href)} aria-current={active(item.href) ? 'page' : undefined}><span>{item.icon}</span>{item.label}</a>{/each}</nav>
   {#if active('/settings/emails')}<nav class="sub" aria-label="Email settings sections"><a href="/settings/emails#connections">Connections</a>{#each providers as p (p.key)}<span class="prov"><a href={`/settings/emails#${p.key}`}>{p.label}</a>{#each data.mailAccounts.filter((a) => a.provider === p.key) as a (a.id)}<a href={`/settings/emails#acct-${a.id}`} class="acct" title={a.email}>{a.email}</a>{/each}</span>{/each}</nav>{/if}
   <div class="content">{@render children()}</div>
 </div>

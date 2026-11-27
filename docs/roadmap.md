@@ -218,3 +218,6 @@ Keep scope small: deliver useful inbox access before extending to household task
 138. [x] Rule builder (web, `RuleBuilder.svelte`): create from the reader (☰ Rules, Gmail + Zoho), from selected emails (☰ Create rule), or blank (Settings → Rules → + New rule); edit any AadOS rule (Edit · Dry run) — awaiting owner verification
 139. [x] Dry run: matches in all stored mail, last 7 days first, then 30/90/365/All ("Look further back" when none); per email "would change" / "already done"; web builder + phone rule screen — awaiting owner verification
 140. [x] Phone: Settings → Rules (web view) gets Edit · Dry run; Gmail filter rows no longer wrap "Delete" letter by letter — awaiting owner verification
+141. [x] Phone inbox header: **R** button (left of search) opens Settings → Rules — needs app build — awaiting owner verification
+142. [x] Phone More: web links removed; Settings pages listed directly in More with Rules, Shared mailboxes, Messages, Finance; ordered by how often each is opened on this phone (starts Rules first); reconnect warning on Emails & Calendar; old Settings screen moved to Trash — needs app build — awaiting owner verification
+143. [x] Web: Settings tabs and the header ⚙ Settings menu list the most-opened pages first (per browser; starts Rules first); Emails header Rules button is now **R** — awaiting owner verification

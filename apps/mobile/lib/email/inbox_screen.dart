@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../core/scope.dart';
 import '../core/theme.dart';
+import '../more/web_section_screen.dart';
 import 'inbox_controller.dart';
 import 'models.dart';
 import 'reader_screen.dart';
@@ -210,6 +211,12 @@ class _InboxScreenState extends State<InboxScreen> {
         ],
       ),
       actions: [
+        // R = Rules (Settings → Rules: suggestions, AadOS rules with Edit · Dry run, Gmail filters, activity).
+        TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => WebSectionScreen(session: SessionScope.read(context), title: 'Rules', path: '/settings/rules'))),
+          style: TextButton.styleFrom(minimumSize: const Size(40, 40), textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          child: const Text('R'),
+        ),
         IconButton(
           tooltip: 'Search',
           icon: const Icon(Icons.search),
