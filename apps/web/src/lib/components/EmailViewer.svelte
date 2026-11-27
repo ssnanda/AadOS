@@ -5,7 +5,8 @@
   import RelatedPanel from './RelatedPanel.svelte';
   import AsanaFromEmail from './asana/AsanaFromEmail.svelte';
   // Read-only viewer: the body is fetched on demand and rendered in a sandboxed iframe.
-  // Primary Delete/Unread actions advance through preview; their hover/focus alternatives act and close.
+  // Primary Delete/Unread actions advance through preview; their always-visible "& close" partners act and close.
+  // The same action row repeats in a footer below the body.
   let { item, onclose, onprevious, onnext, ondelete, ondeleteclose, canPrevious = false, canNext = false, ai = false, aiBlocked = '', embedded = false, unread = false, onmarkread, onmarkunread, onkeepunread, onchanged, accountId = '', onopen }: { item: { pipelineId: string; messageId: string; subject: string; sender: string; receivedAt: string; key?: string }; onclose: () => void; onprevious?: () => void; onnext?: () => void; ondelete?: () => void; ondeleteclose?: () => void; canPrevious?: boolean; canNext?: boolean; ai?: boolean; aiBlocked?: string; embedded?: boolean; unread?: boolean; onmarkread?: () => void; onmarkunread?: () => void; onkeepunread?: () => void; onchanged?: () => void; accountId?: string; onopen?: (item: any) => void } = $props();
   let moreOpen = $state(false);
   let asanaOpen = $state(false), asanaNote = $state(''), asanaPrefill = $state<{ title: string; due: string }>({ title: '', due: '' });
@@ -83,6 +84,7 @@
     </div>
     {#if moreOpen && item.key}<RelatedPanel item={{ ...item, key: item.key }} activeKey={item.key} {onopen} {onchanged} onclose={() => (moreOpen = false)} />{/if}
   </div>
+  <footer class="footbar" aria-label="Email actions">{@render lead()}{@render trail()}</footer>
   {#if preview}
     <div class="pv" role="dialog" aria-modal="true" aria-label={`Preview ${preview.name}`}>
       <div class="pvbar"><strong>{preview.name}</strong><a href={attUrl(preview)} target="_blank" rel="noopener">Open in new tab</a><a href={attUrl(preview, true)} download={preview.name}>Download</a><button type="button" onclick={() => (preview = null)} title="Close (Esc)">✕</button></div>
@@ -99,7 +101,8 @@
   header{display:flex;gap:10px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid #e4e9f2}.bar{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}
   .ttl{flex:1;min-width:180px}h3{margin:0;font-size:16px}.ttl p{margin:3px 0 0;font-size:12px;color:#8792a6}
   nav{display:flex;gap:4px}button{border:1px solid #d9dfeb;background:#fff;border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;color:#43516c;cursor:pointer}button:hover{border-color:#8da2f0;color:#3157de}button:disabled{opacity:.4;cursor:default}.delete{color:#b53c50}.close{color:#3157de}.asana{background:#fdeeee;border-color:#f5c9cb;color:#d2474c}.link{border:0;background:none;padding:0;color:#3157de}.asanaNote{background:#e9f7ef;color:#1e7a47;font-size:12px;font-weight:600;padding:6px 18px;border-bottom:1px solid #d3eedd}
-  .action-pair{display:flex}.action-pair>button:first-child{border-radius:7px}.close-action{max-width:0;opacity:0;overflow:hidden;white-space:nowrap;padding-left:0;padding-right:0;border-width:1px 0;pointer-events:none;transition:max-width .15s,opacity .15s,padding .15s}.action-pair:hover>button:first-child,.action-pair:focus-within>button:first-child{border-radius:7px 0 0 7px}.action-pair:hover .close-action,.action-pair:focus-within .close-action{max-width:120px;opacity:1;padding-left:10px;padding-right:10px;border-width:1px;border-left:0;border-radius:0 7px 7px 0;pointer-events:auto}
+  .action-pair{display:flex}.action-pair>button:first-child:not(:last-child){border-radius:7px 0 0 7px}.close-action{white-space:nowrap;border-left:0;border-radius:0 7px 7px 0}
+  .footbar{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:8px 18px;border-top:1px solid #e4e9f2}.footbar nav{margin-left:auto}
   .content{flex:1;display:flex;min-height:0}.body{flex:1;display:flex;flex-direction:column;min-width:0}
   @media(max-width:900px){.content{flex-direction:column}.content :global(.related){width:auto;max-height:45%;border-left:0;border-top:1px solid #e4e9f2}}
   iframe{flex:1;border:0;width:100%;background:#fff}
