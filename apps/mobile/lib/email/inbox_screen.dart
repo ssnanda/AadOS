@@ -6,6 +6,7 @@ import '../core/theme.dart';
 import 'inbox_controller.dart';
 import 'models.dart';
 import 'reader_screen.dart';
+import 'rule_screen.dart';
 import 'widgets.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -77,6 +78,8 @@ class _InboxScreenState extends State<InboxScreen> {
   Future<void> _bulk(String op) async {
     final keys = _selected.toList();
     if (keys.isEmpty) return;
+    // Rule from the selection: the server finds what the emails have in common. Selection stays.
+    if (op == 'rule') { await RuleScreen.open(context, c.mail, keys); return; }
     if (op == 'delete' && keys.length > 1) {
       final ok = await showDialog<bool>(
         context: context,
@@ -157,6 +160,8 @@ class _InboxScreenState extends State<InboxScreen> {
               PopupMenuItem(value: 'follow-up', child: Text('＋ Follow-up')),
               PopupMenuItem(value: 'pending-action', child: Text('⚑ Pending action')),
               PopupMenuItem(value: 'reviewed', child: Text('✓ Reviewed')),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'rule', child: Text('☰ Create rule…')),
             ],
           ),
         ],

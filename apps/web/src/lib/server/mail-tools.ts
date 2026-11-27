@@ -167,6 +167,18 @@ export async function createRule(accountId: string, r: { field: 'from' | 'subjec
   });
   return created;
 }
+/** Gmail filter from several criteria (all must match; `query` = Gmail search words, used for body text). */
+export async function createRuleCriteria(accountId: string, criteria: { from?: string; to?: string; subject?: string; query?: string }, act: { markRead: boolean; archive: boolean; labelId?: string }) {
+  if (!Object.values(criteria).some(Boolean)) throw new Error('Enter what to match.');
+  if (!act.markRead && !act.archive && !act.labelId) throw new Error('Choose at least one action.');
+  let created: GmailFilter | null = null;
+  await updateStateDetached(async (s) => {
+    const a = gmailAccount(s, accountId);
+    const remove = [...(act.markRead ? ['UNREAD'] : []), ...(act.archive ? ['INBOX'] : [])];
+    created = await createGmailFilter(s, a, { criteria, action: { ...(act.labelId ? { addLabelIds: [act.labelId] } : {}), ...(remove.length ? { removeLabelIds: remove } : {}) } });
+  });
+  return created;
+}
 export async function removeRule(accountId: string, id: string) {
   await updateStateDetached(async (s) => { await deleteGmailFilter(s, gmailAccount(s, accountId), id); });
 }

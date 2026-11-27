@@ -2,13 +2,13 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { readState, updateState, type MailRule, type MailRuleCondition } from '$lib/server/aados-store';
 import { createRule as createGmailRule, removeRule as removeGmailRule, rules as gmailRules } from '$lib/server/mail-tools';
-import { ACTION_LABEL, applyRule, describeRule, matchesOf, rowsOf, skipKeys, suggestions } from '$lib/server/mail-rules';
+import { ACTION_LABEL, applyRule, describeRule, matchesLoaded, regexError, rowsOf, skipKeys, suggestions } from '$lib/server/mail-rules';
 
 // Settings → Rules: every email rule in one place.
 //   Suggestions (owner picks action, where it lives, and auto vs ask) · AadOS rules · native Gmail filters ·
 //   Zoho (native filters live in Zoho Mail; not readable through its API) · built-in AadOS behaviour (read-only) · activity.
 
-const FIELDS = ['from', 'subject', 'to'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high', 'follow-up', 'actionable', 'reviewed'] as const;
+const FIELDS = ['from', 'subject', 'to', 'body'] as const, ACTIONS = ['mark-read', 'delete', 'importance-high', 'follow-up', 'actionable', 'reviewed'] as const;
 
 /** Built-in AadOS rules, read-only. Keep in step with categories.ts, inbox.ts and the preview/sync code. */
 const BUILT_IN: { group: string; rules: [string, string][] }[] = [
@@ -55,10 +55,10 @@ export const load: PageServerLoad = async ({ url }) => {
     catch (cause) { gmail.push({ account: a, filters: [], labels: [], error: cause instanceof Error ? cause.message : 'Could not load Gmail filters.' }); }
   }
   const covered = gmail.flatMap((g) => g.filters.map((f) => f.criteria?.from || '').filter(Boolean));
-  const rules = (state.mailRules || []).map((r) => {
-    const m = matchesOf(r, rows);
+  const rules = await Promise.all((state.mailRules || []).map(async (r) => {
+    const m = await matchesLoaded(r, rows, state);
     return { ...r, label: describeRule(r), fresh: m.fresh.length, existing: m.existing.length, sample: [...m.fresh, ...m.existing].slice(0, 5).map((x) => ({ subject: x.subject, sender: x.sender, receivedAt: x.receivedAt })) };
-  });
+  }));
   const views = state.pipelines.filter((p) => !p.system).map((p) => ({ id: p.id, name: p.name, parser: p.parser, enabled: p.enabled, folders: p.folders.map((f) => f.name).join(' + ') }));
   return {
     accounts, rules, gmail, views, builtIn: BUILT_IN, actionLabels: ACTION_LABEL,
@@ -70,11 +70,11 @@ export const load: PageServerLoad = async ({ url }) => {
 
 /** Validated rule fields from a form: one or more conditions (field[] + text[]), all/any, action, account, mode. */
 function ruleFrom(form: FormData): Omit<MailRule, 'id' | 'createdAt' | 'enabled'> | string {
-  const fields = form.getAll('field').map(String), texts = form.getAll('text').map((t) => String(t).trim().slice(0, 200));
-  const conditions = texts.map((text, i) => ({ field: (fields[i] || 'from') as MailRuleCondition['field'], text })).filter((c) => c.text);
+  const fields = form.getAll('field').map(String), ops = form.getAll('op').map(String), texts = form.getAll('text').map((t) => String(t).trim().slice(0, 300));
+  const conditions = texts.map((text, i) => ({ field: (fields[i] || 'from') as MailRuleCondition['field'], op: ops[i] === 'regex' ? 'regex' as const : 'contains' as const, text })).filter((c) => c.text);
   const action = String(form.get('action') || '') as MailRule['action'], mode = form.get('mode') === 'auto' ? 'auto' : 'ask';
   if (!conditions.length || !conditions.every((c) => FIELDS.includes(c.field)) || !ACTIONS.includes(action)) return 'Choose what to match and an action.';
-  if (conditions.some((c) => c.text.length < 3)) return 'Enter at least 3 characters for each condition.';
+  for (const c of conditions) { if (c.op === 'regex') { const e = regexError(c.text); if (e) return e; } else if (c.text.length < 3) return 'Enter at least 3 characters for each condition.'; }
   return { field: conditions[0].field, text: conditions[0].text, conditions, match: form.get('match') === 'any' ? 'any' : 'all', action, mode, accountId: String(form.get('accountId') || '') };
 }
 const newRule = (r: Omit<MailRule, 'id' | 'createdAt' | 'enabled'>): MailRule => ({ ...r, id: crypto.randomUUID(), createdAt: new Date().toISOString(), enabled: true });
@@ -95,7 +95,7 @@ export const actions: Actions = {
     if (typeof r === 'string') return fail(400, { error: r });
     if (kind === 'gmail') {
       if (r.action !== 'mark-read') return fail(400, { error: 'Gmail filters here can mark read, skip the inbox or label. For Delete or Important pick an AadOS rule.' });
-      try { await createGmailRule(accountId, { field: r.field === 'to' ? 'from' : r.field, text: r.text, labelId: '', markRead: true, archive: form.get('archive') === 'on' }); }
+      try { await createGmailRule(accountId, { field: r.field === 'subject' ? 'subject' : 'from', text: r.text, labelId: '', markRead: true, archive: form.get('archive') === 'on' }); }
       catch (cause) { return fail(400, { error: cause instanceof Error ? cause.message : 'Gmail filter failed.' }); }
       return { ok: 'Gmail filter created (Gmail applies it to new mail).' };
     }
@@ -127,7 +127,7 @@ export const actions: Actions = {
     const form = await request.formData();
     const state = await readState(), rule = state.mailRules?.find((x) => x.id === String(form.get('id')));
     if (!rule) return fail(404, { error: 'Rule not found.' });
-    const m = matchesOf(rule, rowsOf(state)), list = form.get('which') === 'existing' ? m.existing : m.fresh;
+    const m = await matchesLoaded(rule, rowsOf(state), state), list = form.get('which') === 'existing' ? m.existing : m.fresh;
     const r = await applyRule(rule, list.map((x) => x.key), 'manual');
     return r.error && !r.count ? fail(400, { error: r.error }) : { ok: `${ACTION_LABEL[rule.action]}: ${r.count} email${r.count === 1 ? '' : 's'}.${r.error ? ` ${r.error}` : ''}` };
   },
@@ -135,7 +135,7 @@ export const actions: Actions = {
     const form = await request.formData();
     const state = await readState(), rule = state.mailRules?.find((x) => x.id === String(form.get('id')));
     if (!rule) return fail(404, { error: 'Rule not found.' });
-    const m = matchesOf(rule, rowsOf(state)), list = form.get('which') === 'existing' ? m.existing : m.fresh;
+    const m = await matchesLoaded(rule, rowsOf(state), state), list = form.get('which') === 'existing' ? m.existing : m.fresh;
     await skipKeys(rule.id, list.map((x) => x.key));
     return { ok: `${list.length} skipped; this rule will leave them alone.` };
   },

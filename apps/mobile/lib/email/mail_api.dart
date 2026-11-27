@@ -22,6 +22,14 @@ class MailApi {
     return r is Map ? (r['warning'] ?? '').toString() : '';
   }
 
+  /// "Create rule…": candidate conditions, targets, actions and (one email) body text for these emails.
+  Future<Map<String, dynamic>> ruleDraft(List<String> keys) async =>
+      (await api.post('/api/mobile/rules', {'op': 'draft', 'keys': keys}, timeout: const Duration(seconds: 60))) as Map<String, dynamic>;
+
+  /// op 'preview' (count of current matches) or 'create'. Throws ApiException with the server's reason.
+  Future<Map<String, dynamic>> ruleCall(Map<String, dynamic> rule) async =>
+      (await api.post('/api/mobile/rules', rule, timeout: const Duration(seconds: 90))) as Map<String, dynamic>;
+
   /// The newest undoable change (delete, mark read incl. by opening, mark unread), or null.
   Future<UndoInfo?> latestUndo() async {
     final r = await api.get('/api/mobile/emails/undo');

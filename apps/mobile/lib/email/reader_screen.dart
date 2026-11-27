@@ -12,6 +12,7 @@ import 'apple_calendar.dart';
 import 'body_view.dart';
 import 'compose_screen.dart';
 import 'inbox_controller.dart';
+import 'rule_screen.dart';
 import 'mail_api.dart';
 import 'models.dart';
 import 'related_sheet.dart';
@@ -364,6 +365,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void _menu(String v) {
     final row = _row;
     switch (v) {
+      case 'rule':
+        RuleScreen.open(context, _mail, [row.key]);
       case 'delete-close':
         _delete(close: true);
       case 'unread-close':
@@ -519,6 +522,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     child: ListTile(leading: Icon(Icons.card_giftcard_outlined), title: Text('Save as gift card')),
                   ),
                 ],
+                const PopupMenuItem(
+                  value: 'rule',
+                  child: ListTile(leading: Icon(Icons.rule), title: Text('Create rule…')),
+                ),
                 const PopupMenuItem(
                   value: 'find',
                   child: ListTile(

@@ -22,7 +22,7 @@
 <h1>Email rules</h1>
 {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
 {#if form && 'ok' in form && form.ok}<div class="ok">{form.ok}</div>{/if}
-<details class="how"><summary>How rules act</summary><p>AadOS rules act automatically only on mail that arrives after the rule exists, and only in <b>Auto</b> mode. <b>Ask</b> rules collect matches here for Apply / Skip. Existing mail changes only with <b>Apply now</b>. Delete moves to the mailbox Trash. Gmail filters run inside Gmail on new mail. Every AadOS action is logged below.</p></details>
+<details class="how"><summary>How rules act</summary><p>AadOS rules act automatically only on mail that arrives after the rule exists, and only in <b>Auto</b> mode. <b>Ask</b> rules collect matches here for Apply / Skip. Existing mail changes only with <b>Apply now</b>. Delete moves to the mailbox Trash. Gmail filters run inside Gmail on new mail. <b>matches pattern</b> = case-insensitive regular expression (e.g. <code>Online Payment:.*LLC</code>). Body conditions use the search index; new mail is read from the mailbox when a rule needs it. Every AadOS action is logged below.</p></details>
 
 <section>
   <h2>Suggestions <small>{data.suggestions.length}</small></h2>
@@ -49,7 +49,8 @@
   <details class="add" open={Boolean(data.prefill.text)}><summary>+ Add rule</summary>
     <form method="POST" action="?/create" use:enhance class="addform">
       {#each [0, 1, 2] as n (n)}<div class="cond">
-        <select name="field" aria-label={`Condition ${n + 1} field`}><option value="from" selected={n !== 1}>From</option><option value="subject" selected={n === 1}>Subject</option><option value="to">To</option></select>
+        <select name="field" aria-label={`Condition ${n + 1} field`}><option value="from" selected={n !== 1}>From</option><option value="subject" selected={n === 1}>Subject</option><option value="to">To</option><option value="body">Body</option></select>
+        <select name="op" aria-label={`Condition ${n + 1} match`}><option value="contains">contains</option><option value="regex">matches pattern</option></select>
         <input name="text" placeholder={n ? 'contains… (optional)' : 'contains…'} value={n === 0 ? data.prefill.text : n === 1 ? data.prefill.subject : ''} aria-label={`Condition ${n + 1} text`} required={n === 0} minlength="3">
       </div>{/each}
       <div class="addrow">
@@ -129,7 +130,7 @@
   select,input{border:1px solid #dbe1eb;border-radius:7px;padding:4px 6px;font:inherit;font-size:12px}
   .table{display:grid;gap:4px}.srow{display:grid;grid-template-columns:minmax(200px,1fr) auto auto auto auto auto;gap:6px;align-items:center;border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff}
   .who{display:flex;flex-direction:column;min-width:0}.who b,.who small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.who small{color:#8a95a8}
-  .add{margin:4px 0 6px}.add summary{cursor:pointer;font-weight:700;color:#43516c}.addrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.addform{display:grid;gap:4px;margin-top:6px;max-width:720px}.cond{display:grid;grid-template-columns:110px 1fr;gap:6px}.chk{display:inline-flex;gap:4px;align-items:center}
+  .add{margin:4px 0 6px}.add summary{cursor:pointer;font-weight:700;color:#43516c}.addrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.addform{display:grid;gap:4px;margin-top:6px;max-width:720px}.cond{display:grid;grid-template-columns:100px 140px 1fr;gap:6px}.chk{display:inline-flex;gap:4px;align-items:center}
   .rule{border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff;margin-bottom:4px}.rule.off{opacity:.6}
   .rhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.rhead form{margin:0}.sp{flex:1}.chip{background:#f1f3f8;border-radius:6px;padding:1px 7px;font-size:11px;color:#53607a}.chip.auto{background:#e9f7ef;color:#1e7a47}
   .rbody{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}.pend{display:flex;gap:6px;align-items:center;margin:0}.sample summary{cursor:pointer;color:#5b6a86}.sample ul{margin:4px 0 0;padding-left:16px}.sample small{color:#8a95a8}

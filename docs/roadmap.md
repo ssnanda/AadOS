@@ -211,3 +211,7 @@ Keep scope small: deliver useful inbox access before extending to household task
 131. [x] Web: ↶ Undo in the Emails header and ⌘/Ctrl+Z — awaiting owner verification
 132. [x] Phone: shake to undo (sensors_plus, deliberate two-swing shake, foreground only) → confirm dialog → result snackbar — needs `flutter pub get` + app build — awaiting owner verification
 133. [x] Phone: Settings → Rules (opens the web Rules page in the signed-in web view) — awaiting owner verification
+134. [x] Fix: Settings → Rules 500 when a Gmail filter has no action/criteria (forward-only/legacy filters) — awaiting deploy
+135. [x] Rule conditions: Body field (search index; new mail read from the mailbox when a rule needs it) and "matches pattern" (case-insensitive regex) — web form + engine — awaiting owner verification
+136. [x] Create rule from emails: `/api/mobile/rules` draft (common sender/domain/name, shared recipients, subject exact/prefix/pattern from similar subjects; body text for one email), preview count, create at AadOS (account/all) or Gmail filter; Zoho listed disabled (no API) — awaiting owner verification
+137. [x] Phone: "Create rule…" in the reader menu and the selection menu → rule screen (tick/edit conditions, pick a phrase from the body, all/any, action, where it lives, Ask/Auto, apply to existing, Check matches) — needs app build — awaiting owner verification
