@@ -35,19 +35,23 @@ export function conditionHit(c: MailRuleCondition, row: InboxRow, body?: string)
 }
 export const needsBody = (r: MailRule) => conditionsOf(r).some((c) => c.field === 'body');
 
-/** Does this email match the rule, and would the action still change something? `bodies`: key → plain text. */
-export function matches(rule: MailRule, row: InboxRow, bodies?: Map<string, string>) {
+/** The rule's account and conditions hold for this email (whatever its current state). `bodies`: key → plain text. */
+export function conditionsMatch(rule: MailRule, row: InboxRow, bodies?: Map<string, string>) {
   if (rule.accountId && row.accountId !== rule.accountId) return false;
   const conds = conditionsOf(rule), body = bodies?.get(row.key);
   const hit = (c: MailRuleCondition) => conditionHit(c, row, body);
-  if (!(rule.match === 'any' ? conds.some(hit) : conds.every(hit))) return false;
-  // Only when the action would still change something.
+  return rule.match === 'any' ? conds.some(hit) : conds.every(hit);
+}
+/** Would the action still change something on this email? */
+export function actionApplies(rule: MailRule, row: InboxRow) {
   if (rule.action === 'mark-read') return row.unread;
   if (rule.action === 'importance-high') return row.importance !== 'high';
   if (rule.action === 'follow-up') return !row.followUp;
   if (rule.action === 'reviewed') return !row.reviewed;
   return true;
 }
+/** Does this email match the rule, and would the action still change something? */
+export const matches = (rule: MailRule, row: InboxRow, bodies?: Map<string, string>) => conditionsMatch(rule, row, bodies) && actionApplies(rule, row);
 
 /** Matches split into mail that arrived after the rule (new) and before it (existing); skipped/handled keys left out. */
 export function matchesOf(rule: MailRule, rows: InboxRow[], bodies?: Map<string, string>) {
@@ -66,6 +70,21 @@ function bodyCandidates(rule: MailRule, rows: InboxRow[]) {
 export async function matchesLoaded(rule: MailRule, rows: InboxRow[], state: AadOSState, fetch = false) {
   if (!needsBody(rule)) return matchesOf(rule, rows);
   return matchesOf(rule, rows, await bodyTexts(state, bodyCandidates(rule, rows), { fetch }));
+}
+
+/**
+ * Dry run: every stored email the rule's conditions match within the last `days` (0 = all time), newest first,
+ * regardless of when the rule was made or what it already handled. `older`: matches before the window.
+ */
+export async function dryRun(rule: MailRule, rows: InboxRow[], state: AadOSState, days = 7, limit = 100) {
+  const since = days > 0 ? Date.now() - days * 86_400_000 : 0;
+  const bodies = needsBody(rule) ? await bodyTexts(state, bodyCandidates(rule, rows)) : undefined;
+  const hits = rows.filter((r) => conditionsMatch(rule, r, bodies)).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  const inside = hits.filter((r) => Date.parse(r.receivedAt) >= since);
+  return {
+    days, total: inside.length, older: hits.length - inside.length, label: describeRule(rule),
+    rows: inside.slice(0, limit).map((r) => ({ key: r.key, subject: r.subject, sender: r.sender, receivedAt: r.receivedAt, accountId: r.accountId, accountEmail: r.accountEmail, unread: r.unread, wouldChange: actionApplies(rule, r) }))
+  };
 }
 
 export const rowsOf = (state: AadOSState) => buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });

@@ -2,7 +2,7 @@ import { readState, updateState, type AadOSState, type MailRule, type MailRuleCo
 import type { SessionUser } from './auth';
 import { bodyTexts } from './body-index';
 import type { InboxRow } from './inbox';
-import { ACTION_LABEL, applyRule, conditionHit, describeRule, matchesLoaded, regexError, rowsOf } from './mail-rules';
+import { ACTION_LABEL, applyRule, conditionHit, conditionsOf, dryRun, matchesLoaded, regexError, rowsOf } from './mail-rules';
 import { createRuleCriteria } from './mail-tools';
 import { keyAllowed } from './scope';
 
@@ -130,16 +130,48 @@ const ruleOf = (input: RuleInput, v: { conditions: MailRuleCondition[]; action: 
   action: v.action, accountId, mode: input.mode === 'auto' ? 'auto' : 'ask', enabled: true, createdAt: new Date().toISOString()
 });
 
-/** How many stored emails the rule would match now (body conditions use the search index). */
-export async function preview(user: SessionUser | null, input: RuleInput) {
+/** Dry run: the emails the rule would match in the last `days` (0 = all time). Nothing is changed. */
+export async function preview(user: SessionUser | null, input: RuleInput & { days?: number }) {
   const v = validate(input);
   if (typeof v === 'string') return { ok: false as const, error: v };
   const state = await readState();
-  const accountId = input.target.startsWith('aados:') || input.target.startsWith('gmail:') ? input.target.split(':')[1] || '' : '';
-  const rule = { ...ruleOf(input, v, accountId), createdAt: new Date().toISOString() };
+  const [, accountId = ''] = String(input.target || 'aados:').split(':');
+  const rule = ruleOf(input, v, accountId);
   const rows = rowsOf(state).filter((r) => keyAllowed(user, r.key));
-  const m = await matchesLoaded(rule, rows, state);
-  return { ok: true as const, count: m.existing.length, label: describeRule(rule) };
+  const days = [0, 7, 30, 90, 365].includes(Number(input.days)) ? Number(input.days) : 7;
+  return { ok: true as const, ...(await dryRun(rule, rows, state, days)) };
+}
+
+/** Targets and actions for a rule not started from emails (Settings → Rules: new or edit). AadOS only. */
+export async function options(user: SessionUser | null) {
+  const state = await readState();
+  const ids = state.accounts.filter((a) => user?.owner || keyAllowed(user, `${a.id}:x`)).map((a) => a.id);
+  return { ok: true as const, targets: [...ids.map((id) => ({ value: `aados:${id}`, label: `AadOS · ${state.accounts.find((a) => a.id === id)?.email || id}` })), { value: 'aados:', label: 'AadOS · all accounts' }], actions: ACTIONS.map((a) => ({ value: a, label: ACTION_LABEL[a] })) };
+}
+
+/** One AadOS rule, shaped like the builder's input (for Edit). */
+export async function getRule(user: SessionUser | null, id: string) {
+  if (!user?.owner) return { ok: false as const, error: 'Only the owner can edit rules.' };
+  const r = (await readState()).mailRules?.find((x) => x.id === id);
+  if (!r) return { ok: false as const, error: 'Rule not found.' };
+  return { ok: true as const, rule: { id: r.id, conditions: conditionsOf(r).map((c) => ({ field: c.field, op: c.op || 'contains', text: c.text })), match: r.match || 'all', action: r.action, target: `aados:${r.accountId}`, mode: r.mode, enabled: r.enabled } };
+}
+
+/** Save edits to an AadOS rule. Keeps when it was made (Auto still acts only on newer mail) and what it already did. */
+export async function update(user: SessionUser | null, id: string, input: RuleInput) {
+  if (!user?.owner) return { ok: false as const, error: 'Only the owner can edit rules.' };
+  const v = validate(input);
+  if (typeof v === 'string') return { ok: false as const, error: v };
+  const [kind, accountId = ''] = String(input.target || '').split(':');
+  if (kind !== 'aados') return { ok: false as const, error: 'An AadOS rule stays in AadOS. Create a new rule for Gmail.' };
+  let found = false;
+  await updateState((s) => {
+    const r = s.mailRules?.find((x) => x.id === id);
+    if (!r) return;
+    found = true;
+    Object.assign(r, { field: v.conditions[0].field, text: v.conditions[0].text, conditions: v.conditions, match: input.match === 'any' ? 'any' : 'all', action: v.action, accountId, mode: input.mode === 'auto' ? 'auto' : 'ask' });
+  });
+  return found ? { ok: true as const, message: 'Rule saved.' } : { ok: false as const, error: 'Rule not found.' };
 }
 
 /** Create the rule at the chosen target; optionally apply an AadOS rule to existing matches right away. */

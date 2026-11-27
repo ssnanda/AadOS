@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
+  import RuleBuilder from '$lib/components/RuleBuilder.svelte';
   import { onMount, untrack } from 'svelte';
   import AppShell from '$lib/components/AppShell.svelte';
   import EmailViewer from '$lib/components/EmailViewer.svelte';
@@ -17,6 +18,7 @@
   let notice = $state('');
   // Deleted rows disappear at once; the mailbox call and the data reload finish in the background.
   let hidden = $state<string[]>([]);
+  let ruleKeys = $state<string[] | null>(null); // rule builder for the selection
   const rows = $derived(data.rows.filter((row) => !hidden.includes(row.key)));
 
   // Auto sync of the open folder/inbox: on open, on folder change, every 2 minutes while visible.
@@ -136,6 +138,7 @@
   }
 </script>
 <svelte:window onkeydown={undoKey} />
+{#if ruleKeys}<RuleBuilder keys={ruleKeys} onclose={() => (ruleKeys = null)} onsaved={(m) => alert(m)} />{/if}
 <svelte:head><title>Emails · AadOS</title></svelte:head>
 <AppShell title="Emails">
 <main class:previewing={Boolean(viewing)} class:scoped={Boolean(data.query.account)}>
@@ -172,7 +175,7 @@
 
   <div class="split">
   <section class="listcol">
-  {#if rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button></div>{/if}</div>{/if}
+  {#if rows.length}<div class="bulk"><label><input type="checkbox" checked={allShown} onchange={(e) => toggleAll(e.currentTarget.checked)}> Select all shown</label>{#if selected.length}<strong>{selected.length} selected</strong><div class="bulk-actions"><button class="danger" disabled={acting} onclick={() => act('delete')}>Delete</button><button disabled={acting} onclick={() => act('mark-read')}>Mark read</button><button disabled={acting} onclick={() => act('mark-unread')}>Mark unread</button><button disabled={acting} onclick={() => act('importance-high')}>★ Important</button><button disabled={acting} onclick={() => act('follow-up')}>＋ Follow-up</button><button disabled={acting} onclick={() => act('reviewed')}>✓ Reviewed</button><button disabled={acting} onclick={() => (ruleKeys = [...selected])} title="A rule from what the selected emails have in common, with a dry run">☰ Create rule</button></div>{/if}</div>{/if}
   {#if rows.length === 0}<div class="empty">{data.counts.all === 0 ? 'No messages yet.' : 'No messages match.'}</div>{/if}
   <ul class="list">{#each rows as r (r.key)}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->

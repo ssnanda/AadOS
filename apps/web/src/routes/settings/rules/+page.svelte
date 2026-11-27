@@ -2,6 +2,8 @@
   // Settings → Rules. Safety model and data come from +page.server.ts / $lib/server/mail-rules.ts.
   import { enhance } from '$app/forms';
   import type { ActionData, PageData } from './$types';
+  import { invalidateAll } from '$app/navigation';
+  import RuleBuilder from '$lib/components/RuleBuilder.svelte';
   let { data, form }: { data: PageData; form: ActionData } = $props();
   const acct = (id: string) => data.accounts.find((a) => a.id === id);
   const acctLabel = (id: string) => (id ? acct(id)?.email || id : 'All accounts');
@@ -16,10 +18,15 @@
   };
   const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const zohoUrl = (dc: string) => `https://mail.zoho.${dc}/zm/#settings`;
+  // Rule builder (new / edit, with dry run). `ruleId` '' = new rule.
+  let builder = $state<{ ruleId: string } | null>(null), saved = $state('');
+  const openBuilder = (ruleId = '') => { builder = { ruleId }; saved = ''; };
 </script>
 <svelte:head><title>Rules · Settings · AadOS</title></svelte:head>
 <main>
 <h1>Email rules</h1>
+{#if saved}<div class="ok">{saved}</div>{/if}
+{#if builder}<RuleBuilder ruleId={builder.ruleId} onclose={() => (builder = null)} onsaved={(m) => { saved = m; void invalidateAll(); }} />{/if}
 {#if form && 'error' in form && form.error}<div class="alert">{form.error}</div>{/if}
 {#if form && 'ok' in form && form.ok}<div class="ok">{form.ok}</div>{/if}
 <details class="how"><summary>How rules act</summary><p>AadOS rules act automatically only on mail that arrives after the rule exists, and only in <b>Auto</b> mode. <b>Ask</b> rules collect matches here for Apply / Skip. Existing mail changes only with <b>Apply now</b>. Delete moves to the mailbox Trash. Gmail filters run inside Gmail on new mail. <b>matches pattern</b> = case-insensitive regular expression (e.g. <code>Online Payment:.*LLC</code>). Body conditions use the search index; new mail is read from the mailbox when a rule needs it. Every AadOS action is logged below.</p></details>
@@ -46,28 +53,14 @@
 
 <section>
   <h2>AadOS rules <small>{data.rules.length}</small></h2>
-  <details class="add" open={Boolean(data.prefill.text)}><summary>+ Add rule</summary>
-    <form method="POST" action="?/create" use:enhance class="addform">
-      {#each [0, 1, 2] as n (n)}<div class="cond">
-        <select name="field" aria-label={`Condition ${n + 1} field`}><option value="from" selected={n !== 1}>From</option><option value="subject" selected={n === 1}>Subject</option><option value="to">To</option><option value="body">Body</option></select>
-        <select name="op" aria-label={`Condition ${n + 1} match`}><option value="contains">contains</option><option value="regex">matches pattern</option></select>
-        <input name="text" placeholder={n ? 'contains… (optional)' : 'contains…'} value={n === 0 ? data.prefill.text : n === 1 ? data.prefill.subject : ''} aria-label={`Condition ${n + 1} text`} required={n === 0} minlength="3">
-      </div>{/each}
-      <div class="addrow">
-        <select name="match" aria-label="Combine"><option value="all">Match all conditions</option><option value="any">Match any condition</option></select>
-        <select name="action" aria-label="Action">{#each Object.entries(data.actionLabels) as [v, l] (v)}<option value={v}>{l}</option>{/each}</select>
-        <select name="accountId" aria-label="Account"><option value="">All accounts</option>{#each data.accounts as a (a.id)}<option value={a.id} selected={a.id === data.prefill.account}>{a.email}</option>{/each}</select>
-        <select name="mode" aria-label="Mode"><option value="ask">Ask first</option><option value="auto">Auto</option></select>
-        <button>Add</button>
-      </div>
-    </form>
-  </details>
+  <button type="button" class="newrule" onclick={() => openBuilder()}>+ New rule</button>
   {#if !data.rules.length}<p class="muted">No AadOS rules yet.</p>{/if}
   {#each data.rules as r (r.id)}
     <article class="rule" class:off={!r.enabled}>
       <div class="rhead">
         <b>{r.label}</b><span class="chip">{acctLabel(r.accountId)}</span><span class="chip" class:auto={r.mode === 'auto'}>{r.mode === 'auto' ? 'Auto' : 'Ask first'}</span>{#if !r.enabled}<span class="chip">Paused</span>{/if}
         <span class="sp"></span>
+        <button type="button" onclick={() => openBuilder(r.id)} title="Edit conditions, action, account, mode; dry run inside">Edit · Dry run</button>
         <form method="POST" action="?/mode" use:enhance><input type="hidden" name="id" value={r.id}><button>{r.mode === 'auto' ? '→ Ask first' : '→ Auto'}</button></form>
         <form method="POST" action="?/toggle" use:enhance><input type="hidden" name="id" value={r.id}><button>{r.enabled ? 'Pause' : 'Resume'}</button></form>
         <form method="POST" action="?/remove" use:enhance onsubmit={(e) => { if (!confirm('Remove this rule? Mail it already changed stays changed.')) e.preventDefault(); }}><input type="hidden" name="id" value={r.id}><button class="danger">Remove</button></form>
@@ -130,11 +123,11 @@
   select,input{border:1px solid #dbe1eb;border-radius:7px;padding:4px 6px;font:inherit;font-size:12px}
   .table{display:grid;gap:4px}.srow{display:grid;grid-template-columns:minmax(200px,1fr) auto auto auto auto auto;gap:6px;align-items:center;border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff}
   .who{display:flex;flex-direction:column;min-width:0}.who b,.who small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.who small{color:#8a95a8}
-  .add{margin:4px 0 6px}.add summary{cursor:pointer;font-weight:700;color:#43516c}.addrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.addform{display:grid;gap:4px;margin-top:6px;max-width:720px}.cond{display:grid;grid-template-columns:100px 140px 1fr;gap:6px}.chk{display:inline-flex;gap:4px;align-items:center}
+  .add{margin:4px 0 6px}.add summary{cursor:pointer;font-weight:700;color:#43516c}.addrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}.chk{display:inline-flex;gap:4px;align-items:center}
   .rule{border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff;margin-bottom:4px}.rule.off{opacity:.6}
   .rhead{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.rhead form{margin:0}.sp{flex:1}.chip{background:#f1f3f8;border-radius:6px;padding:1px 7px;font-size:11px;color:#53607a}.chip.auto{background:#e9f7ef;color:#1e7a47}
   .rbody{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:4px}.pend{display:flex;gap:6px;align-items:center;margin:0}.sample summary{cursor:pointer;color:#5b6a86}.sample ul{margin:4px 0 0;padding-left:16px}.sample small{color:#8a95a8}
-  .native{border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff;margin-bottom:4px}.native ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}.native li{display:flex;justify-content:space-between;gap:8px}.native li form{margin:0}
+  .native{border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff;margin-bottom:4px}.native ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}.native li{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.native li span{flex:1;min-width:0;overflow-wrap:anywhere}.native li form button{white-space:nowrap}.newrule{margin:2px 0 6px}.native li form{margin:0}
   .builtin{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px}.builtin>div{border:1px solid #e7ebf2;border-radius:8px;padding:6px 8px;background:#fff}
   dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0}dt{font-weight:700;color:#43516c}dd{margin:0;color:#5b6a86}
   table{border-collapse:collapse;width:100%}td{border-top:1px solid #eef0f5;padding:3px 6px;vertical-align:top}td:first-child{white-space:nowrap;color:#8a95a8}

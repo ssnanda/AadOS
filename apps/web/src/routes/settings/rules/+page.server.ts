@@ -43,7 +43,7 @@ const BUILT_IN: { group: string; rules: [string, string][] }[] = [
   ] }
 ];
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async () => {
   const state = await readState();
   const rows = rowsOf(state);
   const accounts = state.accounts.map((a) => ({ id: a.id, email: a.email || a.id, provider: a.provider, canFilter: Boolean(a.canFilter), canModify: Boolean(a.canModify), dataCenter: state.zoho.dataCenter || 'com' }));
@@ -63,8 +63,7 @@ export const load: PageServerLoad = async ({ url }) => {
   return {
     accounts, rules, gmail, views, builtIn: BUILT_IN, actionLabels: ACTION_LABEL,
     suggestions: suggestions(state, covered),
-    log: (state.mailRuleLog || []).slice(0, 30),
-    prefill: { text: url.searchParams.get('from') || '', subject: url.searchParams.get('subject') || '', account: url.searchParams.get('account') || '' }
+    log: (state.mailRuleLog || []).slice(0, 30)
   };
 };
 
@@ -80,13 +79,6 @@ function ruleFrom(form: FormData): Omit<MailRule, 'id' | 'createdAt' | 'enabled'
 const newRule = (r: Omit<MailRule, 'id' | 'createdAt' | 'enabled'>): MailRule => ({ ...r, id: crypto.randomUUID(), createdAt: new Date().toISOString(), enabled: true });
 
 export const actions: Actions = {
-  /** AadOS rule from the form. */
-  create: async ({ request }) => {
-    const r = ruleFrom(await request.formData());
-    if (typeof r === 'string') return fail(400, { error: r });
-    await updateState((s) => { s.mailRules = [...(s.mailRules || []), newRule(r)]; });
-    return { ok: 'Rule created. It acts on new mail only; use Apply now for existing mail.' };
-  },
   /** From a suggestion: `target` = "aados:" (all accounts) | "aados:<account>" | "gmail:<account>" (native filter). */
   adopt: async ({ request }) => {
     const form = await request.formData();

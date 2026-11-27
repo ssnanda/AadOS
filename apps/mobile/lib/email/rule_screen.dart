@@ -32,6 +32,7 @@ class _Cond {
 class _RuleScreenState extends State<RuleScreen> {
   bool _loading = true, _busy = false, _applyExisting = true;
   String _error = '', _body = '', _match = 'all', _action = 'mark-read', _target = '', _mode = 'ask', _preview = '';
+  Map<String, dynamic>? _dry; // dry run: {days, total, older, rows[]}
   final List<_Cond> _conds = [];
   List<Map<String, dynamic>> _targets = [], _actions = [];
 
@@ -75,16 +76,56 @@ class _RuleScreenState extends State<RuleScreen> {
         'applyExisting': _applyExisting && _target.startsWith('aados'),
       };
 
-  Future<void> _check() async {
+  /// Dry run: what the rule matches in the last [days] (0 = all mail). Nothing changes.
+  Future<void> _check([int days = 7]) async {
     setState(() { _busy = true; _preview = ''; });
     try {
-      final r = await widget.mail.ruleCall(_rule('preview'));
-      setState(() => _preview = '${r['count']} stored email${r['count'] == 1 ? '' : 's'} match now');
+      final r = await widget.mail.ruleCall({..._rule('preview'), 'days': days});
+      setState(() { _dry = r; _preview = ''; });
     } on ApiException catch (e) {
-      setState(() => _preview = e.message);
+      setState(() { _dry = null; _preview = e.message; });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Widget _dryRun(ThemeData t) {
+    final d = _dry;
+    const windows = [(7, '7 days'), (30, '30 days'), (90, '90 days'), (365, '1 year'), (0, 'All')];
+    final days = (d?['days'] as num?)?.toInt();
+    final total = (d?['total'] as num?)?.toInt() ?? 0, older = (d?['older'] as num?)?.toInt() ?? 0;
+    final rows = (d?['rows'] as List? ?? []).cast<Map<String, dynamic>>();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const ListTile(title: Text('Dry run'), subtitle: Text('Emails this rule matches now. Nothing changes.'), dense: true),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Wrap(spacing: 6, children: [
+          for (final (n, l) in windows) ChoiceChip(label: Text(l), selected: days == n, onSelected: _busy || _picked.isEmpty ? null : (_) => _check(n)),
+        ]),
+      ),
+      if (d != null) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text('$total match${total == 1 ? '' : 'es'} ${days == 0 ? 'in all mail' : 'in the last $days days'}${older > 0 ? ' · $older older' : ''}', style: t.textTheme.titleSmall),
+        ),
+        if (total == 0 && older > 0)
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: TextButton(onPressed: () => _check(days == 7 ? 30 : days == 30 ? 90 : days == 90 ? 365 : 0), child: const Text('Look further back'))),
+        for (final h in rows)
+          ListTile(
+            dense: true,
+            title: Text('${h['subject']}'.isEmpty ? '(no subject)' : '${h['subject']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: h['unread'] == true ? FontWeight.w700 : FontWeight.w400)),
+            subtitle: Text('${h['sender']} · ${h['accountEmail']} · ${_when('${h['receivedAt']}')}', maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: Text(h['wouldChange'] == true ? 'would change' : 'already done', style: TextStyle(fontSize: 12, color: h['wouldChange'] == true ? Colors.green.shade700 : t.hintColor)),
+          ),
+        if (total > rows.length) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Text('Showing the newest ${rows.length}.', style: t.textTheme.bodySmall)),
+      ],
+    ]);
+  }
+
+  String _when(String iso) {
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return '${d.month}/${d.day} ${d.hour % 12 == 0 ? 12 : d.hour % 12}:${d.minute.toString().padLeft(2, '0')}${d.hour < 12 ? 'am' : 'pm'}';
   }
 
   Future<void> _create() async {
@@ -210,7 +251,9 @@ class _RuleScreenState extends State<RuleScreen> {
                     ),
                     CheckboxListTile(value: _applyExisting, dense: true, title: const Text('Also apply to matching emails I already have'), subtitle: const Text('Undo with a shake'), onChanged: (v) => setState(() => _applyExisting = v ?? false)),
                   ],
-                  if (_preview.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Text(_preview, style: t.textTheme.bodyMedium)),
+                  const Divider(),
+                  _dryRun(t),
+                  if (_preview.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Text(_preview, style: TextStyle(color: t.colorScheme.error))),
                 ]),
       bottomNavigationBar: _loading || _error.isNotEmpty
           ? null
@@ -218,7 +261,7 @@ class _RuleScreenState extends State<RuleScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(children: [
-                  OutlinedButton(onPressed: _busy || _picked.isEmpty ? null : _check, child: const Text('Check matches')),
+                  OutlinedButton(onPressed: _busy || _picked.isEmpty ? null : () => _check(), child: const Text('Dry run')),
                   const SizedBox(width: 12),
                   Expanded(child: FilledButton(onPressed: _busy || _picked.isEmpty ? null : _create, child: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Create rule'))),
                 ]),
