@@ -1,4 +1,4 @@
-import { database, hasDatabase, readState } from '$lib/server/aados-store';
+import { database, hasDatabase, readState, type AadOSState } from '$lib/server/aados-store';
 import { fetchBodies, jobsFor, type Body } from '$lib/server/email-bodies';
 
 // Full-text search over email bodies (PostgreSQL table mail_bodies, migration 20261127000001).
@@ -73,4 +73,30 @@ export async function bodyMatches(q: string): Promise<Set<string>> {
     console.warn('[aados] body search failed:', cause instanceof Error ? cause.message : cause);
     return new Set();
   }
+}
+
+const FETCH_MAX = 40;
+/**
+ * Plain text per email (`account:messageId` → text) for rule body conditions: from the search index; with `fetch`,
+ * emails not indexed yet (new mail) are read from the mailbox (read-only, at most FETCH_MAX) and indexed on the way.
+ */
+export async function bodyTexts(state: AadOSState, rows: { key: string; accountId: string; messageId: string }[], opts: { fetch?: boolean } = {}): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!rows.length) return out;
+  const db = await pool().catch(() => null);
+  if (db) {
+    const r = await db.query(`SELECT b.account_id, b.provider_message_id, b.text FROM mail_bodies b JOIN unnest($1::text[], $2::text[]) AS k(a, m) ON k.a = b.account_id AND k.m = b.provider_message_id`, [rows.map((x) => x.accountId), rows.map((x) => x.messageId)]).catch(() => ({ rows: [] as any[] }));
+    for (const x of r.rows) out.set(`${x.account_id}:${x.provider_message_id}`, String(x.text || ''));
+  }
+  if (!opts.fetch) return out;
+  const missing = new Set(rows.filter((x) => !out.has(x.key)).slice(0, FETCH_MAX).map((x) => x.key));
+  if (!missing.size) return out;
+  const owner = new Map(state.pipelines.map((p) => [p.id, p.accountId]));
+  const items = state.items.filter((i) => missing.has(`${i.accountId || owner.get(i.pipelineId) || ''}:${i.messageId}`));
+  await fetchBodies(state, jobsFor(state, items), async ({ item, account }, body) => {
+    const text = `${item.subject} ${item.sender} ${item.to || ''} ${body.html ? htmlToText(body.html) : body.text}`.slice(0, MAX_TEXT);
+    out.set(`${account.id}:${item.messageId}`, text);
+    if (db) await db.query('INSERT INTO mail_bodies (account_id, provider_message_id, text) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [account.id, item.messageId, text]).catch(() => undefined);
+  }, { concurrency: CONCURRENCY, inlineImages: false });
+  return out;
 }

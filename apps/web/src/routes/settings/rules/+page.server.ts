@@ -54,7 +54,7 @@ export const load: PageServerLoad = async ({ url }) => {
     try { const r = await gmailRules(a.id); gmail.push({ account: a, filters: r.filters, labels: r.labels, error: '' }); }
     catch (cause) { gmail.push({ account: a, filters: [], labels: [], error: cause instanceof Error ? cause.message : 'Could not load Gmail filters.' }); }
   }
-  const covered = gmail.flatMap((g) => g.filters.map((f) => f.criteria.from || '').filter(Boolean));
+  const covered = gmail.flatMap((g) => g.filters.map((f) => f.criteria?.from || '').filter(Boolean));
   const rules = (state.mailRules || []).map((r) => {
     const m = matchesOf(r, rows);
     return { ...r, label: describeRule(r), fresh: m.fresh.length, existing: m.existing.length, sample: [...m.fresh, ...m.existing].slice(0, 5).map((x) => ({ subject: x.subject, sender: x.sender, receivedAt: x.receivedAt })) };

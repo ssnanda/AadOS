@@ -2,6 +2,7 @@ import { readState, updateState, type AadOSState, type MailRule, type MailRuleCo
 import type { SessionUser } from './auth';
 import { markEmails } from './email-list';
 import { buildRows, type InboxRow } from './inbox';
+import { bodyTexts } from './body-index';
 
 // AadOS email rules (Settings → Rules). Safety model, by design:
 // - A rule acts automatically only on mail received AFTER it was created (mode 'auto').
@@ -13,14 +14,32 @@ const RULES_USER: SessionUser = { id: 'rules', name: 'Rules', owner: true, permi
 const LOG_MAX = 100, SKIP_MAX = 1000;
 export const ACTION_LABEL: Record<MailRule['action'], string> = { 'mark-read': 'Mark read', delete: 'Delete (to Trash)', 'importance-high': 'Mark important', 'follow-up': 'Follow-up', actionable: 'Pending action', reviewed: 'Reviewed' };
 export const conditionsOf = (r: MailRule): MailRuleCondition[] => (r.conditions?.length ? r.conditions : [{ field: r.field, text: r.text }]);
-export const describeRule = (r: MailRule) => `${conditionsOf(r).map((c) => `${c.field} contains “${c.text}”`).join(r.match === 'any' ? ' or ' : ' and ')} → ${ACTION_LABEL[r.action]}`;
+const showCond = (c: MailRuleCondition) => (c.op === 'regex' ? `${c.field} matches /${c.text}/` : `${c.field} contains “${c.text}”`);
+export const describeRule = (r: MailRule) => `${conditionsOf(r).map(showCond).join(r.match === 'any' ? ' or ' : ' and ')} → ${ACTION_LABEL[r.action]}`;
 const addressOf = (sender: string) => (sender.match(/<([^>]+)>/)?.[1] || sender.match(/[\w.+'-]+@[\w.-]+\.[a-z]{2,}/i)?.[0] || sender).trim().toLowerCase();
 
-/** Does this email match the rule, and would the action still change something? */
-export function matches(rule: MailRule, row: InboxRow) {
+const regexCache = new Map<string, RegExp | null>();
+const regexOf = (text: string) => {
+  if (!regexCache.has(text)) { try { regexCache.set(text, new RegExp(text, 'i')); } catch { regexCache.set(text, null); } }
+  return regexCache.get(text)!;
+};
+/** '' when the pattern is usable, else why not. */
+export const regexError = (text: string) => { if (text.length > 300) return 'Pattern is too long.'; try { new RegExp(text, 'i'); return ''; } catch (e) { return `Invalid pattern: ${e instanceof Error ? e.message : ''}`; } };
+
+/** One condition against one email (`body`: its plain text, when known). */
+export function conditionHit(c: MailRuleCondition, row: InboxRow, body?: string) {
+  const hay = c.field === 'from' ? row.sender : c.field === 'subject' ? row.subject : c.field === 'to' ? row.to.join(' ') : body;
+  if (hay === undefined) return false;
+  if (c.op === 'regex') return Boolean(regexOf(c.text)?.test(hay));
+  return hay.toLowerCase().includes(c.text.toLowerCase());
+}
+export const needsBody = (r: MailRule) => conditionsOf(r).some((c) => c.field === 'body');
+
+/** Does this email match the rule, and would the action still change something? `bodies`: key → plain text. */
+export function matches(rule: MailRule, row: InboxRow, bodies?: Map<string, string>) {
   if (rule.accountId && row.accountId !== rule.accountId) return false;
-  const hit = (c: MailRuleCondition) => (c.field === 'from' ? row.sender : c.field === 'subject' ? row.subject : row.to.join(' ')).toLowerCase().includes(c.text.toLowerCase());
-  const conds = conditionsOf(rule);
+  const conds = conditionsOf(rule), body = bodies?.get(row.key);
+  const hit = (c: MailRuleCondition) => conditionHit(c, row, body);
   if (!(rule.match === 'any' ? conds.some(hit) : conds.every(hit))) return false;
   // Only when the action would still change something.
   if (rule.action === 'mark-read') return row.unread;
@@ -30,12 +49,23 @@ export function matches(rule: MailRule, row: InboxRow) {
   return true;
 }
 
-/** Matches split into mail that arrived after the rule (new) and before it (existing); skipped keys left out. */
-export function matchesOf(rule: MailRule, rows: InboxRow[]) {
+/** Matches split into mail that arrived after the rule (new) and before it (existing); skipped/handled keys left out. */
+export function matchesOf(rule: MailRule, rows: InboxRow[], bodies?: Map<string, string>) {
   const skipped = new Set([...(rule.skipped || []), ...(rule.done || [])]), created = Date.parse(rule.createdAt) || 0;
   const fresh: InboxRow[] = [], existing: InboxRow[] = [];
-  for (const r of rows) if (!skipped.has(r.key) && matches(rule, r)) (Date.parse(r.receivedAt) >= created ? fresh : existing).push(r);
+  for (const r of rows) if (!skipped.has(r.key) && matches(rule, r, bodies)) (Date.parse(r.receivedAt) >= created ? fresh : existing).push(r);
   return { fresh, existing };
+}
+
+/** Rows worth loading a body for: right account, and (match all) every non-body condition already holds. */
+function bodyCandidates(rule: MailRule, rows: InboxRow[]) {
+  const other = conditionsOf(rule).filter((c) => c.field !== 'body');
+  return rows.filter((r) => (!rule.accountId || r.accountId === rule.accountId) && (rule.match === 'any' || other.every((c) => conditionHit(c, r))));
+}
+/** matchesOf, loading body text first when the rule has a body condition (search index; `fetch` also reads the mailbox). */
+export async function matchesLoaded(rule: MailRule, rows: InboxRow[], state: AadOSState, fetch = false) {
+  if (!needsBody(rule)) return matchesOf(rule, rows);
+  return matchesOf(rule, rows, await bodyTexts(state, bodyCandidates(rule, rows), { fetch }));
 }
 
 export const rowsOf = (state: AadOSState) => buildRows({ pipelines: state.pipelines, accounts: state.accounts, items: state.items });
@@ -72,7 +102,10 @@ export function runRules() {
     const rows = rowsOf(state), taken = new Set<string>();
     for (const rule of auto) {
       // Earlier rules win: an email is changed by at most one rule per run.
-      const keys = matchesOf(rule, rows).fresh.map((r) => r.key).filter((k) => !taken.has(k));
+      // New mail is not in the search index yet: body conditions read it from the mailbox (read-only).
+      const created = Date.parse(rule.createdAt) || 0;
+      const bodies = needsBody(rule) ? await bodyTexts(state, bodyCandidates(rule, rows.filter((r) => Date.parse(r.receivedAt) >= created)), { fetch: true }) : undefined;
+      const keys = matchesOf(rule, rows, bodies).fresh.map((r) => r.key).filter((k) => !taken.has(k));
       keys.forEach((k) => taken.add(k));
       await applyRule(rule, keys, 'auto');
     }

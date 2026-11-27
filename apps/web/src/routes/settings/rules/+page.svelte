@@ -7,8 +7,13 @@
   const acctLabel = (id: string) => (id ? acct(id)?.email || id : 'All accounts');
   const gmailWithFilter = (ids: string[]) => data.accounts.filter((a) => a.provider === 'gmail' && a.canFilter && ids.includes(a.id));
   const labelName = (labels: { id: string; name: string }[], id: string) => labels.find((l) => l.id === id)?.name || id;
-  const describeFilter = (f: { criteria: Record<string, string | undefined>; action: { addLabelIds?: string[]; removeLabelIds?: string[] } }, labels: { id: string; name: string }[]) =>
-    `${Object.entries(f.criteria).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(', ')} → ${[...(f.action.addLabelIds || []).map((l) => `label ${labelName(labels, l)}`), ...(f.action.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(f.action.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : [])].join(', ') || 'no action'}`;
+  // Gmail may omit `criteria` or `action` (e.g. forward-only or legacy filters).
+  type GFilter = { criteria?: Record<string, unknown>; action?: { addLabelIds?: string[]; removeLabelIds?: string[]; forward?: string } };
+  const describeFilter = (f: GFilter, labels: { id: string; name: string }[]) => {
+    const a = f.action || {};
+    const what = [...(a.addLabelIds || []).map((l) => (l === 'TRASH' ? 'delete' : `label ${labelName(labels, l)}`)), ...(a.removeLabelIds?.includes('UNREAD') ? ['mark read'] : []), ...(a.removeLabelIds?.includes('INBOX') ? ['skip inbox'] : []), ...(a.forward ? [`forward to ${a.forward}`] : [])];
+    return `${Object.entries(f.criteria || {}).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => `${k}: ${v}`).join(', ') || 'any mail'} → ${what.join(', ') || 'no action'}`;
+  };
   const when = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const zohoUrl = (dc: string) => `https://mail.zoho.${dc}/zm/#settings`;
 </script>

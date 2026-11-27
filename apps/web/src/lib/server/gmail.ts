@@ -376,7 +376,8 @@ export async function sendGmail(state: AadOSState, account: MailAccount, rawMime
   const r = await json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: auth, body: JSON.stringify({ raw: Buffer.from(rawMime, 'utf8').toString('base64url'), ...(threadId ? { threadId } : {}) }) }));
   return String(r.id || '');
 }
-export type GmailFilter = { id: string; criteria: { from?: string; to?: string; subject?: string; query?: string }; action: { addLabelIds?: string[]; removeLabelIds?: string[] } };
+/** Gmail may omit criteria or action (e.g. forward-only filters). */
+export type GmailFilter = { id: string; criteria?: { from?: string; to?: string; subject?: string; query?: string }; action?: { addLabelIds?: string[]; removeLabelIds?: string[]; forward?: string } };
 /** Gmail filters (Settings → Filters) — the server-side rules. Requires gmail.settings.basic. */
 export async function listGmailFilters(state: AadOSState, account: MailAccount): Promise<GmailFilter[]> {
   const r = await json(await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/settings/filters', { headers: { Authorization: `Bearer ${await token(state, account)}` } }));

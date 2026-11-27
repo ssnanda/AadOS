@@ -128,7 +128,8 @@ export type PageResult = { scanned: number; added: number; unknown: number; next
 /** Running Asana work timers by task gid (the time is logged to the task as a comment when stopped). */
 export type AsanaTimer = { name: string; startedAt: string; note: string };
 /** AadOS's own email rule (Settings → Rules). Acts only on mail received after `createdAt` unless applied by hand. */
-export type MailRuleCondition = { field: 'from' | 'subject' | 'to'; text: string };
+/** `op` regex = case-insensitive regular expression; body = indexed/fetched plain text of the email. */
+export type MailRuleCondition = { field: 'from' | 'subject' | 'to' | 'body'; text: string; op?: 'contains' | 'regex' };
 /** `field`/`text` = first condition (older rules have only these); `conditions` = all of them, combined by `match`. `done`: emails already handled. */
 export type MailRule = { id: string; field: MailRuleCondition['field']; text: string; conditions?: MailRuleCondition[]; match?: 'all' | 'any'; action: 'mark-read' | 'delete' | 'importance-high' | 'follow-up' | 'actionable' | 'reviewed'; accountId: string; mode: 'auto' | 'ask'; enabled: boolean; createdAt: string; skipped?: string[]; done?: string[] };
 export type MailRuleLog = { at: string; ruleId: string; rule: string; action: string; count: number; how: 'auto' | 'manual'; error?: string };
