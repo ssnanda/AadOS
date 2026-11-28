@@ -2,7 +2,6 @@ import EventKit
 import Flutter
 import UIKit
 import UserNotifications
-import WidgetKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -23,23 +22,6 @@ import WidgetKit
         return
       }
       self?.createCalendarEvent(values, result: result)
-    }
-
-    // Home-screen widgets: the app hands over the mail metrics JSON; the AadOSWidget extension reads it from the app
-    // group and draws Small / Medium / Large. Without the App Group entitlement this still succeeds but nothing is shared.
-    if let widgetRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AadOSWidget") {
-      let widget = FlutterMethodChannel(name: "com.aadnanda.aados/widget", binaryMessenger: widgetRegistrar.messenger())
-      widget.setMethodCallHandler { call, result in
-        guard call.method == "save", let payload = call.arguments as? String else {
-          result(FlutterMethodNotImplemented)
-          return
-        }
-        let group = AppDelegate.appGroup()
-        guard let store = UserDefaults(suiteName: group) else { result("No app group (\(group))"); return }
-        store.set(payload, forKey: "mail")
-        if #available(iOS 14.0, *) { WidgetCenter.shared.reloadAllTimelines() }
-        result("Widget updated (\(group)) · profile groups: \(provisionedAppGroups().joined(separator: ", ").isEmpty ? "none" : provisionedAppGroups().joined(separator: ", "))")
-      }
     }
 
     // Unread-mail count on the home-screen icon. iOS shows a badge only after the user allows badges (no alerts or
@@ -63,17 +45,6 @@ import WidgetKit
         }
       }
     }
-  }
-
-  /// The app group shared with the widget: the group in this app's provisioning profile (sideloaders rename it),
-  /// else AltStore's ALTAppGroups, "group." + bundle ID, the original name; first one iOS grants wins.
-  static func appGroup() -> String {
-    let base = "group.com.aadnanda.aados"
-    var candidates = provisionedAppGroups()
-    candidates += Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
-    if let id = Bundle.main.bundleIdentifier { candidates.append("group.\(id)") }
-    candidates.append(base)
-    return candidates.first(where: { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }) ?? base
   }
 
   private func createCalendarEvent(_ values: [String: Any], result: @escaping FlutterResult) {
@@ -121,15 +92,3 @@ import WidgetKit
   }
 }
 
-/// App groups this binary was actually signed with, read from its embedded provisioning profile (the sideloader
-/// writes the real, renamed group names there). Empty when there is no profile or no groups.
-func provisionedAppGroups(_ bundle: Bundle = .main) -> [String] {
-  guard let url = bundle.url(forResource: "embedded", withExtension: "mobileprovision"),
-        let data = try? Data(contentsOf: url),
-        let start = data.range(of: Data("<?xml".utf8)),
-        let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex) else { return [] }
-  let plistData = data.subdata(in: start.lowerBound..<end.upperBound)
-  guard let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
-        let ent = plist["Entitlements"] as? [String: Any] else { return [] }
-  return ent["com.apple.security.application-groups"] as? [String] ?? []
-}

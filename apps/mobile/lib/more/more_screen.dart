@@ -18,7 +18,6 @@ import '../settings/general_settings.dart';
 import '../settings/integration_settings.dart';
 import '../settings/settings_api.dart';
 import '../settings/views_settings.dart';
-import '../settings/widget_settings.dart';
 import '../shared/shared_screen.dart';
 import 'web_section_screen.dart';
 
@@ -38,7 +37,6 @@ final _entries = <_Entry>[
   _Entry('shared', Icons.move_to_inbox_outlined, 'Shared mailboxes', '', (s) => SharedBoxesScreen(api: s.api), permission: 'emails'),
   _Entry('messages', Icons.sms_outlined, 'Messages', '', (s) => MessagesScreen(api: s.api), permission: 'messages'),
   _Entry('finance', Icons.account_balance_outlined, 'Finance', '', (s) => FinanceScreen(api: s.api), permission: 'finance'),
-  _Entry('widgets', Icons.widgets_outlined, 'Widgets', 'Home-screen mail widgets', (_) => const WidgetSettingsScreen()),
   _Entry('emails', Icons.mail_outline, 'Emails & Calendar', 'Accounts and connections', (_) => const EmailSettingsScreen(), owner: true),
   _Entry('views', Icons.view_agenda_outlined, 'Email views', '', (_) => const ViewsSettingsScreen(), owner: true),
   _Entry('general', Icons.tune, 'General', 'Time zone, password, sessions', (_) => const GeneralSettingsScreen(), owner: true),
