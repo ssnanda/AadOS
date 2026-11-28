@@ -37,7 +37,8 @@ struct MailData: Decodable {
     let base = "group.com.aadnanda.aados"
     // Widget bundle lives at AadOS.app/PlugIns/AadOSWidget.appex → containing app is two levels up.
     let app = Bundle(url: Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent())
-    var candidates = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []) + (app?.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [])
+    var candidates = provisionedAppGroups() + provisionedAppGroups(app ?? .main)
+    candidates += (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []) + (app?.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [])
     if let id = app?.bundleIdentifier { candidates.append("group.\(id)") }
     if let own = Bundle.main.bundleIdentifier, own.hasSuffix(".AadOSWidget") { candidates.append("group.\(own.dropLast(".AadOSWidget".count))") }
     candidates.append(base)
@@ -214,7 +215,7 @@ struct MailWidgetView: View {
         VStack(spacing: 4) {
           Text("AadOS Mail").font(.caption.weight(.semibold))
           Text("Open AadOS once to load your mail.").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
-          Text(MailData.appGroup()).font(.system(size: 8)).foregroundStyle(.tertiary)
+          Text("\(MailData.appGroup()) · profile: \(provisionedAppGroups().isEmpty ? "no groups" : provisionedAppGroups().joined(separator: ", "))").font(.system(size: 8)).foregroundStyle(.tertiary).multilineTextAlignment(.center)
         }
       }
     }
@@ -244,4 +245,17 @@ struct AadOSWidget: Widget {
 @main
 struct AadOSWidgetBundle: WidgetBundle {
   var body: some Widget { AadOSWidget() }
+}
+
+/// App groups this binary was actually signed with, read from its embedded provisioning profile (the sideloader
+/// writes the real, renamed group names there). Empty when there is no profile or no groups.
+func provisionedAppGroups(_ bundle: Bundle = .main) -> [String] {
+  guard let url = bundle.url(forResource: "embedded", withExtension: "mobileprovision"),
+        let data = try? Data(contentsOf: url),
+        let start = data.range(of: Data("<?xml".utf8)),
+        let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex) else { return [] }
+  let plistData = data.subdata(in: start.lowerBound..<end.upperBound)
+  guard let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+        let ent = plist["Entitlements"] as? [String: Any] else { return [] }
+  return ent["com.apple.security.application-groups"] as? [String] ?? []
 }
