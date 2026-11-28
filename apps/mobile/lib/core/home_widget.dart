@@ -63,8 +63,8 @@ class HomeWidgets {
     try {
       final data = await api.get('/api/mobile/widget') as Map<String, dynamic>;
       final config = await WidgetConfig.load();
-      await _channel.invokeMethod('save', jsonEncode({...data, 'shared': shared, 'config': config.json}));
-      return 'Widget updated.';
+      final r = await _channel.invokeMethod<Object?>('save', jsonEncode({...data, 'shared': shared, 'config': config.json}));
+      return r is String ? r : 'Widget updated.';
     } on ApiException catch (e) {
       return e.message;
     } on MissingPluginException {

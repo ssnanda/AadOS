@@ -31,8 +31,21 @@ struct MailData: Decodable {
   }
   var latestLimit: Int { config?.latest ?? 5 }
 
+  /// Same group as the app (AltStore renames app groups when it re-signs). Candidates: ALTAppGroups in this widget's
+  /// or the containing app's Info.plist, "group." + the app's bundle ID, the original name; first one iOS grants wins.
+  static func appGroup() -> String {
+    let base = "group.com.aadnanda.aados"
+    // Widget bundle lives at AadOS.app/PlugIns/AadOSWidget.appex → containing app is two levels up.
+    let app = Bundle(url: Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent())
+    var candidates = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []) + (app?.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? [])
+    if let id = app?.bundleIdentifier { candidates.append("group.\(id)") }
+    if let own = Bundle.main.bundleIdentifier, own.hasSuffix(".AadOSWidget") { candidates.append("group.\(own.dropLast(".AadOSWidget".count))") }
+    candidates.append(base)
+    return candidates.first(where: { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }) ?? base
+  }
+
   static func load() -> MailData? {
-    guard let raw = UserDefaults(suiteName: "group.com.aadnanda.aados")?.string(forKey: "mail"), let data = raw.data(using: .utf8) else { return nil }
+    guard let raw = UserDefaults(suiteName: appGroup())?.string(forKey: "mail"), let data = raw.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode(MailData.self, from: data)
   }
 }
@@ -201,6 +214,7 @@ struct MailWidgetView: View {
         VStack(spacing: 4) {
           Text("AadOS Mail").font(.caption.weight(.semibold))
           Text("Open AadOS once to load your mail.").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+          Text(MailData.appGroup()).font(.system(size: 8)).foregroundStyle(.tertiary)
         }
       }
     }

@@ -34,9 +34,11 @@ import WidgetKit
           result(FlutterMethodNotImplemented)
           return
         }
-        UserDefaults(suiteName: "group.com.aadnanda.aados")?.set(payload, forKey: "mail")
+        let group = AppDelegate.appGroup()
+        guard let store = UserDefaults(suiteName: group) else { result("No app group (\(group))"); return }
+        store.set(payload, forKey: "mail")
         if #available(iOS 14.0, *) { WidgetCenter.shared.reloadAllTimelines() }
-        result(true)
+        result("Widget updated (\(group))")
       }
     }
 
@@ -61,6 +63,17 @@ import WidgetKit
         }
       }
     }
+  }
+
+  /// The app group shared with the widget. AltStore re-signs sideloaded apps and renames app groups (usually by
+  /// appending the team ID). Try, in order: AltStore's ALTAppGroups, "group." + this app's bundle ID, the original
+  /// name; use the first one iOS actually grants (it has a shared container).
+  static func appGroup() -> String {
+    let base = "group.com.aadnanda.aados"
+    var candidates = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
+    if let id = Bundle.main.bundleIdentifier { candidates.append("group.\(id)") }
+    candidates.append(base)
+    return candidates.first(where: { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil }) ?? base
   }
 
   private func createCalendarEvent(_ values: [String: Any], result: @escaping FlutterResult) {
